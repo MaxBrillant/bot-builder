@@ -1,0 +1,2902 @@
+# Bot Builder - System Specifications & Constraints
+
+**Version**: 1.0
+**Last Updated**: 2024-12-01
+
+---
+
+## 📋 Table of Contents
+
+0. [System Architecture Overview](#system-architecture-overview)
+1. [Flow Structure](#flow-structure)
+2. [Core Capabilities](#core-capabilities)
+3. [System Constraints](#system-constraints)
+4. [Node Type Specifications](#node-type-specifications)
+5. [Templating System](#templating-system)
+6. [Validation System](#validation-system)
+7. [Routing & Logic](#routing--logic)
+8. [Session Management](#session-management)
+9. [Error Handling & Termination](#error-handling--termination)
+10. [Security Considerations](#security-considerations)
+11. [What You CAN Do](#what-you-can-do)
+12. [What You CANNOT Do](#what-you-cannot-do)
+13. [Best Practices](#best-practices)
+
+---
+
+## 0. System Architecture Overview
+
+### Domain Model Hierarchy
+
+The Bot Builder system follows a three-tier hierarchy:
+
+```
+User (1) ──→ (N) Bots ──→ (N) Flows
+```
+
+**User**: A registered account holder who can create and manage multiple bots.
+
+**Bot**: A logical grouping of conversational flows representing a complete bot application (e.g., "Ride Sharing Bot", "Restaurant Ordering Bot"). Each bot:
+
+- Has a unique identifier (`bot_id`)
+- Owns multiple flows
+- Has its own webhook URL for message integration
+- Can be in `active` or `inactive` status
+- Maintains isolated sessions and trigger keywords
+
+**Flow**: A conversation flow definition containing nodes and routing logic. Flows belong to a single bot and define specific conversation paths.
+
+### Integration Architecture
+
+The system is **platform-agnostic** and separates messaging platform integration from core bot logic:
+
+```
+┌─────────────────────────────────────────┐
+│  Messaging Platform Integration         │
+│  (WhatsApp via Evolution API, etc.)     │
+│  - Handles platform-specific protocols  │
+│  - Translates to normalized format      │
+│  - Routes to user's active bot          │
+└──────────────┬──────────────────────────┘
+               │
+               │ HTTP POST to Bot Webhook
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│  Bot Builder Core (Platform-Agnostic)   │
+│  - Receives: bot_id + channel_user_id + message │
+│  - Processes flows                       │
+│  - Returns response                      │
+└─────────────────────────────────────────┘
+```
+
+**Key Design Principles**:
+
+- Core system does NOT know about phone numbers, WhatsApp, or any specific platform
+- Each bot gets a unique webhook URL: `https://botbuilder.com/webhook/{bot_id}`
+- Integration layers translate platform-specific formats to normalized messages
+- Sessions are keyed by: `channel:channel_user_id:bot_id`
+
+**Message Routing Model**:
+
+- **Multi-Bot Support**: Users can interact with multiple bots simultaneously
+- **Integration Layer Responsibility**: The integration layer (e.g., Evolution API) determines which bot receives each message based on its own routing logic (outside Bot Builder's scope)
+- **Webhook-Based Routing**: The integration layer sends messages directly to specific bot webhooks: `POST /webhook/{bot_id}`
+- **Trigger Keywords**: Trigger keywords are scoped per bot - each bot's flows have their own independent trigger keywords
+- **Session Isolation**: Each bot maintains its own independent sessions - a user can have active sessions in multiple bots at the same time
+- **No Cross-Bot Communication**: Bots cannot access or influence each other's sessions, flows, or data
+
+### Bot Entity
+
+```python
+Bot:
+  id: UUID (primary key)
+  owner_user_id: UUID (foreign key)
+  name: string (e.g., "Tujane Ride Sharing")
+  description: string (optional)
+  webhook_url: string (auto-generated: /webhook/{bot_id})
+  webhook_secret: string (security token)
+  status: enum (active, inactive)
+  created_at: timestamp
+  updated_at: timestamp
+```
+
+**Bot Lifecycle**:
+
+- **Active**: Receives and processes messages via webhook
+- **Inactive**: Webhook returns "Bot unavailable" message
+
+### Conceptual Data Model
+
+The following diagram shows the core entities and their relationships:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         User (Owner)                         │
+│  - id: UUID (primary key)                                    │
+│  - email: string                                             │
+│  - Created bots: N bots                                      │
+└────────────────────────┬────────────────────────────────────┘
+                         │ owns (1:N)
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                            Bot                               │
+│  - id: UUID (primary key, globally unique)                   │
+│  - owner_user_id: UUID (foreign key → User)                  │
+│  - name: string                                              │
+│  - webhook_url: string                                       │
+│  - status: enum (active, inactive)                           │
+│  - Created flows: N flows                                    │
+└────────────────────────┬────────────────────────────────────┘
+                         │ contains (1:N)
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                           Flow                               │
+│  - id: UUID (primary key, system-generated, globally unique) │
+│  - bot_id: UUID (foreign key → Bot)                          │
+│  - name: string (user-provided, unique per bot)              │
+│  - trigger_keywords: string[] (unique per bot)               │
+│  - nodes: JSON (flow definition)                             │
+│  - is_mutable: true (content can be updated)                 │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                          Session                             │
+│  - key: string (composite: "channel:channel_user_id:bot_id") │
+│  - bot_id: UUID (references Bot)                             │
+│  - flow_snapshot: JSON (immutable copy of flow at start)     │
+│  - context: JSON (runtime variables)                         │
+│  - status: enum (active, completed, expired, error)          │
+│  - created_at: timestamp                                     │
+│  - expires_at: timestamp (30 min from creation)              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Relationships**:
+
+- **User → Bot**: One-to-Many (a user can own multiple bots)
+- **Bot → Flow**: One-to-Many (a bot contains multiple flows)
+- **Flow → Session**: One-to-Many (a flow can have multiple active sessions)
+- **Bot → Session**: One-to-Many (a bot can have multiple active sessions)
+
+**Uniqueness Constraints**:
+
+- `user.id`: Globally unique (system-assigned UUID)
+- `bot.id`: Globally unique (system-assigned UUID)
+- `flow.id`: Globally unique (system-assigned UUID)
+- `flow.name`: Unique per bot (user-provided, bot-scoped)
+- `flow.trigger_keywords[]`: Each keyword unique per bot (user-provided, bot-scoped)
+- `session.key`: Unique per channel-user-bot combination
+
+**Immutability vs Mutability**:
+
+- **Immutable IDs**: `user.id`, `bot.id`, `flow.id` (never change once created)
+- **Mutable Content**: Flow definitions can be updated (same UUID, new content)
+- **Session Snapshots**: Sessions store immutable flow snapshot from session start
+
+### Message Flow Example
+
+```
+1. User sends "START" via WhatsApp
+
+2. Evolution API receives message:
+   - Looks up user's active bot (stored mapping: +254712345678 → bot_abc123)
+   - Routes to active bot's webhook:
+
+   POST https://botbuilder.com/webhook/bot_abc123
+   {
+     "channel": "whatsapp",
+     "channel_user_id": "+254712345678",
+     "message_text": "START"
+   }
+
+3. Bot Builder:
+   - Identifies bot from URL: bot_abc123
+   - Creates/resumes session: "whatsapp:+254712345678:bot_abc123"
+   - Checks trigger keyword "START" in bot's flows
+   - Processes flow nodes
+   - Returns response
+
+4. Evolution API sends response back via WhatsApp
+```
+
+**Note**: The trigger keyword "START" works because the integration layer routed this message to Bot ABC123's webhook. If the message were sent to a different bot's webhook, that bot would process it instead.
+
+---
+
+## 1. Flow Structure
+
+### JSON Schema Overview
+
+A flow is defined as a JSON object with the following top-level structure:
+
+```json
+{
+  "name": "string (required)",
+  "trigger_keywords": ["array of strings (optional)"],
+  "variables": { "object (optional)" },
+  "defaults": { "object (optional)" },
+  "start_node_id": "string (required)",
+  "nodes": { "object (required)" }
+}
+```
+
+### Top-Level Fields
+
+#### `name` (required)
+
+- **Type**: `string`
+- **Description**: Human-readable name for the flow (user-provided)
+- **System Behavior**:
+  - The system automatically generates a **UUID** as the flow's primary key (immutable database identifier)
+  - The `name` field is what users provide and see in the API
+  - Users reference flows by this `name` in API calls
+- **Constraints**:
+  - Must be **unique per bot** (not globally unique)
+  - Alphanumeric, underscores, hyphens, and spaces allowed
+  - Cannot be empty
+  - Maximum 96 characters
+  - Recommended: Use descriptive names like "Driver Onboarding Flow" or "Checkout Process v2"
+- **Example**: `"driver_onboarding"`, `"checkout_flow"`, `"customer_support_v1"`
+- **Uniqueness Scope**: Each bot can have flows with unique names. Different bots can use the same flow names.
+
+#### `trigger_keywords` (optional)
+
+- **Type**: `array of strings`
+- **Description**: Keywords that activate this flow
+- **Uniqueness Constraint**: Each keyword must be **unique per bot** (not globally unique)
+  - ✅ Bot A can have Flow 1 with keyword "START"
+  - ❌ Bot A cannot have Flow 2 also with keyword "START" (duplicate within same bot)
+  - ✅ Bot B can have Flow 1 with keyword "START" (different bot, allowed)
+- **Validation on Flow Submission**:
+  - System checks for duplicate keywords within the **same bot's flows**
+  - Returns validation error if keyword is already used by another flow in the same bot
+  - Allows the same keyword across different bots (bot-level isolation)
+- **Matching Behavior**:
+  - **Standalone messages only**: The entire user message must exactly match ONE keyword (after trimming and removing trailing punctuation)
+  - **Case-insensitive**: "START", "start", "Start" all match
+  - **Whitespace trimmed**: " START " matches "START"
+  - **Punctuation ignored**: "START!", "START." match "START"
+  - **No partial matches**: "I want to START" does NOT match "START"
+  - **No word-in-sentence**: "STARTING" does NOT match "START"
+- **No regex support**
+- **Default**: `[]`
+- **Example**: `["START", "BEGIN", "HELLO"]`
+- **Matching Examples**:
+  - ✅ "START" → Match
+  - ✅ "start" → Match
+  - ✅ " START " → Match
+  - ✅ "START!" → Match
+  - ❌ "I want to START" → No match (not standalone)
+  - ❌ "STARTING" → No match (different word)
+  - ❌ "START NOW" → No match (multiple words)
+
+**Error Response for Duplicate Keyword**:
+
+```json
+{
+  "status": "error",
+  "errors": [
+    {
+      "type": "duplicate_trigger_keyword",
+      "message": "Trigger keyword 'START' is already used in flow 'booking_flow' of this bot",
+      "conflicting_flow_name": "booking_flow",
+      "keyword": "START"
+    }
+  ]
+}
+```
+
+### Flow Lifecycle & Management
+
+#### Multi-Tenant Architecture
+
+**User Isolation**:
+
+- System supports multiple users, each managing their own bots
+- User authentication required (implementation-agnostic)
+- Each user can create, update, and delete only their own bots and flows
+- `flow.name` must be **unique per bot** (not globally unique)
+- `flow.id` (UUID) is **globally unique** (system-generated)
+- `bot_id` must be **globally unique** across all users
+
+**Bot & Flow Ownership**:
+
+- Every bot belongs to a specific user
+- Every flow belongs to a specific bot
+- Users cannot access or modify other users' bots or flows
+- Sessions are scoped to the bot context
+
+#### Flow Submission
+
+**API-Based Flow Management**:
+
+Flows are submitted to the Bot Builder system via authenticated API:
+
+```
+API: Create Flow
+Authentication: Required (user credentials)
+Content-Type: JSON
+
+{
+  "name": "checkout_flow",  // Must be unique within this bot
+  "trigger_keywords": ["START"],
+  "variables": {...},
+  "start_node_id": "node_start",
+  "nodes": {...}
+}
+```
+
+**Validation on Submission**:
+
+- User authentication verified
+- Bot ownership verified (user must own the bot)
+- Flow validated immediately upon submission
+- System generates UUID for flow.id (immutable primary key)
+- `flow.name` uniqueness checked within the bot
+- If valid: Stored in database with generated UUID, returns success
+- If invalid: Returns validation errors, flow not stored
+
+**Response Examples**:
+
+```json
+// Success
+{
+  "status": "success",
+  "flow_id": "a1b2c3d4-e5f6-4789-a012-3456789abcde",  // System-generated UUID
+  "flow_name": "checkout_flow",  // User-provided name
+  "bot_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message": "Flow validated and stored successfully"
+}
+
+// Validation Error - Invalid Structure
+{
+  "status": "error",
+  "errors": [
+    "Node 'node_missing' referenced in routes but not defined",
+    "start_node_id 'node_start' does not exist in nodes"
+  ]
+}
+
+// Validation Error - Duplicate flow name
+{
+  "status": "error",
+  "errors": [
+    "Flow name 'checkout_flow' already exists in this bot"
+  ]
+}
+```
+
+#### Flow Storage
+
+**Database Storage**:
+
+- Flows stored in database
+- Persists across server restarts
+- Accessible to all Bot Builder instances (shared state)
+
+**Flow Retrieval**:
+
+- Loaded from database when needed
+- Redis caching for performance
+- Cache invalidated on flow updates
+
+#### Flow Updates
+
+**Update Behavior**:
+
+```
+API: Update Flow
+Authentication: Required (user credentials)
+Flow Identifier: flow_id (UUID) or flow_name
+Content-Type: JSON
+
+{
+  "name": "checkout_flow",  // Can be same or different
+  ...updated flow definition...
+}
+```
+
+**Update Rules**:
+
+- User must own the bot/flow to update it (enforced by authentication)
+- Flow is identified by its UUID (immutable)
+- Flow content is mutable - updates overwrite previous version
+- Flow name can be changed during update (must remain unique within bot)
+- Active sessions continue using flow snapshot they started with
+- New sessions use updated version
+- Validation applied to updated flow before accepting
+  **Note**: Trigger keywords must be unique within each bot. When deploying a new version with the same keyword, remove the keyword from the old flow first. Flow names must be unique within each bot (not globally).
+
+#### Validation Checks
+
+**Validation Algorithm**:
+
+The system uses a **two-pass validation** approach to handle forward references:
+
+1. **Pass 1 - Indexing**: Build index of all node IDs in the flow
+2. **Pass 2 - Validation**: Validate all references and constraints
+
+This allows nodes to reference other nodes that appear later in the JSON (order-independent).
+
+**Performed on Submission**:
+
+- User authentication valid
+- User has permission to create/update flows in this bot
+- JSON syntax valid
+- All required fields present (name, start_node_id, nodes)
+- **flow.name unique per bot** - no duplicate names within the same bot's flows
+- **trigger_keywords unique per bot** - no duplicate keywords within the same bot's flows
+- Node IDs unique within flow
+- start_node_id references existing node
+- All route target_nodes reference existing nodes
+- No circular references (infinite loops)
+- Variable types valid (string, integer, boolean, array)
+- Fail_route (if defined) references existing node
+- Constraints respected:
+  - Max 48 nodes per flow
+  - Max 8 routes per node
+  - ID lengths ≤ 96 characters
+  - Node types valid (PROMPT, MENU, API_ACTION, etc.)
+
+**Validation Response**:
+
+```json
+{
+  "status": "error",
+  "flow_name": "checkout_flow",
+  "errors": [
+    {
+      "type": "duplicate_flow_name",
+      "message": "Flow name 'checkout_flow' already exists in this bot",
+      "suggestion": "Use a different name or update the existing flow"
+    },
+    {
+      "type": "missing_node",
+      "message": "Route target 'node_missing' not found in nodes",
+      "location": "nodes.node_start.routes[0].target_node"
+    },
+    {
+      "type": "circular_reference",
+      "message": "Circular reference detected: node_a → node_b → node_a",
+      "nodes": ["node_a", "node_b"]
+    }
+  ]
+}
+```
+
+#### Active Session Handling
+
+**Flow Version Isolation**:
+
+```
+10:00 - Flow submitted and stored (UUID: abc-123, name: "checkout")
+10:05 - User A starts session (uses flow snapshot from 10:00)
+10:10 - Flow updated with same UUID (content changed)
+10:15 - User B starts session (uses updated flow from 10:10)
+10:20 - User A continues session (still uses original snapshot from 10:00)
+10:25 - User A completes (original snapshot)
+10:30 - User B continues (updated version from 10:10)
+```
+
+**Session-Flow Binding**:
+
+- Sessions store flow snapshot or version reference
+- Flow updates don't affect active sessions
+- Ensures consistent user experience
+- No mid-session flow changes
+
+#### Multi-Instance Deployment
+
+**Shared Flow State**:
+
+```
+Bot Builder Instance 1 ←
+                         → Database (flows table) ←
+Bot Builder Instance 2 ←                         → Load Balancer
+                         → Database (flows table) ←
+Bot Builder Instance 3 ←
+```
+
+**Synchronization**:
+
+- All instances read flows from shared database
+- Redis cache with TTL or invalidation
+- Flow updates visible to all instances
+- No file-based synchronization needed
+
+#### `variables` (optional)
+
+- **Type**: `object`
+- **Description**: Flow-wide variable definitions with types and defaults
+- **Structure**:
+  ```json
+  {
+    "variable_name": {
+      "type": "string|integer|boolean|array",
+      "default": null | value
+    }
+  }
+  ```
+- **Supported Types**:
+  - `string`: Text values
+  - `integer`: Whole numbers
+  - `boolean`: true/false
+  - `array`: Lists of items
+- **Type Enforcement & Conversion Process**:
+  1. User provides input (always received as string)
+  2. PROMPT validates the input format (regex or expression validation)
+  3. If validation passes, system attempts type conversion based on declared variable type
+  4. If conversion succeeds, value is saved to context
+  5. If conversion fails, user sees error and must retry (counts toward max attempts)
+  6. **Note**: Validation ensures input is in convertible format (e.g., `input.isNumeric()` ensures string can convert to integer)
+- **Example**:
+  ```json
+  "variables": {
+    "user_name": { "type": "string", "default": null },
+    "age": { "type": "integer", "default": 0 },
+    "is_verified": { "type": "boolean", "default": false },
+    "items": { "type": "array", "default": [] }
+  }
+  ```
+
+#### `defaults` (optional)
+
+- **Type**: `object`
+- **Description**: Flow-wide default configurations
+- **Structure**:
+  ```json
+  {
+    "retry_logic": {
+      "max_attempts": 3,
+      "counter_text": "(Attempt {{current_attempt}} of {{max_attempts}})",
+      "fail_route": "node_id"
+    }
+  }
+  ```
+- **Fields**:
+  - `max_attempts`: Maximum validation retry attempts (default: 3, valid range: 1-10)
+  - `counter_text`: Template for retry counter display
+  - `fail_route`: Node to redirect to after max attempts exceeded (required when retry_logic is defined; must reference existing node ID in the flow, typically MESSAGE or END node; validated during two-pass validation)
+
+#### `start_node_id` (required)
+
+- **Type**: `string`
+- **Description**: ID of the first node to execute
+- **Constraints**:
+  - Must reference an existing node ID
+  - Cannot be empty
+- **Example**: `"node_check_driver_status"`
+
+#### `nodes` (required)
+
+- **Type**: `object`
+- **Description**: Dictionary of all nodes in the flow
+- **Structure**: `{ "node_id": { node_definition } }`
+- **Constraints**:
+  - Must contain at least one node
+  - Node IDs must be unique
+  - Must include the `start_node_id` node
+
+### Node Structure
+
+Every node has this base structure:
+
+```json
+{
+  "id": "string (required)",
+  "type": "PROMPT|MENU|API_ACTION|LOGIC_EXPRESSION|MESSAGE|END (required)",
+  "config": { "object (required)" },
+  "routes": [ "array (optional)" ]
+}
+```
+
+#### Node Base Fields
+
+##### `id` (required)
+
+- **Type**: `string`
+- **Description**: Unique identifier for this node
+- **Constraints**:
+  - Must match the key in nodes object
+  - Alphanumeric and underscores only
+  - No spaces
+- **Example**: `"node_get_origin"`
+
+##### `type` (required)
+
+- **Type**: `string enum`
+- **Description**: Node type determining behavior
+- **Values**: `PROMPT`, `MENU`, `API_ACTION`, `LOGIC_EXPRESSION`, `MESSAGE`, `END`
+- **Example**: `"PROMPT"`
+
+##### `config` (required)
+
+- **Type**: `object`
+- **Description**: Node-specific configuration
+- **Structure**: Varies by node type (see Node Type Specifications section)
+
+##### `routes` (required for all nodes except END)
+
+- **Type**: `array of route objects`
+- **Description**: Defines possible next nodes based on conditions
+- **Structure**:
+  ```json
+  [
+    {
+      "condition": "string (required)",
+      "target_node": "string (required)"
+    }
+  ]
+  ```
+- **Constraints**:
+  - Routes evaluated in order (first match wins)
+  - `target_node` must reference existing node ID
+  - END nodes cannot have routes
+- **Example**:
+  ```json
+  "routes": [
+    { "condition": "success", "target_node": "node_next" },
+    { "condition": "error", "target_node": "node_error" }
+  ]
+  ```
+
+### Node Configuration by Type
+
+#### PROMPT Node Config
+
+```json
+{
+  "text": "string (required)",
+  "save_to_variable": "string (required)",
+  "validation": {
+    "type": "REGEX|EXPRESSION (required)",
+    "rule": "string (required)",
+    "error_message": "string (required)"
+  },
+  "interrupts": [
+    {
+      "input": "string (required)",
+      "target_node": "string (required)"
+    }
+  ]
+}
+```
+
+**Required**: `text`, `save_to_variable`
+**Optional**: `validation`, `interrupts`
+
+#### MENU Node Config
+
+```json
+{
+  "text": "string (required)",
+  "source_type": "STATIC|DYNAMIC (required)",
+  "source_variable": "string (required if DYNAMIC)",
+  "item_template": "string (required if DYNAMIC)",
+  "static_options": [
+    {
+      "label": "string (required)",
+      "value": "string (required)"
+    }
+  ],
+  "interrupts": [
+    {
+      "input": "string (required)",
+      "target_node": "string (required)"
+    }
+  ],
+  "error_message": "string (optional)",
+  "output_mapping": [
+    {
+      "source_path": "string (required)",
+      "target_variable": "string (required)"
+    }
+  ]
+}
+```
+
+**Required**: `text`, `source_type`
+**Conditionally Required**:
+
+- `source_variable` and `item_template` if `source_type` is `DYNAMIC`
+- `static_options` if `source_type` is `STATIC`
+
+**Optional**: `interrupts`, `error_message`, `output_mapping`
+
+**Note**: `output_mapping` only works with DYNAMIC source_type.
+
+**output_mapping Field Handling**:
+
+When extracting fields from selected menu item, missing or null fields are handled gracefully:
+
+- Field doesn't exist in source → variable set to `null`
+- Field explicitly `null` in source → variable set to `null`
+- All mappings always execute (no partial failures)
+- `selection` variable automatically set to numeric index as **integer** (1, 2, 3, etc.)
+
+**Example**:
+
+```json
+// Selected item (user chose option 2): {"id": "123", "destination": "Nairobi"}
+// Note: "driver_name" field is missing
+
+"output_mapping": [
+  {"source_path": "id", "target_variable": "trip_id"},           // → "123"
+  {"source_path": "driver_name", "target_variable": "driver"},   // → null (missing)
+  {"source_path": "destination", "target_variable": "dest"}      // → "Nairobi"
+]
+
+// Result in context:
+// selection = 2  (integer, not string)
+// trip_id = "123"
+// driver = null
+// dest = "Nairobi"
+```
+
+#### API_ACTION Node Config
+
+```json
+{
+  "description": "string (optional)",
+  "request": {
+    "method": "GET|POST|PUT|DELETE|PATCH (required)",
+    "url": "string (required, supports templates for query parameters)",
+    "headers": { "object (optional)" },
+    "body": { "object (optional)" }
+  },
+  "response_map": [
+    {
+      "source_path": "string (required)",
+      "target_variable": "string (required)",
+      "type": "string|integer|boolean|array (optional, default: string)"
+    }
+  ],
+  "success_check": {
+    "status_code_in": [200, 201],
+    "expression": "string (optional)"
+  }
+}
+```
+
+**Success Check Expression**: The optional `expression` field checks response body content for additional success validation.
+
+**Available variables in expression**:
+
+- `response.body.*` - Parsed JSON response fields
+- `response.status` - HTTP status code
+- `response.headers.*` - Response headers
+
+**Example**:
+
+```json
+"success_check": {
+  "status_code_in": [200, 201],
+  "expression": "response.body.id != null && response.body.success == true"
+}
+```
+
+**Required**: `request` with `method` and `url`
+**Optional**: `description`, `response_map`, `success_check`, `headers`, `body`
+
+#### LOGIC_EXPRESSION Node Config
+
+```json
+{
+  "description": "string (optional)"
+}
+```
+
+**Optional**: `description`
+
+#### MESSAGE Node Config
+
+```json
+{
+  "text": "string (required)"
+}
+```
+
+**Required**: `text`
+
+#### END Node Config
+
+```json
+{}
+```
+
+No configuration needed (empty object).
+
+### Flow Structure Rules
+
+#### ✅ Required Elements
+
+1. **Must have**:
+
+   - `name`
+   - `start_node_id`
+   - `nodes` object with at least one node
+   - Start node must exist in nodes
+
+2. **Every node must have**:
+
+   - `id` matching its key
+   - `type`
+   - `config` appropriate for its type
+   - `routes` (except END nodes)
+
+3. **Routes must**:
+   - Have valid `condition`
+   - Reference existing `target_node`
+
+#### ❌ Common Mistakes
+
+1. **Missing Required Fields**
+
+   ```json
+   // ❌ BAD - Missing save_to_variable
+   {
+     "type": "PROMPT",
+     "config": {
+       "text": "What's your name?"
+     }
+   }
+   ```
+
+2. **Invalid Node References**
+
+   ```json
+   // ❌ BAD - target_node doesn't exist
+   {
+     "routes": [{ "condition": "true", "target_node": "node_nonexistent" }]
+   }
+   ```
+
+3. **Type Mismatch**
+
+   ```json
+   // ❌ BAD - MENU config for PROMPT node
+   {
+     "type": "PROMPT",
+     "config": {
+       "source_type": "STATIC",
+       "static_options": [...]
+     }
+   }
+   ```
+
+4. **Unreachable Nodes**
+
+   ```json
+   // ❌ BAD - node_orphan never referenced in any route
+   "nodes": {
+     "node_start": { ... },
+     "node_orphan": { ... }  // Nothing routes to this
+   }
+   ```
+
+5. **Missing Catch-All Route**
+
+   ```json
+   // ❌ BAD - No catch-all route, flow will crash if conditions don't match
+   {
+     "type": "LOGIC_EXPRESSION",
+     "routes": [
+       { "condition": "context.status == 'active'", "target_node": "node_active" },
+       { "condition": "context.status == 'inactive'", "target_node": "node_inactive" }
+       // What if status is 'pending'? Flow terminates with error!
+     ]
+   }
+
+   // ✅ GOOD - Always include catch-all route
+   {
+     "type": "LOGIC_EXPRESSION",
+     "routes": [
+       { "condition": "context.status == 'active'", "target_node": "node_active" },
+       { "condition": "context.status == 'inactive'", "target_node": "node_inactive" },
+       { "condition": "true", "target_node": "node_default" }  // ✅ Catch-all
+     ]
+   }
+   ```
+
+### Flow Structure Best Practices
+
+#### 1. Naming Conventions
+
+```json
+// ✅ GOOD - Clear, descriptive names
+"node_check_driver_status"
+"node_get_origin_location"
+"node_confirm_trip_details"
+
+// ❌ BAD - Cryptic abbreviations
+"node_chk_drv"
+"node_loc1"
+"node_conf"
+```
+
+#### 2. Variable Naming
+
+```json
+// ✅ GOOD - Descriptive names
+"driver_name"
+"departure_time"
+"available_seats"
+
+// ❌ BAD - Unclear names
+"dn"
+"dt"
+"seats"
+```
+
+#### 3. Flow Organization
+
+```json
+// ✅ GOOD - Logical grouping with comments
+{
+  "nodes": {
+    // Authentication nodes
+    "node_check_user": { ... },
+    "node_login": { ... },
+
+    // Data collection nodes
+    "node_get_name": { ... },
+    "node_get_email": { ... },
+
+    // Processing nodes
+    "node_save_data": { ... },
+    "node_send_confirmation": { ... }
+  }
+}
+```
+
+#### 4. Route Ordering
+
+```json
+// ✅ GOOD - Specific conditions first, catch-all last
+"routes": [
+  { "condition": "selection == 1", "target_node": "node_option1" },
+  { "condition": "selection == 2", "target_node": "node_option2" },
+  { "condition": "selection > 0", "target_node": "node_valid" },
+  { "condition": "true", "target_node": "node_error" }
+]
+```
+
+#### 5. Error Handling
+
+```json
+// ✅ GOOD - Always handle errors
+{
+  "type": "API_ACTION",
+  "routes": [
+    { "condition": "success", "target_node": "node_next" },
+    { "condition": "error", "target_node": "node_error_handler" }
+  ]
+}
+
+// ❌ BAD - No error route
+{
+  "type": "API_ACTION",
+  "routes": [
+    { "condition": "success", "target_node": "node_next" }
+  ]
+}
+```
+
+### Complete Flow Example
+
+See the Tujane driver flow in [`flows/tujane_driver_flow_v1.json`](flows/tujane_driver_flow_v1.json) for a complete, working example demonstrating:
+
+- All node types
+- Complex routing
+- Dynamic menus
+- API integration
+- Validation
+- Error handling
+
+---
+
+## 2. Core Capabilities
+
+### ✅ Supported Features
+
+1. **Multi-Step Conversations**
+
+   - Sequential data collection through PROMPT nodes
+   - Complex branching based on user input and context
+   - Session state persistence across interactions
+
+2. **Dynamic Content**
+
+   - Template-based message rendering with `{{variable}}` syntax
+   - Context variable access and manipulation
+   - Dynamic menu generation from arrays
+
+3. **External Integration**
+
+   - HTTP API calls (GET, POST, PUT, DELETE, PATCH)
+   - Response data mapping to context variables
+   - Success/failure routing based on API responses
+
+4. **Input Validation**
+
+   - Regex pattern matching
+   - JavaScript-style expression validation
+   - Custom error messages
+   - Retry logic with attempt limits
+
+5. **User Navigation**
+   - Interrupt keywords (e.g., "0" to go back)
+   - Menu-based selection
+   - Conditional flow routing
+
+---
+
+## 3. System Constraints
+
+### 🔒 Hard Limits
+
+| Constraint                 | Limit                                        | Reason                        |
+| -------------------------- | -------------------------------------------- | ----------------------------- |
+| **Flow Execution**         |
+| Max auto-progression steps | 10 consecutive nodes without user input      | Prevent infinite loops        |
+| Session timeout            | 30 minutes (absolute, from session creation) | Resource management           |
+| API request timeout        | 30 seconds (fixed)                           | Prevent hanging requests      |
+| Max validation attempts    | 3 (configurable via flow defaults)           | Prevent abuse                 |
+| **Flow Structure**         |
+| Nodes per flow             | 48                                           | Performance & maintainability |
+| Routes per node            | 8                                            | Complexity management         |
+| Flow ID length             | 96 characters                                | Database limits               |
+| Node ID length             | 96 characters                                | Database limits               |
+| Variable name length       | 96 characters                                | Database limits               |
+| **Content Limits**         |
+| Message text length        | 1024 characters                              | SMS/messaging limits          |
+| Error message length       | 512 characters                               | User experience               |
+| Template length            | 1024 characters                              | Processing limits             |
+| **Menu Options**           |
+| Static options count       | 8                                            | User experience               |
+| Dynamic options count      | 8                                            | User experience               |
+| Option label length        | 96 characters                                | Display limits                |
+| **Validation**             |
+| Regex pattern length       | 512 characters                               | Processing time               |
+| Expression length          | 512 characters                               | Processing time               |
+| Max retry attempts         | 10 (default: 3)                              | Configurable per flow         |
+| **Context & Session**      |
+| Context size (total)       | 100 KB                                       | Memory management             |
+| Array length in context    | 24 items                                     | Performance                   |
+| Max concurrent sessions    | Unlimited                                    | Limited by system memory      |
+| **API Requests**           |
+| Request URL length         | 1024 characters                              | HTTP limits                   |
+| Request body size          | 1 MB                                         | API limits                    |
+| Response body size         | 1 MB                                         | Memory & performance          |
+
+**Notes**:
+
+- Auto-progression counter resets at PROMPT or MENU nodes (user input required)
+- Session timeout is absolute (30 minutes from creation, not last activity)
+- Limits enforced during flow validation and runtime execution
+
+### ⚠️ Design Constraints
+
+1. **Single-Threaded Processing**
+
+   - One message processed at a time per session
+   - No parallel node execution
+   - Sequential flow only
+
+2. **Stateless Nodes**
+
+   - Nodes cannot maintain internal state between executions
+   - All state must be in session context
+   - Node processors are reused across sessions
+
+3. **Template Rendering Scope**
+   - Templates only have access to current context
+   - No access to previous messages
+   - No cross-session data access
+
+---
+
+## 4. Node Type Specifications
+
+### PROMPT Node
+
+**Purpose**: Collect and validate user input
+
+**Capabilities**:
+
+- ✅ Display templated message
+- ✅ Wait for user input
+- ✅ Validate input with regex or expressions
+- ✅ Save validated input to context
+- ✅ Handle interrupts (navigation keywords checked before validation)
+- ✅ Show retry messages with attempt counters
+- ✅ Empty input handling through validation
+
+**Constraints**:
+
+- ❌ Cannot execute without user input
+- ❌ Cannot skip validation if defined
+- ❌ Cannot save multiple variables from one input
+- ❌ Must have `save_to_variable` defined
+
+**Empty Input Handling**:
+
+**System Behavior**: The system automatically trims leading and trailing whitespace from user input before processing. Whitespace-only input becomes an empty string.
+
+**Processing Order**:
+
+1. Trim leading/trailing whitespace from user input
+2. Check for interrupt match (exact match, case-insensitive)
+3. If interrupt matches → route immediately (bypass all validation)
+4. If no interrupt → check empty/required rule
+5. If not empty → run validation
+6. If validation passes → save to variable
+
+**Default Behavior**: Empty input is **ALWAYS REJECTED unless explicitly allowed in validation**
+
+**Interrupt Restrictions**:
+
+- Empty string `""` is NOT allowed as an interrupt keyword (reserved for system empty handling)
+- Whitespace in interrupt keywords allowed: `"go back"`, `"cancel order"`
+- Interrupt keywords are trimmed before matching
+- Case-insensitive matching applied
+- Multi-word interrupts supported
+
+**Interrupt Behavior**:
+
+- Bypasses all validation checks
+- Does not save to variable
+- Does not count as retry attempt
+- Routes immediately to target_node
+- Can be any non-empty string (even if it would fail validation)
+
+**When No Validation Defined**:
+
+```json
+{
+  "type": "PROMPT",
+  "config": {
+    "text": "What's your name?",
+    "save_to_variable": "name"
+    // No validation defined
+  }
+}
+```
+
+- User submits empty input → **REJECTED**
+- Error message: "This field is required. Please enter a value."
+- Counts toward retry attempts
+- After max attempts → routes to fail_route or terminates
+
+**When Validation Defined (but doesn't check for empty)**:
+
+```json
+{
+  "validation": {
+    "type": "EXPRESSION",
+    "rule": "input.isAlpha()", // No empty check
+    "error_message": "Please enter letters only"
+  }
+}
+```
+
+- Empty input: `"".isAlpha()` returns `false`
+- Validation fails → retry
+
+**To explicitly allow empty input (optional fields)**:
+
+```json
+{
+  "validation": {
+    "type": "EXPRESSION",
+    "rule": "input.length == 0 || (input.isNumeric() && input.length == 10)",
+    "error_message": "Enter 10-digit phone or leave empty to skip"
+  }
+}
+```
+
+- Empty input: `"".length == 0` → true → validation passes
+- Saved as empty string ""
+
+**To explicitly require non-empty input**:
+
+```json
+{
+  "validation": {
+    "type": "EXPRESSION",
+    "rule": "input.length > 0 && input.isAlpha()",
+    "error_message": "This field is required and must contain only letters"
+  }
+}
+```
+
+**Key Principle**: Fields are required by default. Optional fields must explicitly allow empty input in validation rules.
+
+**When to Use**:
+
+- Collecting user information (name, location, time)
+- Getting confirmation (yes/no answers)
+- Requesting specific formatted input (phone, email)
+- Optional fields (with appropriate validation)
+
+**When NOT to Use**:
+
+- Displaying information only (use MESSAGE)
+- Branching logic without input (use LOGIC_EXPRESSION)
+- Selecting from options (use MENU)
+
+---
+
+### MENU Node
+
+**Purpose**: Present options and capture user selection
+
+**Capabilities**:
+
+- ✅ Static options (hardcoded list)
+- ✅ Dynamic options (from context arrays)
+- ✅ Template-based option formatting
+- ✅ Extract multiple values from selected item
+- ✅ Numeric selection (1, 2, 3...)
+- ✅ Interrupt support (same as PROMPT nodes)
+- ✅ Invalid selection handling with retry limits
+
+**Constraints**:
+
+- ❌ **Cannot mix static and dynamic** - must choose either STATIC or DYNAMIC source_type
+- ✅ **Interrupts checked first** before selection validation
+- ❌ Cannot have non-numeric selection methods
+- ❌ Selection validation limited to numeric range check only
+- ❌ Dynamic source must be an array in context
+- ❌ Output mapping only works with dynamic options
+
+**Invalid Selection Handling**:
+
+When user enters invalid selection (out of range, non-numeric, etc.):
+
+1. Display configurable error message (or default: "Invalid selection. Please choose a valid option.")
+2. Re-display menu options
+3. Wait for new input
+4. Count toward max attempts limit (from flow defaults)
+5. After max attempts: route to fail_route or terminate flow
+
+**Interrupt Behavior**:
+
+- Interrupts are checked **before** menu validation
+- If input matches an interrupt, routes to interrupt target immediately
+- Bypasses menu selection validation entirely
+- Does not count as invalid selection attempt
+
+**⚠️ Interrupt vs Selection Conflicts**:
+
+**Priority**: Interrupts **ALWAYS WIN** over valid menu selections
+
+**Problematic Pattern**:
+
+```json
+{
+  "static_options": [
+    { "label": "Option 1", "value": "val1" },
+    { "label": "Option 2", "value": "val2" },
+    { "label": "Option 3", "value": "val3" },
+    { "label": "Go back", "value": "back" } // This is option 4
+  ],
+  "interrupts": [
+    { "input": "4", "target_node": "node_cancel" } // ❌ CONFLICT!
+  ]
+}
+```
+
+- User enters "4" → Interrupt triggers → Routes to node_cancel
+- User **CANNOT** select option 4 (interrupt intercepts it)
+
+**Best Practices**:
+
+- Use non-numeric interrupts: "0", "back", "cancel" (not "1", "2", etc.)
+- Keep interrupts outside menu selection range (1-8)
+- Use descriptive text keywords instead of numbers
+- Communicate interrupts clearly to users
+
+**Recommended Pattern**:
+
+```json
+{
+  "type": "MENU",
+  "config": {
+    "text": "Select a trip:\n\n[Options listed here]\n\nOr enter 0 to cancel",
+    "source_type": "DYNAMIC",
+    "source_variable": "trips",
+    "item_template": "{{index}}. {{item.from}} → {{item.to}}",
+    "interrupts": [
+      { "input": "0", "target_node": "node_cancel" }, // ✅ Outside range
+      { "input": "back", "target_node": "node_previous" } // ✅ Text keyword
+    ],
+    "error_message": "Invalid selection. Please enter a number between 1 and {{context.trips.length}}."
+  }
+}
+```
+
+**When to Use**:
+
+- Presenting multiple choices to user
+- Selecting from database records (trips, products)
+- Yes/No confirmations with clear options
+
+**When NOT to Use**:
+
+- Free-text input (use PROMPT)
+- Conditional branching without user input (use LOGIC_EXPRESSION)
+
+---
+
+### API_ACTION Node
+
+**Purpose**: Execute external HTTP requests
+
+**Capabilities**:
+
+- ✅ HTTP methods: GET, POST, PUT, DELETE, PATCH
+- ✅ Template-based URL and body
+- ✅ Custom headers
+- ✅ Response data extraction with path notation
+- ✅ Success/failure routing
+- ✅ Type conversion (string, integer, boolean, array)
+
+**Constraints**:
+
+- ❌ No retry logic (implement in API or use multiple nodes)
+- ⚙️ **Fixed request timeout: 30 seconds** (not configurable)
+- ✅ Timeout triggers `error` route condition
+- ❌ No file upload support
+- ⚠️ Response body size limit: 1 MB (system-wide)
+- ❌ Must complete before flow continues
+- ❌ Cannot abort mid-request
+- ✅ **JSON-only responses**: Non-JSON responses route to `error` condition
+
+**Response Format Requirements**:
+
+- **Supported Format**: JSON only
+- **Content-Type**: Should be `application/json` (recommended but not strictly enforced)
+- **Parse Failure**: Routes to `error` condition
+- **Empty Response** (HTTP 204 No Content): Routes to `success` if status code matches, response_map skipped
+
+**Parse Behavior**:
+
+```
+Success status (200-299) + Valid JSON → success route
+Success status + Invalid JSON → error route
+Success status + Empty body (204) → success route (response_map skipped)
+Error status (400-599) → error route
+Timeout (30s) → error route
+```
+
+**Not Supported**:
+
+- Plain text responses
+- XML responses
+- HTML responses (e.g., error pages)
+- Binary data (PDF, images, etc.)
+- Streaming responses
+
+**Recommendation**: If your API returns non-JSON responses, wrap it in your backend proxy that converts to JSON format.
+
+**Timeout Behavior**:
+
+- Default timeout: **30 seconds**
+- After timeout: Triggers `error` route condition
+- Not configurable per node or per flow
+- System-wide setting
+
+**Example with timeout handling**:
+
+```json
+{
+  "type": "API_ACTION",
+  "config": {
+    "request": {
+      "method": "POST",
+      "url": "https://api.example.com/slow-endpoint"
+    }
+  },
+  "routes": [
+    { "condition": "success", "target_node": "node_success" },
+    { "condition": "error", "target_node": "node_timeout_or_error" }
+  ]
+}
+```
+
+**Query Parameters in URLs**:
+
+Query parameters can be added using template syntax in the URL:
+
+```json
+"request": {
+  "method": "GET",
+  "url": "https://api.example.com/users?page={{context.page}}&limit=10&sort=name"
+}
+```
+
+**Best Practice**: Always include error route to handle timeouts gracefully.
+
+**When to Use**:
+
+- Fetching user data from database
+- Submitting form data to backend
+- Checking user permissions
+- Posting transactions
+
+**When NOT to Use**:
+
+- Long-running processes (use async job patterns, must complete within 30s)
+- File uploads
+- Streaming data
+- WebSocket connections
+
+---
+
+### LOGIC_EXPRESSION Node
+
+**Purpose**: Internal conditional routing
+
+**Capabilities**:
+
+- ✅ Evaluate context variables
+- ✅ Array length checks
+- ✅ Comparison operators (==, !=, >, <, >=, <=)
+- ✅ Logical operators (&&, ||)
+- ✅ Null/None checks
+- ✅ Multiple route conditions
+
+**Constraints**:
+
+- ❌ Cannot show messages to user
+- ❌ Cannot wait for input
+- ❌ Cannot modify context
+- ❌ No complex computations
+- ❌ No function calls
+- ❌ Conditions evaluated in order (first match wins)
+
+**Path Navigation Rules**:
+
+**Null-Safe Navigation**:
+
+- Missing properties → return `null` (doesn't cause errors)
+- `null` values in path → condition evaluates to `false`
+- Empty arrays → accessing index returns `null`
+- No depth limit on nested paths
+
+**Supported Syntax**:
+
+- Dot notation: `context.user.profile.age`
+- Array index: `context.trips.0.driver` (zero-based, use dot notation)
+- Array length: `context.items.length`
+- Deep nesting: `context.a.b.c.d.e.f...` (no limit)
+
+**NOT Supported**:
+
+- Bracket notation: `context.trips[0]` ❌ (use `context.trips.0` instead)
+- Quoted keys: `context['user']` ❌
+- Negative indices: `context.trips.-1` ❌
+
+**Null-Safe Examples**:
+
+```javascript
+// context.user = null
+"context.user.age > 18"; // → false (null-safe, doesn't error)
+
+// context.trips = []
+"context.trips.0.id == '123'"; // → false (empty array, index returns null)
+
+// context = {} (missing property)
+"context.missing.path != null"; // → false (missing property)
+
+// Safe chaining
+"context.trips.length > 0 && context.trips.0.active == true";
+// If trips is empty, first condition false, second not evaluated (short-circuit)
+```
+
+**When to Use**:
+
+- Branching based on API results
+- Checking if arrays are empty
+- Routing based on user type or status
+- Implementing if-else logic
+
+**When NOT to Use**:
+
+- Displaying messages (use MESSAGE)
+- Getting user input (use PROMPT)
+- Complex calculations (do in API)
+
+---
+
+### MESSAGE Node
+
+**Purpose**: Display information and auto-progress
+
+**Capabilities**:
+
+- ✅ Display templated message
+- ✅ Auto-progress to next node
+- ✅ Access full context for templates
+
+**Constraints**:
+
+- ❌ Cannot wait for user input
+- ❌ Cannot validate anything
+- ❌ Cannot save to context
+- ❌ Must have a next node in routes
+
+**When to Use**:
+
+- Success confirmations
+- Error messages
+- Informational notifications
+- Intermediate status updates
+
+**When NOT to Use**:
+
+- Collecting input (use PROMPT)
+- Ending conversation (use END with MESSAGE before it)
+- Waiting for user acknowledgment
+
+---
+
+### END Node
+
+**Purpose**: Terminate conversation
+
+**Capabilities**:
+
+- ✅ Mark session as completed
+- ✅ Cleanup session data
+- ✅ No further nodes execute
+
+**Constraints**:
+
+- ❌ Cannot show message (use MESSAGE before END)
+- ❌ Cannot route to other nodes
+- ❌ Cannot be bypassed once reached
+- ❌ Cannot restart flow automatically
+
+**When to Use**:
+
+- Natural conversation completion
+- Error termination
+- User exit request
+
+**When NOT to Use**:
+
+- Temporary pauses (session stays active)
+- Conditional endings (use routes to END)
+
+---
+
+## 5. Templating System
+
+### Supported Patterns
+
+| Pattern          | Example                  | Result                                                 |
+| ---------------- | ------------------------ | ------------------------------------------------------ |
+| Context variable | `{{context.name}}`       | "John"                                                 |
+| Nested object    | `{{context.user.email}}` | "john@example.com"                                     |
+| Array index      | `{{context.items.0}}`    | First item (literal template if invalid/out of bounds) |
+| Item property    | `{{item.id}}`            | "trip_123"                                             |
+| Index in loop    | `{{index}}`              | 1, 2, 3...                                             |
+| User identifier  | `{{user.channel_id}}`    | "+254712345678" (WhatsApp) or "U012345" (Slack)        |
+| Channel name     | `{{user.channel}}`       | "whatsapp", "telegram", "slack"                        |
+| Input            | `{{input}}`              | User's message                                         |
+
+### Template Capabilities
+
+✅ **Supported**:
+
+- Variable substitution
+- Nested object access (dot notation)
+- Array element access
+- Special variables (item, index, user)
+- Multiple templates in same string
+- Templates in URLs and request bodies
+
+❌ **Not Supported**:
+
+- Arithmetic operations: `{{count + 1}}`
+- String manipulation: `{{name.toUpperCase()}}`
+- Conditional rendering: `{{if condition}}`
+- Loops: `{{for item in items}}`
+- Function calls: `{{formatDate(date)}}`
+- Complex expressions: `{{a > b ? c : d}}`
+- Default values with `||` operator: `{{context.name || 'Guest'}}`
+  - **Workaround**: Initialize variables with defaults in flow definition
+  - **Example**: `"variables": {"name": {"type": "string", "default": "Guest"}}`
+
+### Missing Variable Behavior
+
+When a template references a variable that doesn't exist in context:
+
+**Behavior**: Variable is displayed literally (unreplaced) - intentional debugging feature
+
+**Examples**:
+
+```json
+// Template: "Welcome, {{context.user_name}}!"
+// If context.user_name not set
+// Output: "Welcome, {{context.user_name}}!"
+
+// Template: "Order {{context.order.id}} confirmed"
+// If context.order is null
+// Output: "Order {{context.order.id}} confirmed"
+```
+
+**Why this design**:
+
+- Makes debugging easier - developers see which variables are missing
+- No silent failures or runtime errors
+- Clear indication of configuration issues
+
+**Best Practice**: Initialize all variables in flow definition with appropriate defaults:
+
+```json
+"variables": {
+  "user_name": { "type": "string", "default": "Guest" },
+  "order_id": { "type": "string", "default": null }
+}
+```
+
+### Template Contexts by Node
+
+| Node Type        | Available Variables                        | Notes                                                                                                                                          |
+| ---------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| PROMPT           | `{{context.*}}`, `{{input}}`               | `input` only in validation expressions                                                                                                         |
+| MENU             | `{{context.*}}`, `{{item.*}}`, `{{index}}` | `item` and `index` only in `item_template`                                                                                                     |
+| API_ACTION       | `{{context.*}}`, `{{user.channel_id}}`     | `user.channel_id` is the platform-specific user identifier (e.g., phone number for WhatsApp). Other user data should be fetched via API calls. |
+| LOGIC_EXPRESSION | N/A (no templates)                         | Routes use expressions, not templates                                                                                                          |
+| MESSAGE          | `{{context.*}}`                            | All context variables available                                                                                                                |
+
+**Special Variables**:
+
+- `{{user.channel_id}}`: Platform-specific user identifier (e.g., phone number for WhatsApp: "+254712345678", user ID for Slack: "U012345")
+- `{{user.channel}}`: Channel name (e.g., "whatsapp", "telegram", "slack")
+- `{{item.*}}`: Current item in MENU dynamic template (e.g., `{{item.id}}`, `{{item.name}}`)
+- `{{index}}`: 1-based counter in MENU dynamic template (1, 2, 3...)
+- `{{input}}`: User's input text (only in PROMPT validation expressions)
+- `{{current_attempt}}`: Current retry attempt (only in retry counter_text)
+- `{{max_attempts}}`: Maximum attempts (only in retry counter_text)
+
+**Variable Availability Summary**:
+
+- Retry counter variables (`current_attempt`, `max_attempts`) are **only** available in `defaults.retry_logic.counter_text`
+- They are **not** available in error messages, validation rules, or session context
+
+---
+
+## 6. Validation System
+
+### REGEX Validation
+
+**Capabilities**:
+
+- ✅ Full regex pattern matching
+- ✅ Case-sensitive and insensitive
+- ✅ Character classes, quantifiers, groups
+- ✅ Anchors (^, $)
+
+**Constraints**:
+
+- ⚠️ **Must match entire input string**
+  - The regex engine matches against the **complete user input** from start to finish
+  - Patterns are treated as if wrapped with implicit anchors: `/^pattern$/`
+  - If the pattern matches any substring, but not the entire input, validation **fails**
+  - **Always use explicit anchors (^, $) for clarity** even though they're implicit
+  - Example: Pattern `[0-9]+` for input "123abc" → **FAILS** (digits match but "abc" remains unmatched)
+  - Example: Pattern `^[0-9]+$` for input "123" → **PASSES** (entire input matched)
+- ❌ No lookahead/lookbehind support
+- ❌ No named groups
+- ❌ Cannot access captured groups in error message
+
+**Full String Match Behavior**:
+
+```javascript
+// User input: "abc123def"
+"[0-9]+"; // NO MATCH (looks for digits, but "abc" at start fails entire match)
+"^[0-9]+$"; // NO MATCH (explicit: only digits allowed) ✅ RECOMMENDED
+".*[0-9]+.*"; // MATCH (allows anything before/after digits)
+
+// User input: "123"
+"[0-9]+"; // MATCH (entire string is digits)
+"^[0-9]+$"; // MATCH (same, but explicit) ✅ RECOMMENDED
+"[0-9]{3}"; // MATCH (exactly 3 digits)
+
+// User input: "hello"
+"hello"; // MATCH (exact match)
+"^hello$"; // MATCH (explicit exact match) ✅ RECOMMENDED
+"hell"; // NO MATCH (must match entire string)
+```
+
+**Best Practice Examples** - Always use anchors:
+
+```javascript
+"^[A-Z][a-z]+$"; // Capital first letter + lowercase letters
+"^\\d{4}-\\d{2}-\\d{2}$"; // Date format YYYY-MM-DD
+"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"; // Email
+"^\\+?[0-9]{10,15}$"; // Phone number (optional +, 10-15 digits)
+```
+
+### EXPRESSION Validation
+
+**Capabilities**:
+
+- ✅ JavaScript-style methods: `input.isAlpha()`, `input.isNumeric()`, `input.isDigit()`
+- ✅ String length: `input.length`
+- ✅ Numeric comparisons: `input > 0`, `input <= 100`
+- ✅ Context variable access: `context.max_value`
+- ✅ Logical operators: `&&`, `||`
+- ✅ Type checking: numeric vs string handled automatically
+
+**Constraints**:
+
+- ❌ No custom functions
+- ❌ No string methods beyond isAlpha/isNumeric/isDigit
+- ❌ No array/object methods
+- ❌ No date/time operations
+- ❌ Limited to simple boolean expressions
+
+**Supported Methods**:
+
+```javascript
+input.isAlpha(); // Only letters (a-z, A-Z)
+input.isNumeric(); // Accepts: optional minus sign, digits, optional decimal point
+// Examples: "123", "-45", "12.34", ".5"
+// Rejects: "1e10", "1.2.3", "--5", scientific notation
+input.isDigit(); // Only digits (0-9)
+input.length; // String length
+```
+
+**Examples**:
+
+```javascript
+// Valid expressions
+"input.isAlpha() && input.length >= 3";
+"input.isNumeric() && input > 0 && input <= context.capacity";
+"input.length >= 5 && input.length <= 20";
+
+// Invalid expressions
+"input.toUpperCase() === 'YES'"; // ❌ toUpperCase not supported
+"input.includes('test')"; // ❌ includes not supported
+"parseInt(input) > 0"; // ❌ parseInt not supported
+```
+
+---
+
+## 7. Routing & Logic
+
+### Route Condition Types
+
+| Type          | Example                                | Description             |
+| ------------- | -------------------------------------- | ----------------------- |
+| Keyword       | `"success"`                            | Checks success flag     |
+| Keyword       | `"error"`                              | Checks error flag       |
+| Keyword       | `"true"`                               | Always true (else case) |
+| Keyword       | `"false"`                              | Never true              |
+| Comparison    | `"selection == 2"`                     | Integer equality        |
+| Comparison    | `"selection != null"`                  | Null check              |
+| Context check | `"context.trips.length > 0"`           | Array length            |
+| Complex       | `"selection == 1 && context.verified"` | Multiple conditions     |
+
+### Routing Capabilities
+
+✅ **Supported**:
+
+- Multiple routes per node
+- First-match wins (routes evaluated in order)
+- Context variable access
+- Selection value checking (MENU)
+- Success/error states (API_ACTION)
+- Null/None checks
+- Array length checks
+- Logical AND (&&) and OR (||)
+
+❌ **Not Supported**:
+
+- Fallback/default routes (use `"condition": "true"` as last route)
+- Priority/weight-based routing
+- Probabilistic routing
+- Time-based routing
+- External condition evaluation
+- Regular expressions in conditions
+
+### Condition Evaluation Rules
+
+1. **Order Matters**: Routes evaluated top-to-bottom
+2. **First Match Wins**: Only first matching route executed
+3. **No Fallthrough**: Cannot execute multiple routes
+4. **Type Coercion Rules**:
+   - `null` in JSON converts to `None` in expressions
+   - **No automatic type coercion** between string/number/boolean
+   - String vs number comparison **fails** (route doesn't match)
+   - Developers must ensure correct types via API response mapping
+5. **Context Access**: `context.variable` replaced with actual value before evaluation
+
+### Type Coercion in Comparisons
+
+**No Automatic Type Conversion**:
+
+- Comparisons use strict type checking
+- `"123" > 18` → **FAILS** (string vs number)
+- `"true" == true` → **FAILS** (string vs boolean)
+- `null == "null"` → **FAILS** (null vs string)
+
+**Ensuring Correct Types**:
+
+1. **API Response Mapping** (recommended):
+
+```json
+"response_map": [
+  {
+    "source_path": "age",
+    "target_variable": "age",
+    "type": "integer"  // Converts to number
+  },
+  {
+    "source_path": "verified",
+    "target_variable": "verified",
+    "type": "boolean"  // Converts to boolean
+  }
+]
+```
+
+2. **Validation in PROMPT**:
+
+```json
+{
+  "validation": {
+    "type": "EXPRESSION",
+    "rule": "input.isNumeric()", // Ensures numeric format
+    "error_message": "Enter a number"
+  }
+}
+```
+
+**Comparison Examples**:
+
+```javascript
+// Assuming age collected as string from PROMPT
+context.age = "25"; // string (before type conversion)
+
+("context.age > 18"); // FAILS (string vs number comparison returns false)
+("context.age == '25'"); // WORKS (string vs string)
+
+// After PROMPT type conversion with declared type: "integer"
+context.age = 25; // number (after successful conversion)
+
+("context.age > 18"); // WORKS (number vs number)
+("context.age == 25"); // WORKS (number vs number)
+
+// Example with MENU selection (always integer)
+context.selection = 2; // integer (automatically set by MENU)
+
+("context.selection == 2"); // WORKS (integer vs integer)
+("context.selection == '2'"); // FAILS (integer vs string)
+("context.selection > 1"); // WORKS (integer vs integer)
+```
+
+### Type Mismatch Behavior
+
+**Null-Safe Evaluation**:
+
+When comparing values of mismatched types, the system evaluates safely without throwing errors:
+
+- **String vs Number**: Comparison returns `false` (route doesn't match, moves to next route)
+- **String vs Boolean**: Comparison returns `false`
+- **Integer vs String**: Comparison returns `false`
+- **Null comparisons**: `null == null` returns `true`; `null == <any value>` returns `false`
+- **Missing properties**: Treated as `null` in comparisons
+
+**Behavior**:
+
+- No exceptions are thrown
+- Route simply doesn't match, evaluation continues to next route
+- If no routes match, flow terminates with error (see No-Match Route Behavior below)
+
+**Examples**:
+
+```javascript
+// Context values
+context.age = "25"; // string
+context.count = 10; // integer
+context.flag = true; // boolean
+context.missing = null; // null value
+
+// Type mismatch comparisons
+("context.age == 25"); // false (string "25" != integer 25)
+("context.count == '10'"); // false (integer 10 != string "10")
+("context.flag == 'true'"); // false (boolean true != string "true")
+("context.missing == null"); // true (null matches null)
+("context.missing != null"); // false
+("context.undefined_var == null"); // true (missing property treated as null)
+
+// Safe chaining with type mismatches
+("context.age > 18 || context.count > 5"); // false || true = true
+// Even though first comparison fails due to type mismatch, second succeeds
+```
+
+**Best Practices**:
+
+1. Use explicit type conversion in API_ACTION response_map
+2. Declare correct types for variables in PROMPT nodes
+3. Be aware that MENU `selection` is always an integer
+4. Test routes with expected data types during development
+
+### No-Match Route Behavior
+
+**Critical**: If no route condition evaluates to true, the flow terminates with error.
+
+**Behavior**:
+
+1. Flow execution stops immediately
+2. User sees error message: "An error occurred. Please try again."
+3. Session ends
+4. No further nodes execute
+
+**Best Practice**: Always include a catch-all route as the last option:
+
+```json
+"routes": [
+  { "condition": "specific_check", "target_node": "node_a" },
+  { "condition": "another_check", "target_node": "node_b" },
+  { "condition": "true", "target_node": "node_default" }  // ✅ Catch-all
+]
+```
+
+**Example Error Scenario**:
+
+```json
+{
+  "type": "API_ACTION",
+  "routes": [
+    { "condition": "success", "target_node": "node_success" }
+  ]
+  // ❌ BAD: No error route! If API fails, flow terminates with error
+}
+
+// ✅ GOOD: Always handle all possible outcomes
+{
+  "type": "API_ACTION",
+  "routes": [
+    { "condition": "success", "target_node": "node_success" },
+    { "condition": "error", "target_node": "node_error_handler" },
+    { "condition": "true", "target_node": "node_unexpected" }
+  ]
+}
+```
+
+---
+
+## 8. Session Management
+
+### Session Lifecycle
+
+```
+User sends message via webhook
+    ↓
+Create Session (ACTIVE)
+    ↓
+Process nodes → Update context → Move to next node
+    ↓
+(Repeat until END node)
+    ↓
+Mark Session (COMPLETED)
+    ↓
+Session expires after 30min or explicit delete
+```
+
+### Session Behavior
+
+**Session Storage**: Database persistence - sessions survive server restarts
+
+**Session Key Format**: `channel:channel_user_id:bot_id`
+
+**Examples**:
+
+- `"whatsapp:+254712345678:bot_abc123"`
+- `"whatsapp:5521999999999:bot_restaurant"`
+
+**Why This Format**:
+
+- ✅ Supports multiple channels (WhatsApp, Telegram, Slack, etc.)
+- ✅ Same user can interact with multiple bots simultaneously
+- ✅ Each bot maintains isolated sessions
+- ✅ Future-proof for multi-channel expansion
+
+**Session Limits**:
+
+- ✅ One active session per user per bot per channel
+- ✅ Same user CAN have multiple sessions (one per bot)
+- ✅ Same user CAN have multiple sessions (one per channel)
+- ❌ Cannot pause/resume sessions
+- ⚠️ **Starting new flow in same bot terminates old session silently** - When user triggers a new flow (via trigger keyword) while already in an active session, the old session is immediately deleted and replaced. No warning shown - this is intentional for simplicity. Flow designers should use interrupts within flows for safe navigation.
+
+**Session Timeout**:
+
+- ✅ **Absolute timeout**: 30 minutes from session creation
+- ❌ Not a sliding window (doesn't reset on activity)
+- ❌ Not configurable per flow
+- After timeout: Session marked as EXPIRED, cannot resume
+
+**Example Timeline**:
+
+```
+10:00 AM - User starts flow (session created)
+10:15 AM - User sends message (session still active, 15 min remaining)
+10:30 AM - Session expires (30 min from start)
+10:31 AM - User sends message → Session expired error, must restart
+```
+
+**Session Termination Scenarios**:
+
+1. END node reached → COMPLETED status
+2. 30 minutes elapsed → EXPIRED status
+3. New flow triggered → Old session deleted silently, new ACTIVE session created
+4. No route match → ERROR status, session ends, user sees error message
+5. Max auto-progression reached → ERROR status, session ends
+6. Max validation attempts exceeded → Routes to fail_route or terminates
+
+### Session Capabilities
+
+✅ **Supported**:
+
+- One active session per user per bot per channel
+- Multiple concurrent sessions for same user (different bots or channels)
+- Context variables persist across nodes
+- Message history tracking
+- Validation attempt tracking
+- Session timeout (30 minutes, absolute from creation)
+- Explicit session reset
+- Silent session termination when switching flows within same bot
+
+❌ **Not Supported**:
+
+- Multiple concurrent sessions per user per bot (within same channel)
+- Session sharing between users
+- Session migration between bots
+- Session state snapshots/rollback
+- Cross-session data access
+- Session pause/resume functionality
+- Warning notifications when session is terminated
+
+### Context Variables
+
+**Capabilities**:
+
+- ✅ Store strings, integers, booleans, arrays
+- ✅ Update existing variables
+- ✅ Add new variables during flow
+- ✅ Pass between nodes
+- ✅ Use in templates
+- ✅ Use in conditions
+
+**Constraints**:
+
+- ❌ Cannot delete variables (set to null instead)
+- ❌ Cannot rename variables
+- ❌ No variable type constraints (runtime)
+- ❌ No variable lifecycle management
+- ❌ No nested update operations (nested objects are immutable once set; use API to reconstruct and reassign entire object)
+
+---
+
+## 9. Error Handling & Termination
+
+### Error Scenarios
+
+| Scenario                        | Behavior                                                     | User Experience                                             |
+| ------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------- |
+| No route matches                | Flow terminates                                              | "An error occurred. Please try again."                      |
+| Max auto-progression (10 nodes) | Flow terminates                                              | "System error. Please contact support."                     |
+| Max validation attempts         | Route to fail_route or terminate                             | Configurable message or default error                       |
+| API timeout (30s)               | Triggers error route                                         | Developer handles via routes                                |
+| Session timeout (30 min)        | Session expires                                              | "Session expired. Please start again."                      |
+| Invalid flow structure          | Validation error                                             | (Before deployment)                                         |
+| Type mismatch in comparison     | Route doesn't match                                          | Continues to next route                                     |
+| Template missing variable       | Shows literal `{{variable}}`                                 | No error (debugging feature)                                |
+| Empty array in dynamic menu     | Shows menu header with no options; any input will be invalid | Recommend checking array length with LOGIC_EXPRESSION first |
+| Invalid menu selection          | Show error, retry                                            | Counts toward max attempts                                  |
+
+### Termination Triggers
+
+**Automatic Termination**:
+
+1. **END node reached** → Session marked COMPLETED
+2. **Session timeout (30 min)** → Session marked EXPIRED
+3. **No matching route** → Session marked ERROR, terminates immediately
+4. **Max auto-progression** → Session marked ERROR after 10 consecutive nodes
+5. **Max retry attempts** → Routes to fail_route or terminates if none defined
+6. **New flow starts** → Old session deleted silently, new session created
+
+**User Notification**:
+
+- END node: No message (use MESSAGE node before END for final message)
+- Timeout: "Session expired. Please start again."
+- No route match: "An error occurred. Please try again."
+- Max auto-progression: "System error. Please contact support."
+- Max retries: Configurable via fail_route node or default error
+- New flow: Silent (no notification to user)
+
+### Best Practices for Error Handling
+
+#### 1. Always Include Error Routes
+
+```json
+// ✅ GOOD - Complete error handling
+{
+  "type": "API_ACTION",
+  "routes": [
+    { "condition": "success", "target_node": "node_success" },
+    { "condition": "error", "target_node": "node_error_handler" },
+    { "condition": "true", "target_node": "node_unexpected" }
+  ]
+}
+
+// ❌ BAD - Missing error route
+{
+  "type": "API_ACTION",
+  "routes": [
+    { "condition": "success", "target_node": "node_success" }
+  ]
+  // If API fails, flow terminates with generic error
+}
+```
+
+#### 2. Use fail_route in Defaults
+
+```json
+{
+  "defaults": {
+    "retry_logic": {
+      "max_attempts": 3,
+      "fail_route": "node_validation_failed"
+    }
+  },
+  "nodes": {
+    "node_validation_failed": {
+      "type": "MESSAGE",
+      "config": {
+        "text": "We couldn't process your input. Please contact support at +254..."
+      },
+      "routes": [{ "condition": "true", "target_node": "node_end" }]
+    }
+  }
+}
+```
+
+#### 3. Provide Clear Error Messages
+
+```json
+{
+  "type": "MESSAGE",
+  "config": {
+    "text": "❌ We couldn't process your request.\n\nPlease try again or contact support at +254700123456."
+  }
+}
+```
+
+#### 4. Handle Empty Arrays Before Dynamic Menus
+
+```json
+{
+  "type": "LOGIC_EXPRESSION",
+  "routes": [
+    {
+      "condition": "context.trips.length > 0",
+      "target_node": "node_show_menu"
+    },
+    {
+      "condition": "context.trips.length == 0",
+      "target_node": "node_no_trips_available"
+    },
+    {
+      "condition": "true",
+      "target_node": "node_error"
+    }
+  ]
+}
+```
+
+#### 5. Add Catch-All Routes
+
+```json
+// Last route in every non-END node
+"routes": [
+  { "condition": "specific_condition_1", "target_node": "node_a" },
+  { "condition": "specific_condition_2", "target_node": "node_b" },
+  { "condition": "true", "target_node": "node_fallback" }  // ✅ Catch-all
+]
+```
+
+### Error Recovery Patterns
+
+#### Pattern 1: Retry with Alternative
+
+```json
+{
+  "node_api_call": {
+    "type": "API_ACTION",
+    "routes": [
+      { "condition": "success", "target_node": "node_success" },
+      { "condition": "error", "target_node": "node_offer_alternative" }
+    ]
+  },
+  "node_offer_alternative": {
+    "type": "MESSAGE",
+    "config": {
+      "text": "We couldn't complete that action. Would you like to try a different option?"
+    },
+    "routes": [{ "condition": "true", "target_node": "node_menu_alternatives" }]
+  }
+}
+```
+
+#### Pattern 2: Graceful Degradation
+
+```json
+{
+  "node_fetch_recommendations": {
+    "type": "API_ACTION",
+    "routes": [
+      {
+        "condition": "success && context.recommendations.length > 0",
+        "target_node": "node_show_recommendations"
+      },
+      {
+        "condition": "success && context.recommendations.length == 0",
+        "target_node": "node_manual_search"
+      },
+      { "condition": "error", "target_node": "node_manual_search" }
+    ]
+  }
+}
+```
+
+#### Pattern 3: Error with Support Escalation
+
+```json
+{
+  "node_critical_error": {
+    "type": "MESSAGE",
+    "config": {
+      "text": "We encountered an error processing your request.\n\n📞 Call support: +254700123456\n💬 WhatsApp: +254700123456\n⏰ Available 24/7"
+    },
+    "routes": [{ "condition": "true", "target_node": "node_end" }]
+  }
+}
+```
+
+### Debugging Tips
+
+1. **Use missing variable behavior**: Undefined variables show as `{{variable}}` in output
+2. **Add debug nodes**: Insert MESSAGE nodes to display context state
+3. **Check route order**: First matching route wins, order matters
+4. **Verify type conversions**: Use response_map with explicit types
+5. **Test error paths**: Manually trigger error conditions during development
+6. **Monitor auto-progression**: Add counters to track node chains
+7. **Validate flow structure**: Use validation tools before deployment
+
+---
+
+## 10. Security Considerations
+
+### 🔒 Security Best Practices
+
+Security is critical when building conversational flows that handle user data and integrate with external systems. This section outlines key security considerations and best practices.
+
+#### 1. Input Sanitization
+
+**User Input Handling**:
+
+- All user input is treated as untrusted
+- System automatically trims whitespace (leading/trailing)
+- No automatic sanitization for special characters or injection attempts
+- **Developer Responsibility**: Validate and sanitize input appropriately for your use case
+
+**Recommendations**:
+
+```json
+// ✅ GOOD - Strict validation prevents injection
+{
+  "validation": {
+    "type": "REGEX",
+    "rule": "^[A-Za-z0-9_-]+$",
+    "error_message": "Only letters, numbers, hyphens and underscores allowed"
+  }
+}
+
+// ⚠️ CAUTION - Accepting free text
+{
+  "validation": {
+    "type": "EXPRESSION",
+    "rule": "input.length > 0",
+    "error_message": "Required"
+  }
+  // Ensure API backend properly sanitizes this input!
+}
+```
+
+#### 2. API Credential Management
+
+**Critical Rule**: Never put sensitive credentials directly in flow JSON files.
+
+**❌ NEVER DO THIS**:
+
+```json
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.example.com/data",
+    "headers": {
+      "Authorization": "Bearer sk_live_YOUR_SECRET_KEY_HERE" // ❌ EXPOSED!
+    }
+  }
+}
+```
+
+**✅ RECOMMENDED APPROACH - Backend Proxy Pattern**:
+
+Since the Bot Builder system does **NOT** have built-in credential injection:
+
+1. **Deploy Your Own Backend API**: Create a backend service that your flows call
+2. **Backend Handles Third-Party APIs**: Your backend manages all third-party API credentials
+3. **Flows Call Your Backend**: API_ACTION nodes call your secure backend endpoints
+4. **Your Backend Proxies Requests**: Your backend authenticates to third-party services
+
+**Architecture**:
+
+```
+Bot Flow → API_ACTION → Your Backend (secure) → Third-Party API (with credentials)
+                         ↓
+                         (Credentials stored securely)
+```
+
+**Example Implementation**:
+
+```json
+// In your flow - calls YOUR backend
+{
+  "type": "API_ACTION",
+  "config": {
+    "request": {
+      "method": "POST",
+      "url": "https://your-backend.com/api/create-trip", // Your secure backend
+      "body": {
+        "user_id": "{{user.channel_id}}",
+        "destination": "{{context.destination}}"
+      }
+    }
+  }
+}
+```
+
+```python
+# Your backend service (example)
+@app.post("/api/create-trip")
+async def create_trip(request: TripRequest):
+    # Your backend has the third-party API key
+    api_key = os.getenv("THIRD_PARTY_API_KEY")
+
+    # Your backend calls third-party API with credentials
+    response = await third_party_api.create(
+        headers={"Authorization": f"Bearer {api_key}"},
+        data=request.dict()
+    )
+
+    return response
+```
+
+**Key Principles**:
+
+- **Never put credentials in flow JSON**
+- **Your backend is the security boundary**
+- **Bot Builder flows are credential-free**
+- **All authentication happens in your backend**
+
+#### 3. PII (Personally Identifiable Information) Handling
+
+**Data Collection Principles**:
+
+- Collect only necessary information
+- Inform users what data is being collected and why
+- Store PII securely with encryption
+- Implement data retention policies
+- Provide mechanisms for data deletion upon request
+
+**Sensitive Data Types**:
+
+- Phone numbers (already collected as session key)
+- Email addresses
+- Full names
+- Addresses
+- Payment information
+- Health information
+- Government IDs
+
+**Best Practices**:
+
+```json
+// ✅ GOOD - Clear purpose, validated format
+{
+  "type": "PROMPT",
+  "config": {
+    "text": "To process your order, please enter your email address:",
+    "save_to_variable": "customer_email",
+    "validation": {
+      "type": "REGEX",
+      "rule": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+      "error_message": "Please enter a valid email address"
+    }
+  }
+}
+```
+
+#### 4. Template Injection Prevention
+
+**Risk**: User input in templates could potentially expose sensitive data
+
+**Safe Practices**:
+
+- Never use unsanitized user input directly in templates
+- User input is already stored in context variables (safe)
+- Template engine only supports variable substitution (no code execution)
+- No support for complex expressions reduces injection risk
+
+**Example**:
+
+```json
+// ✅ SAFE - User input stored in variable, used in message
+{
+  "type": "MESSAGE",
+  "config": {
+    "text": "Hello {{context.user_name}}! Your request has been received."
+  }
+}
+// Even if user_name contains "{{context.password}}", it displays literally
+```
+
+#### 5. Session Security
+
+**Recommendations**:
+
+- Implement session encryption at rest and in transit
+- Use secure session tokens with proper authentication
+- Implement rate limiting per user/session
+- Monitor for suspicious patterns (multiple failed attempts, rapid requests)
+- Regularly audit session data access
+- Implement session timeout policies appropriately
+
+#### 6. API Communication Security
+
+**Requirements**:
+
+- **Always use HTTPS** for API endpoints
+- Validate SSL/TLS certificates
+- Implement request signing for critical operations
+- Use API rate limiting and throttling
+- Log all API interactions for audit trails
+
+**Example Secure API Configuration**:
+
+```json
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.example.com/secure-endpoint", // ✅ HTTPS
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Request-ID": "{{context.request_id}}" // For tracing
+    }
+  }
+}
+```
+
+#### 7. Error Message Security
+
+**Avoid Exposing**:
+
+- Internal system details
+- Database structure or queries
+- API endpoint details
+- Stack traces
+- User data from other sessions
+
+**❌ INSECURE**:
+
+```json
+{
+  "text": "Database connection failed: Connection refused to mysql://prod-db:3306/users"
+}
+```
+
+**✅ SECURE**:
+
+```json
+{
+  "text": "We're experiencing technical difficulties. Please try again later or contact support."
+}
+```
+
+#### 8. Audit Logging
+
+**What to Log**:
+
+- User interactions (with timestamps)
+- Flow state changes
+- API calls made (without sensitive data in logs)
+- Validation failures
+- Session creation/termination
+- Error occurrences
+
+**What NOT to Log**:
+
+- Plain-text passwords or secrets
+- Full credit card numbers
+- Raw PII without encryption
+- API keys or tokens
+
+**Example Log Entry**:
+
+```json
+{
+  "timestamp": "2024-11-29T10:30:45Z",
+  "channel": "whatsapp",
+  "channel_user_id": "+254XXXXXX456", // Partially masked
+  "bot_id": "550e8400-e29b-41d4-a716-446655440000",
+  "flow_id": "a1b2c3d4-e5f6-4789-a012-3456789abcde",
+  "flow_name": "driver_onboarding",
+  "node_id": "node_confirm_trip",
+  "action": "user_input_received",
+  "validation_result": "success"
+}
+```
+
+### Security Checklist for Flow Developers
+
+Before deploying a flow to production, verify:
+
+- [ ] No API keys or secrets in flow JSON
+- [ ] All API endpoints use HTTPS
+- [ ] Input validation appropriate for data type
+- [ ] PII collected only when necessary
+- [ ] Error messages don't expose system internals
+- [ ] Rate limiting configured at infrastructure level
+- [ ] Audit logging enabled
+- [ ] Security review completed
+
+### Incident Response
+
+**If a Security Breach Occurs**:
+
+1. **Immediate Actions**:
+   - Isolate affected systems
+   - Disable compromised API keys immediately
+   - Block suspicious sessions/phone numbers
+2. **Assessment**:
+   - Determine scope of breach
+   - Identify compromised data
+   - Document timeline
+3. **Notification**:
+   - Notify affected users (if PII exposed)
+   - Report to regulatory authorities if required
+   - Update security team
+4. **Remediation**:
+   - Patch vulnerabilities
+   - Rotate all credentials
+   - Update security measures
+   - Conduct post-incident review
+
+### Additional Resources
+
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [API Security Best Practices](https://owasp.org/www-project-api-security/)
+
+---
+
+## 11. What You CAN Do
+
+### ✅ Conversation Patterns
+
+1. **Sequential Data Collection**
+
+   ```
+   PROMPT (name) → PROMPT (email) → PROMPT (phone) → API_ACTION (save) → MESSAGE (confirm) → END
+   ```
+
+2. **Conditional Branching**
+
+   ```
+   API_ACTION (check user) → LOGIC_EXPRESSION → [existing user flow | new user flow]
+   ```
+
+3. **Dynamic Menus**
+
+   ```
+   API_ACTION (fetch items) → MENU (select item) → PROMPT (quantity) → API_ACTION (order)
+   ```
+
+4. **Retry with Validation**
+
+   ```
+   PROMPT (with validation) → [valid: next node | invalid: retry up to 3 times]
+   ```
+
+5. **Multi-Level Menus**
+
+   ```
+   MENU (category) → MENU (subcategory) → MENU (item) → PROMPT (confirm)
+   ```
+
+6. **API-Driven Logic**
+   ```
+   API_ACTION → LOGIC_EXPRESSION (check response) → [success path | error path]
+   ```
+
+### ✅ Use Cases
+
+- **Forms**: Multi-step data collection with validation
+- **Surveys**: Sequential questions with branching
+- **Bookings**: Select date → time → location → confirm
+- **E-commerce**: Browse → select → quantity → checkout
+- **Support**: Issue type → details → ticket creation
+- **Onboarding**: Registration → verification → setup
+
+---
+
+## 12. What You CANNOT Do
+
+### ❌ Prohibited Patterns
+
+1. **Parallel Processing**
+
+   ```
+   ❌ Cannot execute multiple API calls simultaneously
+   ❌ Cannot process multiple nodes at once
+   ❌ Cannot have concurrent user paths
+   ```
+
+2. **Loop Constructs**
+
+   ```
+   ❌ No for/while loops (use recursive menu patterns instead)
+   ❌ No iteration over arrays in nodes
+   ❌ No repeat-until patterns
+   ```
+
+3. **Complex Computations**
+
+   ```
+   ❌ No arithmetic in templates: {{price * quantity}}
+   ❌ No string manipulation: {{name.toUpperCase()}}
+   ❌ No date calculations
+   ❌ No aggregations (sum, average)
+   ```
+
+4. **External Dependencies**
+
+   ```
+   ❌ No file system access
+   ❌ No database direct access (use API_ACTION)
+   ❌ No WebSocket connections
+   ❌ No scheduled tasks
+   ❌ No push notifications
+   ```
+
+5. **Advanced Routing**
+
+   ```
+   ❌ No weighted random routing
+   ❌ No time-based routing
+   ❌ No A/B testing
+   ❌ No user segmentation in routes
+   ```
+
+6. **State Management**
+   ```
+   ❌ No undo/redo functionality
+   ❌ No session branching/forking
+   ❌ No state snapshots
+   ❌ No transaction rollback
+   ```
+
+### ❌ Anti-Patterns to Avoid
+
+1. **Using PROMPT for Display**
+
+   ```javascript
+   // ❌ BAD
+   "node_confirm": {
+     "type": "PROMPT",
+     "config": {
+       "text": "Order confirmed!",
+       "save_to_variable": "unused"
+     }
+   }
+
+   // ✅ GOOD
+   "node_confirm": {
+     "type": "MESSAGE",
+     "config": {
+       "text": "Order confirmed!"
+     }
+   }
+   ```
+
+2. **Complex Validation in PROMPT**
+
+   ```javascript
+   // ❌ BAD - Do validation in API
+   "validation": {
+     "rule": "complex business logic here"
+   }
+
+   // ✅ GOOD - Simple validation in PROMPT, complex in API
+   "validation": {
+     "rule": "input.length >= 3"
+   }
+   // Then verify in API_ACTION node
+   ```
+
+3. **Deeply Nested Conditions**
+
+   ```javascript
+   // ❌ BAD
+   "condition": "context.a && (context.b || context.c) && !context.d"
+
+   // ✅ GOOD - Use separate LOGIC_EXPRESSION nodes
+   ```
+
+---
+
+## 13. Best Practices
+
+### 🎯 Flow Design
+
+1. **Keep Nodes Focused**
+
+   - One responsibility per node
+   - Clear node names describing action
+   - Short, focused messages
+
+2. **Plan for Errors**
+
+   - Always have error routes from API_ACTION
+   - Provide retry options
+   - Clear error messages
+   - Graceful degradation
+
+3. **Validate Early**
+
+   - Validate in PROMPT nodes
+   - Re-validate in API if needed
+   - Clear error messages
+   - Reasonable retry limits
+
+4. **Use Appropriate Node Types**
+   - PROMPT: Input collection only
+   - MENU: Selection from options
+   - MESSAGE: Information display
+   - API_ACTION: External operations
+   - LOGIC_EXPRESSION: Conditional routing
+
+### 🎯 Context Management
+
+1. **Initialize Variables**
+
+   ```json
+   "variables": {
+     "user_name": { "type": "string", "default": null },
+     "selected_items": { "type": "array", "default": [] }
+   }
+   ```
+
+2. **Use Descriptive Names**
+
+   - `driver_capacity` not `dc`
+   - `from_location` not `from`
+   - `selected_trip_id` not `sel_id`
+
+3. **Clean Up Context**
+   - Don't accumulate unnecessary data
+   - Set to null when done
+   - Be mindful of session size
+
+### 🎯 Templating
+
+1. **Initialize Variables with Defaults**
+
+   Since the template engine doesn't support `||` for default values, initialize variables with defaults in your flow definition:
+
+   ```json
+   "variables": {
+     "user_name": {"type": "string", "default": "Guest"},
+     "items": {"type": "array", "default": []}
+   }
+   ```
+
+   Then use in templates:
+
+   ```
+   Welcome, {{context.user_name}}!
+   ```
+
+2. **Keep Templates Simple**
+
+   - Avoid deeply nested: `{{context.user.profile.settings.theme}}`
+   - Extract to variable first if needed
+
+3. **Test Edge Cases**
+   - Null values
+   - Empty arrays
+   - Missing properties
+
+### 🎯 API Integration
+
+1. **Handle Timeouts**
+
+   - Have error routes
+   - Provide retry option
+   - Don't leave user stuck
+
+2. **Map Response Data**
+
+   - Map only what you need
+   - Use appropriate types
+   - Handle missing fields
+
+3. **Secure Credentials**
+   - Never put API keys in flow
+   - Use environment variables
+   - Implement server-side auth
+
+---
+
+## Limitations Summary
+
+### Technical Limitations
+
+| Feature             | Limitation              | Workaround                |
+| ------------------- | ----------------------- | ------------------------- |
+| Auto-progression    | Max 10 steps            | Design shorter chains     |
+| Validation attempts | Max 3 (default)         | Configure in defaults     |
+| Session timeout     | 30 minutes              | User must restart         |
+| Template complexity | Basic substitution only | Do complex logic in API   |
+| Routing complexity  | Simple conditions only  | Break into multiple nodes |
+
+### Design Limitations
+
+| What You Want      | Why Not Possible           | Alternative                      |
+| ------------------ | -------------------------- | -------------------------------- |
+| For loops          | Not a programming language | Use recursive patterns with MENU |
+| File uploads       | Not supported              | Use API with upload URL          |
+| Real-time updates  | No push mechanism          | Poll with API_ACTION             |
+| Scheduled messages | No scheduler               | Use external service + API       |
+| A/B testing        | No built-in support        | Handle in API                    |
+
+---
+
+## Conclusion
+
+The Bot Builder is designed for:
+
+- ✅ Structured conversational flows
+- ✅ Data collection and validation
+- ✅ API integration
+- ✅ Conditional branching
+- ✅ User-driven navigation
+
+It is NOT designed for:
+
+- ❌ Complex computations
+- ❌ Real-time features
+- ❌ File handling
+- ❌ Long-running processes
+- ❌ Advanced programming constructs
+
+**Golden Rule**: Keep flows simple, use APIs for complex logic, and design for the user experience first.

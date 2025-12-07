@@ -1,0 +1,267 @@
+{
+  "flow_id": "tujane_driver_flow_v1",
+  "trigger_keywords": ["START"],
+
+  "variables": {
+    "driver_id": { "type": "string", "default": null },
+    "driver_name": { "type": "string", "default": "Driver" },
+    "is_registered": { "type": "boolean", "default": false },
+    "driver_capacity": { "type": "integer", "default": 4 },
+    "from_location": { "type": "string", "default": null },
+    "destination": { "type": "string", "default": null },
+    "departure_time": { "type": "string", "default": null },
+    "available_seats": { "type": "integer", "default": null },
+    "recent_trips": { "type": "array", "default": [] },
+    "selected_trip_id": { "type": "string", "default": null }
+  },
+
+  "defaults": {
+    "retry_logic": {
+      "max_attempts": 5,
+      "counter_text": "(Attempt {{current_attempt}} of {{max_attempts}})",
+      "fail_route": "node_welcome_menu"
+    }
+  },
+
+  "start_node_id": "node_check_driver_status",
+
+  "nodes": {
+    "node_check_driver_status": {
+      "id": "node_check_driver_status",
+      "type": "API_ACTION",
+      "config": {
+        "description": "Verify driver registration and load basic info.",
+        "request": {
+          "method": "GET",
+          "url": "https://tujane-api.com/drivers/{{user.phone}}"
+        },
+        "response_map": [
+          { "source_path": "body.id", "target_variable": "driver_id" },
+          { "source_path": "body.name", "target_variable": "driver_name" },
+          {
+            "source_path": "body.capacity",
+            "target_variable": "driver_capacity",
+            "type": "integer"
+          }
+        ],
+        "success_check": { "expression": "response.body.id != null" }
+      },
+      "routes": [
+        { "condition": "success", "target_node": "node_fetch_recent_trips" },
+        { "condition": "error", "target_node": "node_new_driver_welcome" }
+      ]
+    },
+
+    "node_fetch_recent_trips": {
+      "id": "node_fetch_recent_trips",
+      "type": "API_ACTION",
+      "config": {
+        "description": "Load active or recent trips.",
+        "request": {
+          "method": "POST",
+          "url": "https://tujane-api.com/trips/recent",
+          "body": { "driver_id": "{{context.driver_id}}" }
+        },
+        "response_map": [
+          {
+            "source_path": "body.data.trips",
+            "target_variable": "recent_trips",
+            "type": "array"
+          }
+        ],
+        "success_check": { "status_code_in": [200] }
+      },
+      "routes": [
+        { "condition": "success", "target_node": "node_check_has_trips" }
+      ]
+    },
+
+    "node_check_has_trips": {
+      "id": "node_check_has_trips",
+      "type": "LOGIC_EXPRESSION",
+      "config": { "description": "Route based on recent trip history." },
+      "routes": [
+        {
+          "condition": "context.recent_trips.length > 0",
+          "target_node": "node_welcome_menu"
+        },
+        {
+          "condition": "true",
+          "target_node": "node_get_origin"
+        }
+      ]
+    },
+
+    "node_welcome_menu": {
+      "id": "node_welcome_menu",
+      "type": "MENU",
+      "config": {
+        "text": "Welcome back, {{context.driver_name}}! Select an option or choose a recent trip:",
+        "source_type": "DYNAMIC",
+        "source_variable": "recent_trips",
+        "item_template": "{{index}}. Repeat trip: {{item.origin}} to {{item.destination}} at {{item.time}}",
+        "static_options": [{ "label": "Start a NEW trip", "value": "NEW" }],
+        "output_mapping": [
+          {
+            "source_path": "{{item.id}}",
+            "target_variable": "selected_trip_id"
+          },
+          {
+            "source_path": "{{item.origin}}",
+            "target_variable": "from_location"
+          },
+          {
+            "source_path": "{{item.destination}}",
+            "target_variable": "destination"
+          }
+        ]
+      },
+      "routes": [
+        { "condition": "selection == 'NEW'", "target_node": "node_get_origin" },
+        { "condition": "selection != null", "target_node": "node_get_time" }
+      ]
+    },
+
+    "node_get_origin": {
+      "id": "node_get_origin",
+      "type": "PROMPT",
+      "config": {
+        "text": "Where are you starting from, {{context.driver_name}}? (e.g., Rohero, Centre Ville)",
+        "save_to_variable": "from_location",
+        "validation": {
+          "type": "EXPRESSION",
+          "rule": "input.isAlpha() && input.length >= 3",
+          "error_message": "Invalid location. Please use only letters and ensure it's at least 3 characters."
+        }
+      },
+      "routes": [
+        { "condition": "success", "target_node": "node_get_destination" }
+      ]
+    },
+
+    "node_get_destination": {
+      "id": "node_get_destination",
+      "type": "PROMPT",
+      "config": {
+        "text": "What is your destination?",
+        "save_to_variable": "destination",
+        "validation": {
+          "type": "EXPRESSION",
+          "rule": "input.isAlpha() && input.length >= 3",
+          "error_message": "Invalid location. Please use only letters."
+        },
+        "interrupts": [{ "input": "0", "target_node": "node_get_origin" }]
+      },
+      "routes": [{ "condition": "success", "target_node": "node_get_time" }]
+    },
+
+    "node_get_time": {
+      "id": "node_get_time",
+      "type": "PROMPT",
+      "config": {
+        "text": "What time are you leaving? (Format HH:MM, e.g., 14:30)",
+        "save_to_variable": "departure_time",
+        "validation": {
+          "type": "REGEX",
+          "rule": "^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$",
+          "error_message": "Time format is incorrect. Use HH:MM."
+        },
+        "interrupts": [{ "input": "0", "target_node": "node_get_destination" }]
+      },
+      "routes": [{ "condition": "success", "target_node": "node_get_seats" }]
+    },
+
+    "node_get_seats": {
+      "id": "node_get_seats",
+      "type": "PROMPT",
+      "config": {
+        "text": "How many seats are available? Max is {{context.driver_capacity}}.",
+        "save_to_variable": "available_seats",
+        "validation": {
+          "type": "EXPRESSION",
+          "rule": "input.isNumeric() && input > 0 && input <= context.driver_capacity",
+          "error_message": "Seat count must be between 1 and {{context.driver_capacity}}."
+        },
+        "interrupts": [{ "input": "0", "target_node": "node_get_time" }]
+      },
+      "routes": [{ "condition": "success", "target_node": "node_confirm_trip" }]
+    },
+
+    "node_confirm_trip": {
+      "id": "node_confirm_trip",
+      "type": "MENU",
+      "config": {
+        "text": "Confirm trip: From {{context.from_location}} to {{context.destination}} at {{context.departure_time}} with {{context.available_seats}} seats. Reply 1 or 2.",
+        "source_type": "STATIC",
+        "static_options": [
+          { "label": "Confirm and Post", "value": "1" },
+          { "label": "Cancel", "value": "2" }
+        ]
+      },
+      "routes": [
+        { "condition": "selection == '1'", "target_node": "node_post_trip" },
+        { "condition": "selection == '2'", "target_node": "node_flow_end" }
+      ]
+    },
+
+    "node_post_trip": {
+      "id": "node_post_trip",
+      "type": "API_ACTION",
+      "config": {
+        "description": "Send final trip details to the service/database.",
+        "request": {
+          "method": "POST",
+          "url": "https://tujane-api.com/trips/new",
+          "body": {
+            "driver_id": "{{context.driver_id}}",
+            "origin": "{{context.from_location}}",
+            "dest": "{{context.destination}}",
+            "time": "{{context.departure_time}}",
+            "seats": "{{context.available_seats}}"
+          }
+        },
+        "response_map": [
+          { "source_path": "body.trip_id", "target_variable": "new_trip_id" }
+        ],
+        "success_check": { "status_code_in": [201] }
+      },
+      "routes": [
+        { "condition": "success", "target_node": "node_success_message" },
+        { "condition": "error", "target_node": "node_post_failure" }
+      ]
+    },
+
+    "node_success_message": {
+      "id": "node_success_message",
+      "type": "MESSAGE",
+      "config": {
+        "text": "Your trip (ID: {{context.new_trip_id}}) has been posted successfully! Drive safe."
+      },
+      "routes": [{ "condition": "true", "target_node": "node_flow_end" }]
+    },
+
+    "node_post_failure": {
+      "id": "node_post_failure",
+      "type": "MESSAGE",
+      "config": {
+        "text": "Sorry, failed to post the trip due to a server error. Please try again later."
+      },
+      "routes": [{ "condition": "true", "target_node": "node_flow_end" }]
+    },
+
+    "node_new_driver_welcome": {
+      "id": "node_new_driver_welcome",
+      "type": "MESSAGE",
+      "config": {
+        "text": "Welcome to Tujane! It looks like you're new. Please contact support to register your vehicle."
+      },
+      "routes": [{ "condition": "true", "target_node": "node_flow_end" }]
+    },
+
+    "node_flow_end": {
+      "id": "node_flow_end",
+      "type": "END",
+      "config": {}
+    }
+  }
+}
