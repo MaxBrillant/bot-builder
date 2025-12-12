@@ -53,7 +53,7 @@ class LogicProcessor(BaseProcessor):
         """
         # Evaluate routes immediately (no message, no input)
         routes = node.get('routes', [])
-        next_node = self.evaluate_routes(routes, context)
+        next_node = self.evaluate_routes(routes, context, node.get('type'))
         
         if next_node is None:
             node_id = node.get('id', 'unknown')

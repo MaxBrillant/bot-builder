@@ -6,6 +6,7 @@ Supports {{variable}} syntax with dot notation and array indexing
 
 import re
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 from app.utils.logger import get_logger
 from app.utils.exceptions import TemplateRenderError
 
@@ -69,6 +70,52 @@ class TemplateEngine:
                     return match.group(0)  # Return {{variable}} as-is
                 
                 return str(value)
+            
+            rendered = self.VARIABLE_PATTERN.sub(replace_variable, template)
+            return rendered
+            
+        except Exception as e:
+            logger.error(f"Template render error: {str(e)}", template=template)
+            raise TemplateRenderError(f"Failed to render template: {str(e)}", template=template)
+    
+    def render_url(self, template: str, context: Dict[str, Any]) -> str:
+        """
+        Render template with URL encoding for variable values
+        Use this for URLs to properly encode special characters
+        
+        Args:
+            template: Template string with {{variable}} placeholders
+            context: Dictionary containing variable values
+        
+        Returns:
+            Rendered string with variables substituted and URL-encoded
+        
+        Examples:
+            >>> engine = TemplateEngine()
+            >>> engine.render_url("https://api.example.com/user/{{phone}}", {"phone": "+254712345678"})
+            "https://api.example.com/user/%2B254712345678"
+            
+            >>> engine.render_url("https://example.com/search?q={{query}}", {"query": "hello world"})
+            "https://example.com/search?q=hello%20world"
+            
+            >>> engine.render_url("https://example.com/path/{{id}}", {"id": "user@example.com"})
+            "https://example.com/path/user%40example.com"
+        """
+        if not template:
+            return ""
+        
+        try:
+            def replace_variable(match):
+                variable_path = match.group(1).strip()
+                value = self._resolve_path(variable_path, context)
+                
+                # If value is None or not found, return literal template (debugging feature)
+                if value is None:
+                    return match.group(0)  # Return {{variable}} as-is
+                
+                # URL-encode the value using quote with safe='' to encode everything
+                # except unreserved characters (A-Z, a-z, 0-9, -, _, ., ~)
+                return quote(str(value), safe='')
             
             rendered = self.VARIABLE_PATTERN.sub(replace_variable, template)
             return rendered

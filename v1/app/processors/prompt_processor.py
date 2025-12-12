@@ -98,6 +98,8 @@ class PromptProcessor(BaseProcessor):
                 if not is_valid:
                     validation_failed = True
                     error_msg = validation.get('error_message', ErrorMessages.FIELD_REQUIRED)
+                    # Render template if it contains variables
+                    error_msg = self.template_engine.render(error_msg, context)
             else:
                 # No validation defined, empty input rejected by default
                 validation_failed = True
@@ -109,6 +111,8 @@ class PromptProcessor(BaseProcessor):
                 if not is_valid:
                     validation_failed = True
                     error_msg = validation.get('error_message', ErrorMessages.VALIDATION_FAILED)
+                    # Render template if it contains variables
+                    error_msg = self.template_engine.render(error_msg, context)
         
         # Handle validation failure with retry logic
         if validation_failed:
@@ -206,7 +210,7 @@ class PromptProcessor(BaseProcessor):
         
         # Evaluate routes
         routes = node.get('routes', [])
-        next_node = self.evaluate_routes(routes, context)
+        next_node = self.evaluate_routes(routes, context, node.get('type'))
         
         return ProcessResult(
             next_node=next_node,
@@ -235,7 +239,9 @@ class PromptProcessor(BaseProcessor):
         
         try:
             if validation_type == ValidationType.REGEX.value:
-                return self.validation_system.validate_regex(input_value, rule)
+                # Render template variables in regex pattern
+                rendered_rule = self.template_engine.render(rule, context)
+                return self.validation_system.validate_regex(input_value, rendered_rule)
             
             elif validation_type == ValidationType.EXPRESSION.value:
                 return self.validation_system.validate_expression(input_value, rule, context)

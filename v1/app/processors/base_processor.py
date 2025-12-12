@@ -11,6 +11,7 @@ from typing import Optional, List, Dict, Any
 from app.core.template_engine import TemplateEngine
 from app.core.condition_evaluator import ConditionEvaluator
 from app.core.validation_system import ValidationSystem
+from app.core.route_sorter import sort_routes
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -103,7 +104,8 @@ class BaseProcessor(ABC):
     def evaluate_routes(
         self,
         routes: List[Dict[str, Any]],
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        node_type: Optional[str] = None
     ) -> Optional[str]:
         """
         Evaluate routes in order, return first match
@@ -111,16 +113,23 @@ class BaseProcessor(ABC):
         Args:
             routes: List of route definitions
             context: Current context for condition evaluation
+            node_type: Type of node (for route sorting). If None, routes are not sorted.
         
         Returns:
             target_node ID of first matching route, or None if no match
         
         Note:
-            Routes are evaluated in order. First matching condition wins.
+            Routes are sorted by priority before evaluation if node_type is provided.
+            Specific conditions are evaluated first, catch-all "true" last.
+            First matching condition wins.
             If no route matches, returns None (which typically causes error).
         """
         if not routes:
             return None
+        
+        # Sort routes by priority if node_type is provided
+        if node_type:
+            routes = sort_routes(routes, node_type)
         
         for route in routes:
             condition = route.get('condition', 'false')

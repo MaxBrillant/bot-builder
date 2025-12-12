@@ -192,14 +192,14 @@ class FlowService:
             limit: Maximum records to return
             
         Returns:
-            List of flows
+            List of flows ordered by creation time (oldest first)
         """
         result = await self.db.execute(
             select(Flow)
             .where(Flow.bot_id == bot_id)
             .offset(skip)
             .limit(limit)
-            .order_by(Flow.created_at.desc())
+            .order_by(Flow.created_at.asc())
         )
         return list(result.scalars().all())
     

@@ -69,7 +69,7 @@ class MessageProcessor(BaseProcessor):
         
         # Evaluate routes for next node
         routes = node.get('routes', [])
-        next_node = self.evaluate_routes(routes, context)
+        next_node = self.evaluate_routes(routes, context, node.get('type'))
         
         if next_node is None:
             node_id = node.get('id', 'unknown')

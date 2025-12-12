@@ -40,8 +40,7 @@
           { "source_path": "body.name", "target_variable": "driver_name" },
           {
             "source_path": "body.capacity",
-            "target_variable": "driver_capacity",
-            "type": "integer"
+            "target_variable": "driver_capacity"
           }
         ],
         "success_check": { "expression": "response.body.id != null" }
@@ -65,8 +64,7 @@
         "response_map": [
           {
             "source_path": "body.data.trips",
-            "target_variable": "recent_trips",
-            "type": "array"
+            "target_variable": "recent_trips"
           }
         ],
         "success_check": { "status_code_in": [200] }

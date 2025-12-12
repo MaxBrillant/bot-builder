@@ -73,7 +73,7 @@ async def list_bots(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    List all bots owned by the current user
+    List all bots owned by the current user (includes webhook_secret for authenticated owner)
     
     - **status**: Optional filter by status ('active' or 'inactive')
     """
@@ -84,8 +84,9 @@ async def list_bots(
         status=status
     )
     
+    # Include secrets since user owns these bots and needs them for webhook configuration
     return BotListResponse(
-        bots=[bot_to_response(bot) for bot in bots],
+        bots=[bot_to_response(bot, include_secret=True) for bot in bots],
         total=len(bots)
     )
 
@@ -96,7 +97,7 @@ async def get_bot(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get bot details by ID"""
+    """Get bot details by ID (includes webhook_secret for authenticated owner)"""
     bot_service = BotService(db)
     
     try:
@@ -105,7 +106,8 @@ async def get_bot(
             owner_user_id=current_user.user_id,
             check_ownership=True
         )
-        return bot_to_response(bot)
+        # Include secret since user owns the bot and needs it for webhook configuration
+        return bot_to_response(bot, include_secret=True)
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except UnauthorizedError as e:
@@ -136,7 +138,8 @@ async def update_bot(
             description=bot_data.description,
             status=bot_data.status
         )
-        return bot_to_response(bot)
+        # Include secret since user owns the bot and needs it for webhook configuration
+        return bot_to_response(bot, include_secret=True)
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except UnauthorizedError as e:
@@ -213,7 +216,8 @@ async def activate_bot(
             owner_user_id=current_user.user_id,
             status='active'
         )
-        return bot_to_response(bot)
+        # Include secret since user owns the bot and needs it for webhook configuration
+        return bot_to_response(bot, include_secret=True)
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except UnauthorizedError as e:
@@ -235,7 +239,8 @@ async def deactivate_bot(
             owner_user_id=current_user.user_id,
             status='inactive'
         )
-        return bot_to_response(bot)
+        # Include secret since user owns the bot and needs it for webhook configuration
+        return bot_to_response(bot, include_secret=True)
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except UnauthorizedError as e:

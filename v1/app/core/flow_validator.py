@@ -161,13 +161,19 @@ class FlowValidator:
         for node_id, node in nodes.items():
             self._validate_node(node_id, node, node_ids, result)
         
-        # 10. Check all route references (redundant check, already done in Pass 2)
+        # 9. Validate unique node names (case-insensitive)
+        self._validate_unique_node_names(nodes, result)
+        
+        # 10. Validate no orphan nodes (only start node should have no parent)
+        self._validate_no_orphan_nodes(nodes, start_node_id, result)
+        
+        # 11. Check all route references (redundant check, already done in Pass 2)
         # self._check_node_references is no longer needed as validation happens in Pass 2
         
-        # 11. Detect circular references
+        # 12. Detect circular references
         self._detect_circular_references(nodes, start_node_id, result)
         
-        # 12. Check for unreachable nodes (warning only)
+        # 13. Check for unreachable nodes (warning only)
         self._check_unreachable_nodes(nodes, start_node_id, result)
         
         return result
@@ -250,6 +256,16 @@ class FlowValidator:
             result.add_error("invalid_type", "trigger_keywords must be an array", "trigger_keywords")
             return
         
+        # Check minimum requirement: at least one trigger keyword
+        if not keywords or len(keywords) == 0:
+            result.add_error(
+                "missing_trigger_keywords",
+                "At least one trigger keyword is required",
+                "trigger_keywords",
+                "Add at least one trigger keyword to activate this flow"
+            )
+            return
+        
         # Validate format
         for i, keyword in enumerate(keywords):
             if not isinstance(keyword, str):
@@ -261,7 +277,7 @@ class FlowValidator:
             elif not keyword.strip():
                 result.add_error(
                     "invalid_value",
-                    f"Keyword at index {i} cannot be empty",
+                    f"Trigger keyword at index {i} cannot be empty or whitespace only",
                     f"trigger_keywords[{i}]"
                 )
         
@@ -344,6 +360,112 @@ class FlowValidator:
                     f"Variable '{var_name}' has invalid type '{var_type}'. Must be one of: {', '.join(valid_types)}",
                     f"variables.{var_name}.type"
                 )
+            else:
+                # Validate default value matches type
+                self._validate_variable_default(var_name, var_type, var_def.get('default'), result)
+    
+    def _validate_variable_default(self, var_name: str, var_type: str, default_value: Any, result: ValidationResult):
+        """
+        Validate that a variable's default value matches its declared type
+        
+        Args:
+            var_name: Variable name
+            var_type: Variable type (string, integer, boolean, array)
+            default_value: Default value to validate
+            result: ValidationResult to add errors to
+        """
+        # null is always valid for any type
+        if default_value is None:
+            return
+        
+        location = f"variables.{var_name}.default"
+        
+        if var_type == VariableType.STRING.value:
+            # String type: default must be a string
+            if not isinstance(default_value, str):
+                result.add_error(
+                    "invalid_default_value",
+                    f"Variable '{var_name}' has type 'string' but default value is not a string. Got: {type(default_value).__name__}",
+                    location,
+                    "Provide a string value or null"
+                )
+        
+        elif var_type == VariableType.INTEGER.value:
+            # Integer type: default must be an integer (or a string that can convert to integer)
+            if isinstance(default_value, bool):
+                # Boolean is technically an int subclass in Python, but we want to reject it
+                result.add_error(
+                    "invalid_default_value",
+                    f"Variable '{var_name}' has type 'integer' but default value is a boolean",
+                    location,
+                    "Provide an integer (e.g., 42, -10, 0) or null"
+                )
+            elif isinstance(default_value, str):
+                # Try to parse string as integer
+                try:
+                    int(default_value)
+                except ValueError:
+                    result.add_error(
+                        "invalid_default_value",
+                        f"Variable '{var_name}' has type 'integer' but default value '{default_value}' cannot be converted to an integer",
+                        location,
+                        "Provide a valid integer (e.g., 42, -10, 0) or null"
+                    )
+            elif not isinstance(default_value, int):
+                result.add_error(
+                    "invalid_default_value",
+                    f"Variable '{var_name}' has type 'integer' but default value is {type(default_value).__name__}",
+                    location,
+                    "Provide an integer (e.g., 42, -10, 0) or null"
+                )
+        
+        elif var_type == VariableType.BOOLEAN.value:
+            # Boolean type: default must be a boolean (or a string that can convert)
+            if isinstance(default_value, str):
+                # Check if string is valid boolean representation
+                if default_value.lower() not in ['true', 'false', '1', '0', 'yes', 'no', 'y', 'n']:
+                    result.add_error(
+                        "invalid_default_value",
+                        f"Variable '{var_name}' has type 'boolean' but default value '{default_value}' cannot be converted to boolean",
+                        location,
+                        "Provide true or false"
+                    )
+            elif not isinstance(default_value, bool):
+                result.add_error(
+                    "invalid_default_value",
+                    f"Variable '{var_name}' has type 'boolean' but default value is {type(default_value).__name__}",
+                    location,
+                    "Provide true or false"
+                )
+        
+        elif var_type == VariableType.ARRAY.value:
+            # Array type: default must be an array (or a string that can be parsed as JSON array)
+            if isinstance(default_value, str):
+                # Try to parse string as JSON array
+                import json
+                try:
+                    parsed = json.loads(default_value)
+                    if not isinstance(parsed, list):
+                        result.add_error(
+                            "invalid_default_value",
+                            f"Variable '{var_name}' has type 'array' but default value parses to {type(parsed).__name__}, not a list",
+                            location,
+                            "Provide a valid JSON array (e.g., [], [\"item1\", \"item2\"]) or null"
+                        )
+                except (json.JSONDecodeError, ValueError):
+                    result.add_error(
+                        "invalid_default_value",
+                        f"Variable '{var_name}' has type 'array' but default value '{default_value}' is not valid JSON",
+                        location,
+                        "Provide a valid JSON array (e.g., [], [\"item1\", \"item2\"]) or null"
+                    )
+            elif not isinstance(default_value, list):
+                result.add_error(
+                    "invalid_default_value",
+                    f"Variable '{var_name}' has type 'array' but default value is {type(default_value).__name__}",
+                    location,
+                    "Provide a valid JSON array (e.g., [], [\"item1\", \"item2\"]) or null"
+                )
     
     def _validate_defaults(self, defaults: Dict[str, Any], nodes: Dict[str, Any], result: ValidationResult):
         """Validate flow defaults"""
@@ -404,6 +526,36 @@ class FlowValidator:
                 f"{location_prefix}.id"
             )
         
+        # Validate name field (required)
+        if 'name' not in node:
+            result.add_error(
+                "missing_field",
+                f"Node '{node_id}' is missing required field 'name'",
+                f"{location_prefix}.name"
+            )
+            # Continue with other validations even if name is missing
+        else:
+            node_name = node['name']
+            
+            if not isinstance(node_name, str):
+                result.add_error(
+                    "invalid_type",
+                    f"Node '{node_id}' name must be a string",
+                    f"{location_prefix}.name"
+                )
+            elif not node_name or not node_name.strip():
+                result.add_error(
+                    "invalid_value",
+                    f"Node '{node_id}' has an empty name",
+                    f"{location_prefix}.name"
+                )
+            elif len(node_name) > 50:
+                result.add_error(
+                    "constraint_violation",
+                    f"Node '{node_id}' name exceeds maximum length of 50 characters (current: {len(node_name)})",
+                    f"{location_prefix}.name"
+                )
+        
         # Check required fields
         if 'type' not in node:
             result.add_error("missing_field", "Node missing required field 'type'", f"{location_prefix}.type")
@@ -425,6 +577,9 @@ class FlowValidator:
             )
             return
         
+        # Get config for validation
+        config = node.get('config', {})
+        
         # Validate routes (required for all except END)
         if node_type != NodeType.END.value:
             routes = node.get('routes')
@@ -436,10 +591,111 @@ class FlowValidator:
                 )
             else:
                 self._validate_routes(node_id, routes, node_ids, result)
+                
+                # Validate route conditions using RouteConditionValidator
+                from app.core.route_validator import RouteConditionValidator
+                
+                route_validator = RouteConditionValidator()
+                route_errors = route_validator.validate_node_routes(
+                    node_id, node_type, config, routes
+                )
+                
+                # Add route validation errors to result
+                for error in route_errors:
+                    result.add_error(
+                        error["type"],
+                        error["message"],
+                        error.get("location"),
+                        error.get("suggestion")
+                    )
         
         # Validate node-specific config
-        config = node.get('config', {})
         self._validate_node_config(node_id, node_type, config, result)
+    
+    def _validate_unique_node_names(self, nodes: Dict[str, Any], result: ValidationResult):
+        """Validate that all node names are unique (case-insensitive)"""
+        if not nodes:
+            return
+        
+        name_to_nodes = {}  # Maps lowercase name to list of node IDs
+        
+        for node_id, node in nodes.items():
+            node_name = node.get('name', '')
+            if not node_name:
+                continue  # Already caught by _validate_node
+            
+            # Skip if name is not a string (already caught by _validate_node)
+            if not isinstance(node_name, str):
+                continue
+            
+            name_lower = node_name.lower().strip()
+            if not name_lower:
+                continue  # Empty names already caught by _validate_node
+            
+            if name_lower not in name_to_nodes:
+                name_to_nodes[name_lower] = []
+            name_to_nodes[name_lower].append(node_id)
+        
+        # Check for duplicates
+        for name_lower, node_ids in name_to_nodes.items():
+            if len(node_ids) > 1:
+                # Get original name (any will do, they're case-insensitive duplicates)
+                original_name = nodes[node_ids[0]]['name']
+                nodes_str = ', '.join(sorted(node_ids))
+                result.add_error(
+                    "duplicate_node_name",
+                    f"Duplicate node name '{original_name}' found in nodes: {nodes_str}",
+                    "nodes",
+                    "Each node must have a unique name (case-insensitive)"
+                )
+    
+    def _validate_no_orphan_nodes(self, nodes: Dict[str, Any], start_node_id: str, result: ValidationResult):
+        """
+        Validate that only the start node has no parent.
+        All other nodes must be referenced in at least one route.
+        """
+        if not nodes:
+            return
+        
+        if not start_node_id:
+            return  # Already caught by other validation
+        
+        # Build set of all nodes that have parents (referenced in routes)
+        nodes_with_parents = set()
+        
+        for node_id, node in nodes.items():
+            routes = node.get('routes', [])
+            for route in routes:
+                target_node = route.get('target_node')
+                if target_node:
+                    nodes_with_parents.add(target_node)
+        
+        # Find orphan nodes (no parent and not start node)
+        orphan_nodes = []
+        
+        for node_id in nodes.keys():
+            if node_id == start_node_id:
+                continue  # Start node is allowed to have no parent
+            
+            if node_id not in nodes_with_parents:
+                orphan_nodes.append(node_id)
+        
+        # Report errors
+        if orphan_nodes:
+            node_names = []
+            for node_id in orphan_nodes:
+                node = nodes[node_id]
+                node_name = node.get('name', node_id)
+                node_names.append(f"'{node_name}' ({node_id})")
+            
+            nodes_str = ', '.join(node_names)
+            result.add_error(
+                "orphan_nodes",
+                f"Orphan nodes detected (nodes with no parent): {nodes_str}. "
+                f"Only the start node should have no parent. "
+                f"These nodes are unreachable in the flow.",
+                "nodes"
+            )
     
     def _validate_routes(self, node_id: str, routes: List[Dict[str, Any]], node_ids: Set[str], result: ValidationResult):
         """Validate node routes using node_ids index"""
@@ -455,6 +711,24 @@ class FlowValidator:
                 f"Node has {len(routes)} routes, exceeds maximum of {SystemConstraints.MAX_ROUTES_PER_NODE}",
                 location_prefix
             )
+        
+        # Check for duplicate route conditions (case-insensitive, whitespace-trimmed)
+        seen_conditions = {}
+        for i, route in enumerate(routes):
+            if isinstance(route, dict) and 'condition' in route:
+                condition = route['condition']
+                if condition:
+                    # Normalize: trim whitespace and convert to lowercase
+                    normalized_condition = str(condition).strip().lower()
+                    if normalized_condition in seen_conditions:
+                        result.add_error(
+                            "duplicate_route_condition",
+                            f"Node '{node_id}' has duplicate route condition: '{condition.strip()}'",
+                            location_prefix,
+                            "Each route must have a unique condition"
+                        )
+                    else:
+                        seen_conditions[normalized_condition] = i
         
         for i, route in enumerate(routes):
             route_location = f"{location_prefix}[{i}]"

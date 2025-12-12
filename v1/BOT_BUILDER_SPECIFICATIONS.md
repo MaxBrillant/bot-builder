@@ -213,7 +213,7 @@ A flow is defined as a JSON object with the following top-level structure:
 ```json
 {
   "name": "string (required)",
-  "trigger_keywords": ["array of strings (optional)"],
+  "trigger_keywords": ["array of strings (required)"],
   "variables": { "object (optional)" },
   "defaults": { "object (optional)" },
   "start_node_id": "string (required)",
@@ -240,17 +240,22 @@ A flow is defined as a JSON object with the following top-level structure:
 - **Example**: `"driver_onboarding"`, `"checkout_flow"`, `"customer_support_v1"`
 - **Uniqueness Scope**: Each bot can have flows with unique names. Different bots can use the same flow names.
 
-#### `trigger_keywords` (optional)
+#### `trigger_keywords` (required)
 
 - **Type**: `array of strings`
-- **Description**: Keywords that activate this flow
+- **Description**: Keywords that activate this flow. **At least one trigger keyword is required.**
 - **Uniqueness Constraint**: Each keyword must be **unique per bot** (not globally unique)
   - ✅ Bot A can have Flow 1 with keyword "START"
   - ❌ Bot A cannot have Flow 2 also with keyword "START" (duplicate within same bot)
   - ✅ Bot B can have Flow 1 with keyword "START" (different bot, allowed)
+  - ⚠️ **Wildcard `"*"` can only be used by ONE flow per bot** (enforced during validation)
 - **Validation on Flow Submission**:
+  - **System enforces that at least one trigger keyword must be provided**
+  - Returns validation error if `trigger_keywords` array is empty
   - System checks for duplicate keywords within the **same bot's flows**
   - Returns validation error if keyword is already used by another flow in the same bot
+  - **System checks that only one flow per bot uses the wildcard `"*"`**
+  - Returns validation error if multiple flows in the same bot attempt to use `"*"`
   - Allows the same keyword across different bots (bot-level isolation)
 - **Matching Behavior**:
   - **Standalone messages only**: The entire user message must exactly match ONE keyword (after trimming and removing trailing punctuation)
@@ -259,9 +264,11 @@ A flow is defined as a JSON object with the following top-level structure:
   - **Punctuation ignored**: "START!", "START." match "START"
   - **No partial matches**: "I want to START" does NOT match "START"
   - **No word-in-sentence**: "STARTING" does NOT match "START"
+  - **Wildcard fallback**: The `"*"` keyword matches ANY message that doesn't match other specific keywords
 - **No regex support**
-- **Default**: `[]`
-- **Example**: `["START", "BEGIN", "HELLO"]`
+- **Default**: `[]` (for backward compatibility reference only - will be rejected by validation)
+- **Required**: At least one keyword must be provided
+- **Example**: `["START", "BEGIN", "HELLO"]` or `["*"]` (wildcard)
 - **Matching Examples**:
   - ✅ "START" → Match
   - ✅ "start" → Match
@@ -270,6 +277,99 @@ A flow is defined as a JSON object with the following top-level structure:
   - ❌ "I want to START" → No match (not standalone)
   - ❌ "STARTING" → No match (different word)
   - ❌ "START NOW" → No match (multiple words)
+
+##### Wildcard Trigger
+
+The wildcard trigger `"*"` is a special keyword that provides fallback behavior for handling any message that doesn't match specific trigger keywords.
+
+**Purpose**: Catch-all fallback for unmatched messages
+
+**Symbol**: `"*"`
+
+**Priority**: Always checked AFTER specific keywords (fallback only)
+
+- The system first attempts to match the user's message against all specific trigger keywords in the bot's flows
+- If no specific keyword matches, the system then checks if any flow has the wildcard `"*"` trigger
+- If a wildcard flow exists, it is activated; otherwise, the user receives a "no matching flow" error
+
+**Uniqueness**: Only one flow per bot can use `"*"`
+
+- The wildcard is treated as a special keyword with bot-level uniqueness
+- During flow validation, the system checks if another flow in the same bot already uses `"*"`
+- If duplicate wildcard found, validation fails with error
+
+**Use Cases**:
+
+- **Fallback handlers**: Handle any unrecognized input with helpful guidance
+- **AI-powered bots**: Route all unmatched messages to an AI processing flow
+- **Catch-all menus**: Present a main menu when users send unexpected messages
+- **Development/testing**: Capture all messages for debugging and analysis
+
+**Examples**:
+
+Bot has three flows:
+
+- Flow A: `["START", "HELP"]`
+- Flow B: `["BOOKING"]`
+- Flow C: `["*"]` (wildcard)
+
+Message matching behavior:
+
+```
+User sends "START"     → Flow A activates (specific match)
+User sends "HELP"      → Flow A activates (specific match)
+User sends "help"      → Flow A activates (case-insensitive match)
+User sends "BOOKING"   → Flow B activates (specific match)
+User sends "ANYTHING"  → Flow C activates (wildcard fallback)
+User sends "UNKNOWN"   → Flow C activates (wildcard fallback)
+User sends "123"       → Flow C activates (wildcard fallback)
+User sends "Hello!"    → Flow C activates (wildcard fallback)
+```
+
+**Validation Rules**:
+
+- ✅ Wildcard can be the only keyword: `["*"]`
+- ✅ Wildcard can be combined with specific keywords: `["*", "START"]` (specific keywords will match first)
+- ❌ Only ONE flow per bot can contain `"*"`
+- ❌ Multiple flows cannot share the wildcard
+
+**Validation Error Example**:
+
+```json
+{
+  "status": "error",
+  "errors": [
+    {
+      "type": "duplicate_wildcard_trigger",
+      "message": "Wildcard trigger '*' is already used in flow 'fallback_handler' of this bot. Only one flow per bot can use the wildcard trigger.",
+      "conflicting_flow_name": "fallback_handler",
+      "keyword": "*"
+    }
+  ]
+}
+```
+
+**Best Practices**:
+
+- Use wildcard flows to provide helpful guidance when users send unexpected input
+- Consider including a menu or help text in wildcard flows to guide users back to valid commands
+- Wildcard flows are ideal for AI integration where you want to process natural language
+- Test your specific keywords thoroughly before relying on wildcard fallback
+
+**Error Response for Missing Keywords**:
+
+```json
+{
+  "status": "error",
+  "errors": [
+    {
+      "type": "required_field",
+      "message": "At least one trigger keyword is required",
+      "field": "trigger_keywords"
+    }
+  ]
+}
+```
 
 **Error Response for Duplicate Keyword**:
 
@@ -320,7 +420,7 @@ Content-Type: JSON
 
 {
   "name": "checkout_flow",  // Must be unique within this bot
-  "trigger_keywords": ["START"],
+  "trigger_keywords": ["START"],  // At least one keyword required
   "variables": {...},
   "start_node_id": "node_start",
   "nodes": {...}
@@ -424,12 +524,16 @@ This allows nodes to reference other nodes that appear later in the JSON (order-
 - User authentication valid
 - User has permission to create/update flows in this bot
 - JSON syntax valid
-- All required fields present (name, start_node_id, nodes)
+- All required fields present (name, trigger_keywords, start_node_id, nodes)
+- **At least one trigger_keywords provided** - empty array not allowed
 - **flow.name unique per bot** - no duplicate names within the same bot's flows
 - **trigger_keywords unique per bot** - no duplicate keywords within the same bot's flows
+- **Wildcard trigger unique per bot** - only one flow per bot can use the `"*"` wildcard trigger
 - Node IDs unique within flow
 - start_node_id references existing node
 - All route target_nodes reference existing nodes
+- **Only start node has no parent** - only the start_node_id should have no parent (not be referenced in any route). All other nodes must have at least one parent (be referenced as target_node in at least one route). Orphan nodes are invalid.
+- **Route conditions unique per node** - no duplicate conditions within a single node's routes array (case-insensitive)
 - No circular references (infinite loops)
 - Variable types valid (string, integer, boolean, array)
 - Fail_route (if defined) references existing node
@@ -460,6 +564,11 @@ This allows nodes to reference other nodes that appear later in the JSON (order-
       "type": "circular_reference",
       "message": "Circular reference detected: node_a → node_b → node_a",
       "nodes": ["node_a", "node_b"]
+    },
+    {
+      "type": "orphan_nodes",
+      "message": "Orphan nodes detected (nodes with no parent): 'Prompt 2' (node_prompt_2), 'Menu 3' (node_menu_3). Only the start node should have no parent. These nodes are unreachable in the flow.",
+      "location": "nodes"
     }
   ]
 }
@@ -530,6 +639,7 @@ Bot Builder Instance 3 ←
   4. If conversion succeeds, value is saved to context
   5. If conversion fails, user sees error and must retry (counts toward max attempts)
   6. **Note**: Validation ensures input is in convertible format (e.g., `input.isNumeric()` ensures string can convert to integer)
+  7. **Output Mappings**: This type enforcement also applies to [`output_mapping`](#menu-node-config) (MENU nodes) and [`response_map`](#api_action-node-config) (API_ACTION nodes). During conversation, when mapping extracted values to variables, the system attempts conversion to the variable's declared type. Conversion failures in mappings result in `null` (don't count toward max validation attempts). See [Type Inference in Output Mappings](#type-inference-in-output-mappings) for details.
 - **Example**:
   ```json
   "variables": {
@@ -633,7 +743,8 @@ Every node has this base structure:
   - Routes evaluated in order (first match wins)
   - `target_node` must reference existing node ID
   - END nodes cannot have routes
-- **Example**:
+  - **Route conditions must be unique** - Each node can only have one route with a given condition (case-insensitive comparison: 'true' === 'TRUE')
+  - **Example**:
   ```json
   "routes": [
     { "condition": "success", "target_node": "node_next" },
@@ -708,31 +819,73 @@ Every node has this base structure:
 
 **output_mapping Field Handling**:
 
-When extracting fields from selected menu item, missing or null fields are handled gracefully:
+When extracting fields from selected menu item, the system uses **type inference** based on the flow's `variables` section:
 
-- Field doesn't exist in source → variable set to `null`
-- Field explicitly `null` in source → variable set to `null`
-- All mappings always execute (no partial failures)
+1. **Extract value** using `source_path` from the selected item
+2. **Look up** `target_variable` in the flow's `variables` section to determine the declared type
+3. **Attempt type conversion** based on the variable's declared type (string, integer, boolean, array)
+4. **On success**: Save converted value to context
+5. **On failure** (missing path OR conversion error): Set variable to `null`
+6. **All mappings execute independently** - one failure doesn't affect others
+
+**Type Inference Behavior**:
+
+- No `type` field exists in `output_mapping` structure
+- Type is determined by variable declaration in flow's `variables` section
+- Missing or null fields in source → variable set to `null`
+- Invalid type conversion (e.g., "abc" to integer) → variable set to `null`
 - `selection` variable automatically set to numeric index as **integer** (1, 2, 3, etc.)
 
 **Example**:
 
 ```json
-// Selected item (user chose option 2): {"id": "123", "destination": "Nairobi"}
-// Note: "driver_name" field is missing
+// Flow variables declaration:
+"variables": {
+  "trip_id": { "type": "string", "default": null },
+  "driver": { "type": "string", "default": null },
+  "seats_available": { "type": "integer", "default": 0 },
+  "is_verified": { "type": "boolean", "default": false }
+}
+
+// Selected item (user chose option 2):
+// {"id": "123", "seats_available": "5", "is_verified": true}
+// Note: "driver" field is missing
 
 "output_mapping": [
-  {"source_path": "id", "target_variable": "trip_id"},           // → "123"
-  {"source_path": "driver_name", "target_variable": "driver"},   // → null (missing)
-  {"source_path": "destination", "target_variable": "dest"}      // → "Nairobi"
+  {"source_path": "id", "target_variable": "trip_id"},
+  {"source_path": "driver", "target_variable": "driver"},
+  {"source_path": "seats_available", "target_variable": "seats_available"},
+  {"source_path": "is_verified", "target_variable": "is_verified"}
 ]
 
-// Result in context:
-// selection = 2  (integer, not string)
-// trip_id = "123"
-// driver = null
-// dest = "Nairobi"
+// Result in context (after type inference):
+// selection = 2  (integer, automatically set)
+// trip_id = "123"  (string, as declared)
+// driver = null  (missing field)
+// seats_available = 5  (converted from "5" string to integer)
+// is_verified = true  (boolean, as declared)
 ```
+
+**Type Conversion Examples**:
+
+```json
+// Source data: {"price": "29.99", "quantity": "3", "active": "true"}
+// Variable declarations: price (string), quantity (integer), active (boolean)
+
+// Result:
+// price = "29.99"  (kept as string)
+// quantity = 3  (converted to integer)
+// active = true  (converted to boolean)
+
+// Source data: {"invalid_number": "abc", "missing_field": null}
+// Variable declarations: invalid_number (integer), missing_field (string)
+
+// Result:
+// invalid_number = null  (conversion failed)
+// missing_field = null  (null in source)
+```
+
+See [Type Inference in Output Mappings](#type-inference-in-output-mappings) section for detailed behavior across node types.
 
 #### API_ACTION Node Config
 
@@ -748,8 +901,7 @@ When extracting fields from selected menu item, missing or null fields are handl
   "response_map": [
     {
       "source_path": "string (required)",
-      "target_variable": "string (required)",
-      "type": "string|integer|boolean|array (optional, default: string)"
+      "target_variable": "string (required)"
     }
   ],
   "success_check": {
@@ -758,6 +910,82 @@ When extracting fields from selected menu item, missing or null fields are handl
   }
 }
 ```
+
+**response_map Behavior**:
+
+The `response_map` uses **type inference** to convert API response values based on the flow's `variables` section:
+
+1. **Extract value** from response using `source_path` (supports dot notation: `data.user.id`)
+2. **Look up** `target_variable` in flow's `variables` section to determine declared type
+3. **Attempt type conversion** based on variable's declared type (string, integer, boolean, array)
+4. **On success**: Save converted value to context
+5. **On failure** (missing path OR conversion error): Set variable to `null`
+6. **All mappings execute independently** - conversion failures don't affect other mappings
+
+**Type Inference Details**:
+
+- **No `type` field** exists in `response_map` structure (removed)
+- Type is determined by variable declaration in flow's `variables` section
+- Missing response paths → variable set to `null`
+- Invalid conversions → variable set to `null` (no errors thrown)
+- Conversion failures in mappings **do not** count toward validation retry attempts
+
+**Example**:
+
+```json
+// Flow variables declaration:
+"variables": {
+  "user_id": { "type": "string", "default": null },
+  "age": { "type": "integer", "default": 0 },
+  "is_verified": { "type": "boolean", "default": false },
+  "tags": { "type": "array", "default": [] }
+}
+
+// API Response:
+// {"data": {"user_id": "user_123", "age": "25", "is_verified": "true", "tags": ["active", "premium"]}}
+
+"response_map": [
+  {"source_path": "data.user_id", "target_variable": "user_id"},
+  {"source_path": "data.age", "target_variable": "age"},
+  {"source_path": "data.is_verified", "target_variable": "is_verified"},
+  {"source_path": "data.tags", "target_variable": "tags"}
+]
+
+// Result in context (after type inference):
+// user_id = "user_123"  (string, as declared)
+// age = 25  (converted from "25" string to integer)
+// is_verified = true  (converted from "true" string to boolean)
+// tags = ["active", "premium"]  (array, as declared)
+```
+
+**Handling Missing/Invalid Data**:
+
+```json
+// API Response: {"data": {"user_id": "user_123"}}
+// Note: age, is_verified, tags are missing
+
+// Variables declared: user_id (string), age (integer), is_verified (boolean), tags (array)
+
+"response_map": [
+  {"source_path": "data.user_id", "target_variable": "user_id"},
+  {"source_path": "data.age", "target_variable": "age"},
+  {"source_path": "data.is_verified", "target_variable": "is_verified"},
+  {"source_path": "data.tags", "target_variable": "tags"}
+]
+
+// Result:
+// user_id = "user_123"  (extracted successfully)
+// age = null  (missing in response)
+// is_verified = null  (missing in response)
+// tags = null  (missing in response)
+
+// Invalid conversion example:
+// API Response: {"count": "not_a_number"}
+// Variable: count (integer)
+// Result: count = null  (conversion failed)
+```
+
+See [Type Inference in Output Mappings](#type-inference-in-output-mappings) section for comprehensive details.
 
 **Success Check Expression**: The optional `expression` field checks response body content for additional success validation.
 
@@ -778,6 +1006,256 @@ When extracting fields from selected menu item, missing or null fields are handl
 
 **Required**: `request` with `method` and `url`
 **Optional**: `description`, `response_map`, `success_check`, `headers`, `body`
+
+### Type Inference in Output Mappings
+
+Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nodes support output mappings that extract data and store it in context variables. These mappings use **type inference** to automatically convert extracted values to the appropriate type based on the flow's variable declarations.
+
+#### How Type Inference Works
+
+**Single Source of Truth**: Variable types are defined once in the flow's [`variables`](#variables-optional) section. The system references this declaration when performing type conversions during output mapping.
+
+**Inference Process**:
+
+1. **Value Extraction**: Extract raw value from source (menu item or API response)
+2. **Type Lookup**: Look up target variable in flow's `variables` section
+3. **Type Conversion**: Attempt to convert extracted value to declared type
+4. **Assignment**:
+   - On success → save converted value to context
+   - On failure → set variable to `null`
+
+**Supported Conversions**:
+
+| Declared Type | Conversion Behavior               | Examples                                                                              |
+| ------------- | --------------------------------- | ------------------------------------------------------------------------------------- |
+| `string`      | No conversion, value stored as-is | `"123"` → `"123"`, `123` → `"123"`                                                    |
+| `integer`     | Parse to whole number             | `"42"` → `42`, `"3.14"` → `3`, `"abc"` → `null`                                       |
+| `boolean`     | Parse to true/false               | `"true"` → `true`, `"false"` → `false`, `1` → `true`, `0` → `false`, `"yes"` → `null` |
+| `array`       | Expect array value                | `["a","b"]` → `["a","b"]`, `"abc"` → `null`                                           |
+
+#### Benefits of Type Inference
+
+1. **No Redundancy**: Types defined once in `variables`, not repeated in every mapping
+2. **Consistency**: All nodes use the same type definitions from a single source
+3. **Maintainability**: Changing a variable's type updates behavior across all mappings
+4. **Simplicity**: Mapping definitions only specify source and target, not type
+5. **Graceful Failure**: Invalid conversions set `null` instead of crashing the flow
+
+#### Failure Handling
+
+**When Type Conversion Fails**:
+
+- Variable is set to `null` in context
+- Flow execution continues normally
+- No error message shown to user
+- Does not count toward validation retry attempts
+- Other mappings in the same node continue to execute
+
+**Common Failure Scenarios**:
+
+```json
+// Scenario 1: Missing path
+// Source: {"id": "123"}
+// Mapping: {"source_path": "name", "target_variable": "user_name"}
+// Result: user_name = null
+
+// Scenario 2: Type conversion error
+// Source: {"age": "twenty-five"}
+// Variable: age (integer)
+// Mapping: {"source_path": "age", "target_variable": "age"}
+// Result: age = null
+
+// Scenario 3: Null in source
+// Source: {"count": null}
+// Variable: count (integer)
+// Mapping: {"source_path": "count", "target_variable": "count"}
+// Result: count = null
+```
+
+#### Complete Example: MENU with Type Inference
+
+```json
+{
+  "variables": {
+    "trip_id": { "type": "string", "default": null },
+    "departure_time": { "type": "string", "default": null },
+    "available_seats": { "type": "integer", "default": 0 },
+    "price": { "type": "integer", "default": 0 },
+    "is_express": { "type": "boolean", "default": false }
+  },
+  "nodes": {
+    "node_select_trip": {
+      "type": "MENU",
+      "config": {
+        "text": "Select a trip:",
+        "source_type": "DYNAMIC",
+        "source_variable": "trips",
+        "item_template": "{{index}}. {{item.from}} → {{item.to}} at {{item.time}} ({{item.seats}} seats)",
+        "output_mapping": [
+          { "source_path": "id", "target_variable": "trip_id" },
+          {
+            "source_path": "departure_time",
+            "target_variable": "departure_time"
+          },
+          {
+            "source_path": "available_seats",
+            "target_variable": "available_seats"
+          },
+          { "source_path": "price_ksh", "target_variable": "price" },
+          { "source_path": "is_express", "target_variable": "is_express" }
+        ]
+      },
+      "routes": [{ "condition": "true", "target_node": "node_confirm" }]
+    }
+  }
+}
+
+// User selects option 2 from:
+// trips = [
+//   {"id": "t1", "departure_time": "08:00", "available_seats": "4", "price_ksh": "500", "is_express": "true"},
+//   {"id": "t2", "departure_time": "10:00", "available_seats": "2", "price_ksh": "450", "is_express": false}
+// ]
+
+// Result in context after type inference:
+// selection = 2 (integer, automatically set by MENU)
+// trip_id = "t2" (string, no conversion needed)
+// departure_time = "10:00" (string, no conversion needed)
+// available_seats = 2 (converted from "2" string to integer)
+// price = 450 (converted from "450" string to integer)
+// is_express = false (boolean, no conversion needed)
+```
+
+#### Complete Example: API_ACTION with Type Inference
+
+```json
+{
+  "variables": {
+    "booking_id": { "type": "string", "default": null },
+    "total_amount": { "type": "integer", "default": 0 },
+    "is_confirmed": { "type": "boolean", "default": false },
+    "payment_methods": { "type": "array", "default": [] }
+  },
+  "nodes": {
+    "node_create_booking": {
+      "type": "API_ACTION",
+      "config": {
+        "request": {
+          "method": "POST",
+          "url": "https://api.example.com/bookings",
+          "body": {
+            "trip_id": "{{context.trip_id}}",
+            "user_id": "{{user.channel_id}}"
+          }
+        },
+        "response_map": [
+          { "source_path": "data.booking_id", "target_variable": "booking_id" },
+          {
+            "source_path": "data.total_amount",
+            "target_variable": "total_amount"
+          },
+          {
+            "source_path": "data.confirmed",
+            "target_variable": "is_confirmed"
+          },
+          {
+            "source_path": "data.payment_methods",
+            "target_variable": "payment_methods"
+          }
+        ],
+        "success_check": {
+          "status_code_in": [200, 201]
+        }
+      },
+      "routes": [
+        { "condition": "success", "target_node": "node_payment" },
+        { "condition": "error", "target_node": "node_booking_error" }
+      ]
+    }
+  }
+}
+
+// API Response:
+// {
+//   "data": {
+//     "booking_id": "BK12345",
+//     "total_amount": "1500",
+//     "confirmed": "true",
+//     "payment_methods": ["mpesa", "card"]
+//   }
+// }
+
+// Result in context after type inference:
+// booking_id = "BK12345" (string, no conversion)
+// total_amount = 1500 (converted from "1500" string to integer)
+// is_confirmed = true (converted from "true" string to boolean)
+// payment_methods = ["mpesa", "card"] (array, no conversion)
+```
+
+#### Best Practices
+
+1. **Always Declare Variables**: Define all variables with types in the flow's `variables` section before using them in mappings
+
+2. **Choose Appropriate Types**: Use the type that matches your business logic
+
+   - Numeric IDs that need comparison: `integer`
+   - IDs used as references: `string`
+   - Counts, quantities, amounts: `integer`
+   - Flags, status indicators: `boolean`
+   - Lists of items: `array`
+
+3. **Handle Null Values**: After mappings, use LOGIC_EXPRESSION nodes to check for `null` values if the data is critical:
+
+   ```json
+   {
+     "type": "LOGIC_EXPRESSION",
+     "routes": [
+       {
+         "condition": "context.user_id != null",
+         "target_node": "node_continue"
+       },
+       {
+         "condition": "context.user_id == null",
+         "target_node": "node_error_missing_data"
+       }
+     ]
+   }
+   ```
+
+4. **Validate API Responses**: Check for missing or invalid data before using it:
+
+   ```json
+   {
+     "type": "LOGIC_EXPRESSION",
+     "routes": [
+       {
+         "condition": "context.count > 0 && context.count != null",
+         "target_node": "node_show_results"
+       },
+       { "condition": "true", "target_node": "node_no_results" }
+     ]
+   }
+   ```
+
+5. **Document Expected Formats**: Comment your API contracts and menu data structures to ensure they provide convertible values
+
+#### Comparison with PROMPT Type Conversion
+
+**PROMPT nodes** also perform type conversion, but with different failure behavior:
+
+- **PROMPT**: Conversion failure → validation error → user must retry (counts toward max attempts)
+- **Output Mappings**: Conversion failure → sets `null` → flow continues (no retry)
+
+**Example**:
+
+```json
+// PROMPT: User enters "abc" for integer variable
+// Result: Validation error, user sees error message, must retry
+
+// API_ACTION response_map: API returns {"age": "abc"}
+// Result: age = null, flow continues without error
+```
+
+This design allows flows to continue gracefully when external data is malformed, while enforcing correctness for user-provided input.
 
 #### LOGIC_EXPRESSION Node Config
 
@@ -865,13 +1343,43 @@ No configuration needed (empty object).
    }
    ```
 
-4. **Unreachable Nodes**
+4. **Orphan Nodes (Unreachable Nodes)**
 
    ```json
-   // ❌ BAD - node_orphan never referenced in any route
-   "nodes": {
-     "node_start": { ... },
-     "node_orphan": { ... }  // Nothing routes to this
+   // ❌ BAD - node_orphan never referenced in any route (has no parent)
+   {
+     "start_node_id": "node_start",
+     "nodes": {
+       "node_start": {
+         "routes": [{"condition": "true", "target_node": "node_next"}]
+       },
+       "node_next": {
+         "type": "END"
+       },
+       "node_orphan": {
+         // ❌ ERROR: This node has no parent (nothing routes to it)
+         // Only start_node_id is allowed to have no parent
+         "routes": [{"condition": "true", "target_node": "node_next"}]
+       }
+     }
+   }
+
+   // ✅ GOOD - All non-start nodes have parents
+   {
+     "start_node_id": "node_start",
+     "nodes": {
+       "node_start": {
+         "routes": [{"condition": "true", "target_node": "node_next"}]
+       },
+       "node_next": {
+         // ✅ Has parent (node_start routes to it)
+         "routes": [{"condition": "true", "target_node": "node_end"}]
+       },
+       "node_end": {
+         // ✅ Has parent (node_next routes to it)
+         "type": "END"
+       }
+     }
    }
    ```
 
@@ -898,6 +1406,30 @@ No configuration needed (empty object).
      ]
    }
    ```
+
+6. **Duplicate Route Conditions**
+
+```json
+// ❌ BAD - Duplicate route conditions
+{
+  "type": "LOGIC_EXPRESSION",
+  "routes": [
+    { "condition": "context.status == 'active'", "target_node": "node_active" },
+    { "condition": "true", "target_node": "node_default_1" },
+    { "condition": "TRUE", "target_node": "node_default_2" }  // ✗ Duplicate: "true" === "TRUE"
+  ]
+}
+
+// ✅ GOOD - Unique route conditions only
+{
+  "type": "LOGIC_EXPRESSION",
+  "routes": [
+    { "condition": "context.status == 'active'", "target_node": "node_active" },
+    { "condition": "context.status == 'inactive'", "target_node": "node_inactive" },
+    { "condition": "true", "target_node": "node_default" }  // ✓ Single catch-all
+  ]
+}
+```
 
 ### Flow Structure Best Practices
 
@@ -1784,12 +2316,193 @@ input.length; // String length
 | Context check | `"context.trips.length > 0"`           | Array length            |
 | Complex       | `"selection == 1 && context.verified"` | Multiple conditions     |
 
+### Route Condition Validation Rules
+
+The system validates route conditions and counts based on node type to prevent invalid configurations at design time.
+
+**Implementation**: [`route_validator.py`](v1/app/core/route_validator.py:1), [`flow_validator.py`](v1/app/core/flow_validator.py:595-610), [`constants.py`](v1/app/utils/constants.py:151-156)
+
+#### Node-Specific Routing Rules
+
+| Node Type            | Allowed Conditions                             | Max Routes      | Notes                                          |
+| -------------------- | ---------------------------------------------- | --------------- | ---------------------------------------------- |
+| **PROMPT**           | `"true"` only                                  | 1               | Single progression route                       |
+| **MESSAGE**          | `"true"` only                                  | 1               | Single progression route                       |
+| **MENU (STATIC)**    | `"selection == N"` (N ≤ num_options), `"true"` | num_options + 1 | N must be within 1 to number of options        |
+| **MENU (DYNAMIC)**   | `"true"` only                                  | 1               | **Critical: Only single "true" route allowed** |
+| **API_ACTION**       | `"success"`, `"error"`, `"true"`               | 3               | All conditions optional                        |
+| **LOGIC_EXPRESSION** | Any valid expression                           | 8               | No syntax restrictions                         |
+| **END**              | None                                           | 0               | Terminal node                                  |
+
+#### MENU Node Routing (DYNAMIC vs STATIC)
+
+**Critical Distinction**: DYNAMIC and STATIC menus have completely different routing patterns.
+
+**STATIC MENU** - Route by specific selections:
+
+```json
+{
+  "config": {
+    "source_type": "STATIC",
+    "static_options": [
+      { "label": "M-Pesa", "value": "mpesa" },
+      { "label": "Card", "value": "card" }
+    ]
+  },
+  "routes": [
+    { "condition": "selection == 1", "target_node": "node_mpesa" }, // ✅ Valid
+    { "condition": "selection == 2", "target_node": "node_card" }, // ✅ Valid
+    { "condition": "true", "target_node": "node_error" } // ✅ Fallback
+  ]
+}
+```
+
+**DYNAMIC MENU** - Single route only:
+
+```json
+{
+  "config": {
+    "source_type": "DYNAMIC",
+    "source_variable": "trips",
+    "output_mapping": [{ "source_path": "id", "target_variable": "trip_id" }]
+  },
+  "routes": [
+    { "condition": "true", "target_node": "node_logic" } // ✅ Single route
+  ]
+}
+```
+
+**Why DYNAMIC Restriction**: Options unknown at design time. Use LOGIC_EXPRESSION after menu for conditional routing:
+
+```json
+"node_menu": {
+  "type": "MENU",
+  "config": { "source_type": "DYNAMIC", /* ... */ },
+  "routes": [{ "condition": "true", "target_node": "node_logic" }]
+},
+"node_logic": {
+  "type": "LOGIC_EXPRESSION",
+  "routes": [
+    { "condition": "context.trip_id == 'express'", "target_node": "node_express" },
+    { "condition": "true", "target_node": "node_standard" }
+  ]
+}
+```
+
+#### Common Validation Errors
+
+**Error: Invalid condition for node type**
+
+```json
+// ❌ PROMPT with selection condition
+{ "type": "PROMPT", "routes": [{ "condition": "selection == 1", ... }] }
+// Error: "PROMPT nodes only allow condition 'true'"
+
+// ❌ DYNAMIC MENU with selection routing
+{ "config": { "source_type": "DYNAMIC" }, "routes": [{ "condition": "selection == 1", ... }] }
+// Error: "DYNAMIC MENU nodes only allow condition 'true'"
+```
+
+**Error: Route count exceeded**
+
+```json
+// ❌ DYNAMIC MENU with multiple routes
+{
+  "config": { "source_type": "DYNAMIC" },
+  "routes": [
+    /* 2 routes */
+  ]
+}
+// Error: "DYNAMIC MENU nodes can only have 1 route"
+// Suggestion: "Use a LOGIC_EXPRESSION node after the menu for conditional routing"
+```
+
+**Error: Selection out of range**
+
+```json
+// ❌ STATIC MENU - selecting beyond available options
+{
+  "config": { "source_type": "STATIC", "static_options": [/* 3 options */] },
+  "routes": [{ "condition": "selection == 5", ... }]  // Only 3 options!
+}
+// Error: "Selection number 5 is out of range. Valid range is 1-3"
+```
+
+#### Best Practices
+
+1. **DYNAMIC menus**: Always use pattern `DYNAMIC MENU → LOGIC_EXPRESSION → routes`
+2. **API_ACTION**: Include both `success` and `error` routes
+3. **STATIC menus**: Validate selection numbers match option count
+4. **Always**: Include `"true"` fallback as final route in LOGIC_EXPRESSION nodes
+
+### Runtime Route Sorting
+
+**Automatic Sorting**: Routes are automatically sorted by priority at runtime before evaluation to ensure optimal route evaluation order.
+
+**Implementation**: The conversation engine sorts routes dynamically when evaluating each node, using the same logic as the frontend route editor.
+
+**Sorting Rules (Lower Priority = Evaluated First)**:
+
+| Node Type            | Condition Pattern  | Priority | Example                         |
+| -------------------- | ------------------ | -------- | ------------------------------- |
+| **ALL**              | `"true"`           | 1000     | Catch-all always evaluated last |
+| **MENU**             | `"selection == N"` | N        | `"selection == 1"` → priority 1 |
+| **MENU**             | Other conditions   | 500      | Custom conditions               |
+| **API_ACTION**       | `"success"`        | 1        | Success checked first           |
+| **API_ACTION**       | `"error"`          | 2        | Error checked second            |
+| **API_ACTION**       | Other conditions   | 500      | Custom conditions               |
+| **LOGIC_EXPRESSION** | Any condition      | 500      | Maintains definition order      |
+| **Other nodes**      | Any condition      | 500      | Default priority                |
+
+**Key Benefits**:
+
+- ✅ Specific conditions always evaluated before catch-all
+- ✅ Works for all flows (including old ones without sorted routes)
+- ✅ No modification to stored flow data
+- ✅ Consistent with frontend behavior
+- ✅ Prevents routing issues from route definition order
+
+**Examples**:
+
+```python
+# Original routes (as defined in flow)
+routes = [
+    {"condition": "true", "target_node": "fallback"},
+    {"condition": "selection == 1", "target_node": "option1"},
+    {"condition": "selection == 2", "target_node": "option2"}
+]
+
+# After runtime sorting (for MENU node)
+sorted_routes = [
+    {"condition": "selection == 1", "target_node": "option1"},  # Priority: 1
+    {"condition": "selection == 2", "target_node": "option2"},  # Priority: 2
+    {"condition": "true", "target_node": "fallback"}            # Priority: 1000
+]
+
+# API_ACTION example
+routes = [
+    {"condition": "true", "target_node": "fallback"},
+    {"condition": "error", "target_node": "error_handler"},
+    {"condition": "success", "target_node": "next"}
+]
+
+# After runtime sorting
+sorted_routes = [
+    {"condition": "success", "target_node": "next"},            # Priority: 1
+    {"condition": "error", "target_node": "error_handler"},     # Priority: 2
+    {"condition": "true", "target_node": "fallback"}            # Priority: 1000
+]
+```
+
+**Implementation Note**: Sorting happens transparently at runtime. Flow developers don't need to manually order routes - the system ensures optimal evaluation order automatically.
+
 ### Routing Capabilities
 
 ✅ **Supported**:
 
 - Multiple routes per node
-- First-match wins (routes evaluated in order)
+- First-match wins (routes evaluated in order after sorting)
+- Automatic route prioritization at runtime
 - Context variable access
 - Selection value checking (MENU)
 - Success/error states (API_ACTION)

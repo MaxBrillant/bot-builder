@@ -148,6 +148,14 @@ class RegexPatterns:
     PHONE = r'^\+?[0-9]{10,15}$'
 
 
+# Route Validation Rules
+class RouteValidationRules:
+    """Route validation patterns and rules"""
+    
+    # MENU selection pattern: "selection == N" where N is a digit
+    MENU_SELECTION_PATTERN = r'^selection == \d+$'
+
+
 # Reserved Keywords
 class ReservedKeywords:
     """Keywords that cannot be used as variable names"""

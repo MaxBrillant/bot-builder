@@ -61,7 +61,7 @@ class MenuProcessor(BaseProcessor):
             options = config.get('static_options', [])
         elif source_type == MenuSourceType.DYNAMIC.value:
             source_var = config.get('source_variable')
-            source_array = context.get(source_var, [])
+            source_array = context.get(source_var) or []
             item_template = config.get('item_template', '')
             options = self._render_dynamic_options(source_array, item_template, context)
         else:
@@ -111,6 +111,8 @@ class MenuProcessor(BaseProcessor):
         # Handle validation failure with retry logic
         if validation_failed:
             error_msg = config.get('error_message', ErrorMessages.INVALID_SELECTION)
+            # Render template if it contains variables
+            error_msg = self.template_engine.render(error_msg, context)
             
             if session and db:
                 # Track validation attempts
@@ -190,7 +192,7 @@ class MenuProcessor(BaseProcessor):
         # Apply output mapping (dynamic menus only)
         if source_type == MenuSourceType.DYNAMIC.value:
             source_var = config.get('source_variable')
-            source_array = context.get(source_var, [])
+            source_array = context.get(source_var) or []
             output_mapping = config.get('output_mapping', [])
             
             if output_mapping and source_array:
@@ -202,7 +204,7 @@ class MenuProcessor(BaseProcessor):
         
         # Evaluate routes
         routes = node.get('routes', [])
-        next_node = self.evaluate_routes(routes, context)
+        next_node = self.evaluate_routes(routes, context, node.get('type'))
         
         return ProcessResult(
             next_node=next_node,
@@ -284,6 +286,8 @@ class MenuProcessor(BaseProcessor):
             # Handle option format (string or dict with 'label')
             if isinstance(option, dict):
                 label = option.get('label', str(option))
+                # Render template in label
+                label = self.template_engine.render(label, context)
             else:
                 label = str(option)
             
@@ -304,7 +308,7 @@ class MenuProcessor(BaseProcessor):
         context: Dict[str, Any]
     ):
         """
-        Apply output mapping to extract fields from selected item
+        Apply output mapping to extract fields from selected item with type inference
         
         Args:
             selected_item: The selected item object
@@ -313,16 +317,25 @@ class MenuProcessor(BaseProcessor):
         
         Note:
             - Missing or null fields are set to null (graceful handling)
-            - All mappings execute (no partial failures)
+            - All mappings execute independently (no partial failures)
+            - Type conversion based on variable's declared type
         
         Example:
-            selected_item = {"id": "123", "name": "Alice"}
+            selected_item = {"id": "123", "name": "Alice", "age": "25"}
             mappings = [
                 {"source_path": "id", "target_variable": "user_id"},
-                {"source_path": "name", "target_variable": "user_name"}
+                {"source_path": "name", "target_variable": "user_name"},
+                {"source_path": "age", "target_variable": "user_age"}
             ]
-            Result: context updated with user_id="123", user_name="Alice"
+            
+            With flow variables:
+                {"user_id": {"type": "string"}, "user_name": {"type": "string"}, "user_age": {"type": "integer"}}
+            
+            Result: context updated with user_id="123", user_name="Alice", user_age=25 (as integer)
         """
+        # Get variable definitions from flow for type inference
+        variables = context.get("_flow_variables", {})
+        
         for mapping in mappings:
             source_path = mapping.get('source_path', '')
             target_var = mapping.get('target_variable', '')
@@ -330,15 +343,44 @@ class MenuProcessor(BaseProcessor):
             if not target_var:
                 continue
             
+            # Look up the target variable's declared type
+            var_definition = variables.get(target_var, {})
+            var_type = var_definition.get("type", "string")  # Default to string if not defined
+            
             # Extract value from selected item
             value = self.get_nested_value(selected_item, source_path)
             
-            # Set in context (null if not found)
-            context[target_var] = value
+            # Handle null values or missing paths - set to null
+            if value is None:
+                context[target_var] = None
+                self.logger.debug(
+                    f"Output mapping: {source_path} -> {target_var} = null (missing or null value)",
+                    source=source_path,
+                    target=target_var,
+                    inferred_type=var_type
+                )
+                continue
             
-            self.logger.debug(
-                f"Output mapping: {source_path} -> {target_var}",
-                source=source_path,
-                target=target_var,
-                value_type=type(value).__name__
-            )
+            # Attempt type conversion based on variable's declared type
+            try:
+                converted_value = self.validation_system.convert_type(str(value), var_type)
+                context[target_var] = converted_value
+                
+                self.logger.debug(
+                    f"Output mapping: {source_path} -> {target_var}",
+                    source=source_path,
+                    target=target_var,
+                    inferred_type=var_type,
+                    value_type=type(value).__name__,
+                    converted_type=type(converted_value).__name__
+                )
+            except Exception as e:
+                # On conversion failure, set to null and continue with other mappings
+                context[target_var] = None
+                self.logger.warning(
+                    f"Output mapping conversion failed for '{target_var}', setting to null: {str(e)}",
+                    source=source_path,
+                    target=target_var,
+                    inferred_type=var_type,
+                    value=value
+                )

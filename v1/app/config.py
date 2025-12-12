@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 120
     BCRYPT_ROUNDS: int = Field(12, ge=10, le=16)  # Password hashing rounds (10-16 recommended)
     
     # Database Connection Pool

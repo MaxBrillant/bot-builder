@@ -289,13 +289,14 @@ class ConversationEngine:
             - Whitespace trimmed
             - Trailing punctuation ignored
             - Standalone messages only
+            - Wildcard "*" acts as fallback if no specific keyword matches
         """
         # Normalize keyword - convert to uppercase to match stored format
         normalized = keyword.strip().upper()
         # Remove trailing punctuation
         normalized = normalized.rstrip('!.?')
         
-        # Query flows with trigger keywords using JSONB contains (bot-scoped)
+        # Step 1: Try specific keyword match
         stmt = select(Flow).where(
             Flow.bot_id == bot_id,
             Flow.trigger_keywords.contains([normalized])
@@ -306,14 +307,33 @@ class ConversationEngine:
         
         if flow:
             self.logger.info(
-                f"Flow matched by keyword",
-                keyword=keyword,
+                f"Flow matched by specific keyword",
+                keyword=normalized,
                 bot_id=str(bot_id),
                 flow_id=str(flow.id),
                 flow_name=flow.name
             )
+            return flow
         
-        return flow
+        # Step 2: Fallback to wildcard "*"
+        stmt = select(Flow).where(
+            Flow.bot_id == bot_id,
+            Flow.trigger_keywords.contains(["*"])
+        )
+        
+        result = await self.db.execute(stmt)
+        wildcard_flow = result.scalar_one_or_none()
+        
+        if wildcard_flow:
+            self.logger.info(
+                f"Flow matched by wildcard for message",
+                keyword=normalized,
+                bot_id=str(bot_id),
+                flow_id=str(wildcard_flow.id),
+                flow_name=wildcard_flow.name
+            )
+        
+        return wildcard_flow
     
     async def _execute_flow(
         self,

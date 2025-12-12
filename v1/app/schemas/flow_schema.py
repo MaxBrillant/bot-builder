@@ -3,7 +3,7 @@ Flow Schemas
 Pydantic models for flow management
 """
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, field_validator
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from uuid import UUID
@@ -17,6 +17,44 @@ class FlowCreate(BaseModel):
     defaults: Optional[Dict[str, Any]] = Field(default_factory=dict)
     start_node_id: str = Field(..., min_length=1, max_length=96)
     nodes: Dict[str, Dict[str, Any]] = Field(...)
+    
+    @field_validator('trigger_keywords')
+    @classmethod
+    def validate_trigger_keywords(cls, v: List[str]) -> List[str]:
+        """Validate trigger keywords - must have at least one non-empty keyword"""
+        if not v or len(v) == 0:
+            raise ValueError("At least one trigger keyword is required")
+        
+        # Validate each keyword
+        valid_keywords = []
+        for i, keyword in enumerate(v):
+            if not isinstance(keyword, str):
+                raise ValueError(f"Trigger keyword at index {i} must be a string")
+            
+            # Strip whitespace
+            cleaned = keyword.strip()
+            
+            if not cleaned:
+                raise ValueError(f"Trigger keyword at index {i} cannot be empty or whitespace only")
+            
+            valid_keywords.append(cleaned)
+        
+        if not valid_keywords:
+            raise ValueError("At least one trigger keyword is required")
+        
+        # Check for duplicate keywords within the same flow (case-insensitive)
+        normalized_keywords = [kw.upper() for kw in valid_keywords]
+        seen = set()
+        duplicates = []
+        for kw in normalized_keywords:
+            if kw in seen:
+                duplicates.append(kw)
+            seen.add(kw)
+        
+        if duplicates:
+            raise ValueError(f"Duplicate trigger keywords found: {', '.join(set(duplicates))}")
+        
+        return valid_keywords
     
     model_config = {
         "json_schema_extra": {
@@ -58,6 +96,49 @@ class FlowUpdate(BaseModel):
     defaults: Optional[Dict[str, Any]] = None
     start_node_id: Optional[str] = None
     nodes: Optional[Dict[str, Dict[str, Any]]] = None
+    
+    @field_validator('trigger_keywords')
+    @classmethod
+    def validate_trigger_keywords(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        """Validate trigger keywords when provided - must have at least one non-empty keyword"""
+        # If None, it means no update to trigger_keywords
+        if v is None:
+            return v
+        
+        # If provided, must have at least one keyword
+        if len(v) == 0:
+            raise ValueError("At least one trigger keyword is required")
+        
+        # Validate each keyword
+        valid_keywords = []
+        for i, keyword in enumerate(v):
+            if not isinstance(keyword, str):
+                raise ValueError(f"Trigger keyword at index {i} must be a string")
+            
+            # Strip whitespace
+            cleaned = keyword.strip()
+            
+            if not cleaned:
+                raise ValueError(f"Trigger keyword at index {i} cannot be empty or whitespace only")
+            
+            valid_keywords.append(cleaned)
+        
+        if not valid_keywords:
+            raise ValueError("At least one trigger keyword is required")
+        
+        # Check for duplicate keywords within the same flow (case-insensitive)
+        normalized_keywords = [kw.upper() for kw in valid_keywords]
+        seen = set()
+        duplicates = []
+        for kw in normalized_keywords:
+            if kw in seen:
+                duplicates.append(kw)
+            seen.add(kw)
+        
+        if duplicates:
+            raise ValueError(f"Duplicate trigger keywords found: {', '.join(set(duplicates))}")
+        
+        return valid_keywords
     
     model_config = {
         "json_schema_extra": {

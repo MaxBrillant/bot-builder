@@ -9,7 +9,7 @@ import json
 
 from app.processors.base_processor import BaseProcessor, ProcessResult
 from app.utils.logger import get_logger
-from app.utils.constants import HTTPMethod, SpecialVariables
+from app.utils.constants import HTTPMethod, SpecialVariables, VariableType
 from app.config import settings
 
 logger = get_logger(__name__)
@@ -71,9 +71,9 @@ class APIActionProcessor(BaseProcessor):
         config = node.get('config', {})
         request_config = config.get('request', {})
         
-        # Render URL with context variables
+        # Render URL with context variables and URL encoding
         url_template = request_config.get('url', '')
-        url = self.template_engine.render(url_template, context)
+        url = self.template_engine.render_url(url_template, context)
         
         # Get HTTP method
         method = request_config.get('method', 'GET').upper()
@@ -119,7 +119,7 @@ class APIActionProcessor(BaseProcessor):
                         content_type=response.headers.get('content-type')
                     )
                     context[SpecialVariables.API_RESULT] = 'error'
-                    next_node = self.evaluate_routes(node.get('routes', []), context)
+                    next_node = self.evaluate_routes(node.get('routes', []), context, node.get('type'))
                     return ProcessResult(next_node=next_node, context=context)
             
             # Check success conditions
@@ -177,7 +177,7 @@ class APIActionProcessor(BaseProcessor):
         
         # Evaluate routes based on success/error
         routes = node.get('routes', [])
-        next_node = self.evaluate_routes(routes, context)
+        next_node = self.evaluate_routes(routes, context, node.get('type'))
         
         return ProcessResult(
             next_node=next_node,
@@ -290,7 +290,7 @@ class APIActionProcessor(BaseProcessor):
         context: Dict[str, Any]
     ) -> bool:
         """
-        Apply response mapping to extract data into context
+        Apply response mapping to extract data into context with type inference
         
         Args:
             response_data: Parsed JSON response
@@ -298,70 +298,85 @@ class APIActionProcessor(BaseProcessor):
             context: Session context (updated in place)
         
         Returns:
-            bool: True if all conversions succeeded, False if any failed
+            bool: Always returns True (all mappings execute independently)
         
         Example:
             response_data = {"user": {"id": "123", "name": "Alice"}}
             mappings = [
-                {"source_path": "user.id", "target_variable": "user_id", "type": "string"},
-                {"source_path": "user.name", "target_variable": "user_name", "type": "string"}
+                {"source_path": "user.id", "target_variable": "user_id"},
+                {"source_path": "user.name", "target_variable": "user_name"}
             ]
-            Result: context updated with user_id="123", user_name="Alice"
+            
+            With flow variables:
+                {"user_id": {"type": "integer"}, "user_name": {"type": "string"}}
+            
+            Result: context updated with user_id=123 (as integer), user_name="Alice"
         """
-        conversion_success = True
+        # Get variable definitions from flow for type inference
+        variables = context.get("_flow_variables", {})
         
         for mapping in mappings:
             source_path = mapping.get('source_path', '')
             target_var = mapping.get('target_variable', '')
-            target_type = mapping.get('type', 'string')
             
             if not target_var:
                 continue
             
+            # Look up the target variable's declared type
+            var_definition = variables.get(target_var, {})
+            var_type = var_definition.get("type", "string")  # Default to string if not defined
+            
             # Extract value from response
             value = self.get_nested_value(response_data, source_path)
             
-            # Convert to target type
+            # Handle null values or missing paths - set to null
+            if value is None:
+                context[target_var] = None
+                self.logger.debug(
+                    f"Response mapping: {source_path} -> {target_var} = null (missing or null value)",
+                    source=source_path,
+                    target=target_var,
+                    inferred_type=var_type
+                )
+                continue
+            
+            # Attempt type conversion based on variable's declared type
             try:
-                # Handle type conversion based on value type
-                if value is None:
-                    converted_value = None
-                elif target_type == 'string':
-                    converted_value = str(value)
-                elif target_type == 'integer':
-                    # If already int, use directly; otherwise convert
-                    converted_value = int(value) if not isinstance(value, int) else value
-                elif target_type == 'boolean':
-                    # If already bool, use directly; otherwise convert
-                    if isinstance(value, bool):
-                        converted_value = value
-                    else:
-                        converted_value = self.validation_system.convert_type(str(value), target_type)
-                elif target_type == 'array':
-                    # If already list, use directly; otherwise convert
-                    converted_value = value if isinstance(value, list) else self.validation_system.convert_type(str(value), target_type)
+                # Special handling for arrays: if value is already a list and target is array,
+                # use it directly without stringification to prevent comma-splitting bug
+                if var_type == VariableType.ARRAY.value and isinstance(value, list):
+                    converted_value = value
+                    self.logger.debug(
+                        f"Response mapping: {source_path} -> {target_var} (array passthrough)",
+                        source=source_path,
+                        target=target_var,
+                        inferred_type=var_type,
+                        value_type=type(value).__name__,
+                        array_length=len(value)
+                    )
                 else:
-                    # Fallback to validation system
-                    converted_value = self.validation_system.convert_type(str(value), target_type)
+                    converted_value = self.validation_system.convert_type(str(value), var_type)
+                    self.logger.debug(
+                        f"Response mapping: {source_path} -> {target_var}",
+                        source=source_path,
+                        target=target_var,
+                        inferred_type=var_type,
+                        value_type=type(value).__name__,
+                        converted_type=type(converted_value).__name__
+                    )
                 
                 context[target_var] = converted_value
-                
-                self.logger.debug(
-                    f"Response mapping: {source_path} -> {target_var}",
-                    source=source_path,
-                    target=target_var,
-                    type=target_type,
-                    value_type=type(value).__name__
-                )
             except Exception as e:
-                self.logger.error(
-                    f"Response mapping conversion error for '{target_var}': {str(e)}",
+                # On conversion failure, set to null and continue with other mappings
+                context[target_var] = None
+                self.logger.warning(
+                    f"Response mapping conversion failed for '{target_var}', setting to null: {str(e)}",
                     source=source_path,
                     target=target_var,
+                    inferred_type=var_type,
                     value=value
                 )
-                conversion_success = False
-                # Do NOT set variable to None - leave it unset to avoid masking the error
         
-        return conversion_success
+        # All mappings execute independently - always return success
+        return True
     
