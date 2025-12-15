@@ -59,15 +59,15 @@ async def register(
         HTTPException: If user_id or email already exists, or rate limit exceeded
     """
     # Rate limit registration by IP address
-    if settings.REDIS_ENABLED and redis_manager.is_connected():
+    if settings.redis.enabled and redis_manager.is_connected():
         client_ip = request.client.host if request.client else "unknown"
-        
+
         # Rate limit registrations per IP
         rate_key = f"register:{client_ip}"
         allowed = await redis_manager.check_rate_limit_user(
             rate_key,
-            max_requests=settings.RATE_LIMIT_REGISTER_MAX,
-            window_seconds=settings.RATE_LIMIT_REGISTER_WINDOW
+            max_requests=settings.rate_limit.register_max,
+            window_seconds=settings.rate_limit.register_window
         )
         
         if not allowed:
@@ -146,15 +146,15 @@ async def login(
         HTTPException: If credentials are invalid or rate limit exceeded
     """
     # Rate limit login attempts by IP address to prevent brute-force attacks
-    if settings.REDIS_ENABLED and redis_manager.is_connected():
+    if settings.redis.enabled and redis_manager.is_connected():
         client_ip = request.client.host if request.client else "unknown"
-        
+
         # Rate limit login attempts per IP
         rate_key = f"login:{client_ip}"
         allowed = await redis_manager.check_rate_limit_user(
             rate_key,
-            max_requests=settings.RATE_LIMIT_LOGIN_MAX,
-            window_seconds=settings.RATE_LIMIT_LOGIN_WINDOW
+            max_requests=settings.rate_limit.login_max,
+            window_seconds=settings.rate_limit.login_window
         )
         
         if not allowed:
@@ -194,7 +194,7 @@ async def login(
     # Create access token (convert UUID to string for JWT)
     access_token = create_access_token(
         data={"sub": str(user.user_id)},
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta=timedelta(minutes=settings.security.access_token_expire_minutes)
     )
 
     logger.info(f"User logged in", user_id=str(user.user_id))
@@ -243,9 +243,9 @@ async def logout(
         - If Redis is not available, logout only logs the action
     """
     token = credentials.credentials
-    
+
     # Blacklist token if Redis is enabled
-    if settings.REDIS_ENABLED and redis_manager.is_connected():
+    if settings.redis.enabled and redis_manager.is_connected():
         try:
             # Decode token to get JTI and expiration time
             payload = decode_access_token(token)

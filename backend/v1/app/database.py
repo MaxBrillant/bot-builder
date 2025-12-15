@@ -16,20 +16,20 @@ logger = get_logger(__name__)
 
 # Create async engine
 # Note: NullPool is incompatible with pool_size/max_overflow
-if settings.DEBUG:
+if settings.debug:
     engine = create_async_engine(
-        settings.DATABASE_URL,
-        echo=settings.DEBUG,
+        settings.database.url,
+        echo=settings.database.echo,
         poolclass=NullPool,
         pool_pre_ping=True
     )
 else:
     engine = create_async_engine(
-        settings.DATABASE_URL,
-        echo=settings.DEBUG,
+        settings.database.url,
+        echo=settings.database.echo,
         pool_pre_ping=True,
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_MAX_OVERFLOW
+        pool_size=settings.database.pool_size,
+        max_overflow=settings.database.max_overflow
     )
 
 # Create async session factory
@@ -47,15 +47,33 @@ Base = declarative_base()
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    Dependency for getting database session
-    
-    Yields:
-        AsyncSession: Database session
-    
-    Usage:
-        @app.get("/endpoint")
+    FastAPI dependency for database session
+
+    IMPORTANT: This function does NOT auto-commit. Services must explicitly
+    call `await session.commit()` when they're ready to persist changes.
+    This provides explicit transaction control and prevents double-commit issues.
+
+    Transaction Management Pattern:
+        @app.post("/endpoint")
         async def endpoint(db: AsyncSession = Depends(get_db)):
-            ...
+            # Perform database operations
+            entity = MyModel(...)
+            db.add(entity)
+
+            # Explicitly commit when ready
+            await db.commit()
+
+            # Refresh if you need updated fields (e.g., server defaults)
+            await db.refresh(entity)
+
+            return entity
+
+    Error Handling:
+        - On exception: automatically rolls back the transaction
+        - On success: NO auto-commit (service controls when to commit)
+
+    Yields:
+        AsyncSession: Database session without auto-commit
     """
     async with AsyncSessionLocal() as session:
         try:
@@ -63,11 +81,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
-        else:
-            # Only commit if no exception occurred
-            await session.commit()
-        finally:
-            await session.close()
+        # NO auto-commit - services must call session.commit() explicitly
 
 
 async def init_db():

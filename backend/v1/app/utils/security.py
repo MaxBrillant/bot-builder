@@ -64,8 +64,8 @@ def get_password_hash(password: str) -> str:
             "Password contains too many bytes (maximum 72 bytes). "
             "Try using fewer special characters or emojis."
         )
-    
-    hashed = bcrypt.hashpw(password_bytes, bcrypt.gensalt(rounds=settings.BCRYPT_ROUNDS))
+
+    hashed = bcrypt.hashpw(password_bytes, bcrypt.gensalt(rounds=settings.security.bcrypt_rounds))
     return hashed.decode('utf-8')
 
 
@@ -81,37 +81,37 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
         Encoded JWT token with JTI claim
     """
     to_encode = data.copy()
-    
+
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.security.access_token_expire_minutes)
+
     # Add expiration and unique JWT ID for blacklisting
     to_encode.update({
         "exp": expire,
         "jti": str(uuid.uuid4())  # Unique token identifier for blacklist
     })
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    
+    encoded_jwt = jwt.encode(to_encode, settings.security.secret_key, algorithm=settings.security.algorithm)
+
     return encoded_jwt
 
 
 def decode_access_token(token: str) -> Dict[str, Any]:
     """
     Decode and verify a JWT access token
-    
+
     Args:
         token: JWT token to decode
-    
+
     Returns:
         Decoded token payload
-    
+
     Raises:
         AuthenticationError: If token is invalid or expired
     """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, settings.security.secret_key, algorithms=[settings.security.algorithm])
         return payload
     except JWTError as e:
         raise AuthenticationError(f"Invalid token: {str(e)}")
@@ -146,25 +146,25 @@ def extract_user_id_from_token(token: str) -> str:
 def create_refresh_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     """
     Create a JWT refresh token (longer expiration)
-    
+
     Args:
         data: Data to encode in the token
         expires_delta: Optional custom expiration time
-    
+
     Returns:
         Encoded JWT refresh token
     """
     to_encode = data.copy()
-    
+
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         # Refresh tokens expire after 7 days by default
         expire = datetime.now(timezone.utc) + timedelta(days=7)
-    
+
     to_encode.update({"exp": expire, "type": "refresh"})
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    
+    encoded_jwt = jwt.encode(to_encode, settings.security.secret_key, algorithm=settings.security.algorithm)
+
     return encoded_jwt
 
 

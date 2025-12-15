@@ -12,10 +12,10 @@ from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import init_db, close_db, check_database, AsyncSessionLocal
 from app.core.redis_manager import redis_manager
-from app.core.conversation_engine import init_http_client, close_http_client
+from app.core.engine import init_http_client, close_http_client
 from app.api import auth_router, bots_router, flows_router, webhooks_router
+from app.api.middleware import register_exception_handlers
 from app.utils.logger import get_logger
-from app.utils.exceptions import BotBuilderException
 
 logger = get_logger(__name__)
 
@@ -39,17 +39,17 @@ async def lifespan(app: FastAPI):
     - Cleanup resources
     """
     # Startup
-    logger.info("Starting Bot Builder application", version=settings.APP_VERSION)
-    
+    logger.info("Starting Bot Builder application", version=settings.app_version)
+
     try:
         await init_db()
         logger.info("Database initialized")
     except Exception as e:
         logger.error(f"Database initialization failed: {str(e)}")
         raise
-    
+
     # Initialize Redis
-    if settings.REDIS_ENABLED:
+    if settings.redis.enabled:
         try:
             await redis_manager.connect()
             logger.info("Redis initialized")
@@ -120,12 +120,12 @@ async def lifespan(app: FastAPI):
     # Close HTTP client
     await close_http_client()
     logger.info("HTTP client closed")
-    
+
     # Close Redis
-    if settings.REDIS_ENABLED:
+    if settings.redis.enabled:
         await redis_manager.disconnect()
         logger.info("Redis connection closed")
-    
+
     # Close database
     await close_db()
     logger.info("Database connections closed")
@@ -133,12 +133,12 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI application
 app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
+    title=settings.app_name,
+    version=settings.app_version,
     description="Conversational bot framework with multi-tenant support",
     lifespan=lifespan,
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None
 )
 
 
@@ -153,35 +153,30 @@ app.add_middleware(
 )
 
 
-# Exception handlers
-@app.exception_handler(BotBuilderException)
-async def bot_builder_exception_handler(request: Request, exc: BotBuilderException):
-    """Handle custom Bot Builder exceptions"""
-    logger.error(f"BotBuilder error: {exc.message}", path=request.url.path)
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"error": exc.message}
-    )
+# Exception handlers - Register structured exception handling from middleware
+register_exception_handlers(app)
 
 
+# Catch-all for unexpected exceptions (not BotBuilderException subclasses)
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """Handle unexpected exceptions"""
+    """Handle unexpected exceptions not caught by BotBuilderException handlers"""
     logger.error(
         f"Unexpected error: {str(exc)}",
         path=request.url.path,
         exc_info=True
     )
-    
-    if settings.DEBUG:
+
+    if settings.debug:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "error": "Internal server error",
-                "detail": str(exc)
+                "detail": str(exc),
+                "type": type(exc).__name__
             }
         )
-    
+
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"error": "Internal server error"}
@@ -205,14 +200,14 @@ async def health_check():
         Application health status
     """
     db_healthy = await check_database()
-    redis_health = await redis_manager.health_check() if settings.REDIS_ENABLED else {"status": "disabled"}
-    
-    overall_healthy = db_healthy and (not settings.REDIS_ENABLED or redis_health["status"] == "healthy")
-    
+    redis_health = await redis_manager.health_check() if settings.redis.enabled else {"status": "disabled"}
+
+    overall_healthy = db_healthy and (not settings.redis.enabled or redis_health["status"] == "healthy")
+
     return {
         "status": "healthy" if overall_healthy else "degraded",
-        "version": settings.APP_VERSION,
-        "environment": settings.ENVIRONMENT,
+        "version": settings.app_version,
+        "environment": settings.environment,
         "database": "connected" if db_healthy else "disconnected",
         "redis": redis_health
     }
@@ -223,25 +218,25 @@ async def health_check():
 async def root():
     """
     Root endpoint
-    
+
     Returns:
         API information
     """
     return {
-        "name": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "docs": "/docs" if settings.DEBUG else None,
+        "name": settings.app_name,
+        "version": settings.app_version,
+        "docs": "/docs" if settings.debug else None,
         "health": "/health"
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=settings.DEBUG,
+        reload=settings.debug,
         log_level="info"
     )

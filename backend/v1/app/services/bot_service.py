@@ -1,24 +1,25 @@
 """
 Bot Service
-Handles bot lifecycle and management operations
+Handles bot lifecycle and management operations using repository pattern
 """
 
 from typing import Optional, List
 from uuid import UUID
 import secrets
 import hmac
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bot import Bot
-from app.utils.exceptions import NotFoundError, UnauthorizedError
+from app.repositories.bot_repository import BotRepository
+from app.utils.exceptions import BotNotFoundError, UnauthorizedError
 
 
 class BotService:
-    """Service for managing bots"""
-    
+    """Service for managing bots with explicit transaction control"""
+
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.bot_repo = BotRepository(db)
     
     @staticmethod
     def generate_webhook_secret() -> str:
@@ -66,60 +67,62 @@ class BotService:
     async def get_bot(
         self,
         bot_id: UUID,
-        owner_user_id=None,
+        owner_user_id: Optional[UUID] = None,
         check_ownership: bool = True
     ) -> Bot:
         """
         Get bot by ID with optional ownership check
-        
+
         Args:
             bot_id: Bot identifier
             owner_user_id: User ID to verify ownership (required if check_ownership=True)
             check_ownership: Whether to verify the user owns this bot
-            
+
         Returns:
             Bot object
-            
+
         Raises:
-            NotFoundError: Bot not found
+            BotNotFoundError: Bot not found
             UnauthorizedError: User doesn't own this bot
         """
-        stmt = select(Bot).where(Bot.bot_id == bot_id)
-        result = await self.db.execute(stmt)
-        bot = result.scalar_one_or_none()
-        
+        bot = await self.bot_repo.get_by_id(bot_id)
+
         if not bot:
-            raise NotFoundError(f"Bot {bot_id} not found")
-        
+            raise BotNotFoundError(
+                message=f"Bot {bot_id} not found",
+                error_code="BOT_NOT_FOUND",
+                bot_id=str(bot_id)
+            )
+
         if check_ownership and bot.owner_user_id != owner_user_id:
-            raise UnauthorizedError("You don't have permission to access this bot")
-        
+            raise UnauthorizedError(
+                message="You don't have permission to access this bot",
+                error_code="UNAUTHORIZED",
+                bot_id=str(bot_id),
+                user_id=str(owner_user_id)
+            )
+
         return bot
     
     async def list_bots(
         self,
-        owner_user_id,
+        owner_user_id: UUID,
         status: Optional[str] = None
     ) -> List[Bot]:
         """
-        List all bots owned by a user
-        
+        List all bots owned by a user with eager-loaded flows
+
         Args:
             owner_user_id: User ID
             status: Optional filter by status ('active' or 'inactive')
-            
+
         Returns:
-            List of Bot objects
+            List of Bot objects with flows eager-loaded (solves N+1 queries)
         """
-        stmt = select(Bot).where(Bot.owner_user_id == owner_user_id)
-        
         if status:
-            stmt = stmt.where(Bot.status == status)
-        
-        stmt = stmt.order_by(Bot.created_at.desc())
-        
-        result = await self.db.execute(stmt)
-        return result.scalars().all()
+            return await self.bot_repo.get_active_bots(owner_user_id) if status == 'active' else []
+
+        return await self.bot_repo.get_user_bots(owner_user_id)
     
     async def update_bot(
         self,
@@ -163,22 +166,22 @@ class BotService:
     async def delete_bot(
         self,
         bot_id: UUID,
-        owner_user_id
+        owner_user_id: UUID
     ) -> None:
         """
-        Delete a bot (cascades to flows and sessions)
-        
+        Delete a bot (cascades to flows and sessions via FK constraints)
+
         Args:
             bot_id: Bot identifier
             owner_user_id: User ID (for ownership check)
-            
+
         Raises:
-            NotFoundError: Bot not found
+            BotNotFoundError: Bot not found
             UnauthorizedError: User doesn't own this bot
         """
         bot = await self.get_bot(bot_id, owner_user_id, check_ownership=True)
-        
-        await self.db.delete(bot)
+
+        await self.bot_repo.delete(bot)
         await self.db.commit()
     
     async def regenerate_webhook_secret(
@@ -216,14 +219,14 @@ class BotService:
     ) -> bool:
         """
         Verify webhook authentication using constant-time comparison
-        
+
         Args:
             bot_id: Bot identifier
             secret: Webhook secret to verify
-            
+
         Returns:
             True if secret matches, False otherwise
-            
+
         Note:
             Uses hmac.compare_digest for timing-attack resistance.
             Always performs comparison even if bot not found to prevent timing attacks.
@@ -231,10 +234,10 @@ class BotService:
         try:
             bot = await self.get_bot(bot_id, check_ownership=False)
             actual_secret = bot.webhook_secret
-        except NotFoundError:
+        except BotNotFoundError:
             # Use dummy secret for constant-time comparison
             actual_secret = "x" * 64
-        
+
         # Always perform comparison to prevent timing attack
         return hmac.compare_digest(actual_secret, secret)
     

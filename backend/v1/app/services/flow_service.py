@@ -1,32 +1,32 @@
 """
 Flow Service
-Handles flow CRUD operations with Redis caching
+Handles flow CRUD operations with Redis caching using repository pattern
 """
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime
 import json
-import sys
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func, update as sql_update
 from sqlalchemy.exc import IntegrityError
 
 from app.models.flow import Flow
+from app.repositories.flow_repository import FlowRepository
 from app.core.redis_manager import redis_manager
-from app.core.flow_validator import FlowValidator
+from app.core.validators import FlowValidator
 from app.config import settings
 from app.utils.logger import get_logger
-from app.utils.exceptions import ValidationError, NotFoundError
+from app.utils.exceptions import FlowValidationError, FlowNotFoundError
 
 logger = get_logger(__name__)
 
 
 class FlowService:
-    """Service for managing flows with Redis caching"""
-    
+    """Service for managing flows with Redis caching and explicit transaction control"""
+
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.flow_repo = FlowRepository(db)
         self.validator = FlowValidator(db)
     
     async def create_flow(
@@ -51,17 +51,24 @@ class FlowService:
         flow_json = json.dumps(flow_data, default=str)
         # Use actual UTF-8 byte size, not Python object overhead
         flow_size = len(flow_json.encode('utf-8'))
-        
-        if flow_size > settings.MAX_FLOW_SIZE:
-            raise ValidationError(
-                f"Flow definition too large ({flow_size} bytes). "
-                f"Maximum allowed: {settings.MAX_FLOW_SIZE} bytes"
+
+        if flow_size > settings.flow_constraints.max_flow_size:
+            raise FlowValidationError(
+                message=f"Flow definition too large ({flow_size} bytes). "
+                        f"Maximum allowed: {settings.flow_constraints.max_flow_size} bytes",
+                error_code="FLOW_TOO_LARGE",
+                flow_size=flow_size,
+                max_size=settings.flow_constraints.max_flow_size
             )
-        
+
         # Validate flow structure
         validation_result = await self.validator.validate_flow(flow_data, bot_id)
         if not validation_result.is_valid():
-            raise ValidationError(f"Flow validation failed: {validation_result.errors}")
+            raise FlowValidationError(
+                message="Flow validation failed",
+                error_code="FLOW_VALIDATION_FAILED",
+                errors=validation_result.errors
+            )
         
         # Create flow model
         # Normalize trigger keywords to uppercase for case-insensitive matching
@@ -75,23 +82,28 @@ class FlowService:
         )
         
         try:
-            self.db.add(flow)
+            flow = await self.flow_repo.add(flow)
             await self.db.commit()
             await self.db.refresh(flow)
-            
+
             # Cache the flow
             await self._cache_flow(flow)
-            
+
             # Cache trigger keywords
             await self._cache_trigger_keywords(flow)
-            
+
             logger.info(f"Flow created: {flow.id} (name: {flow.name})", bot_id=str(bot_id))
             return flow
-            
+
         except IntegrityError as e:
             await self.db.rollback()
             if "unique_flow_name_per_bot" in str(e) or "name" in str(e):
-                raise ValidationError(f"Flow name '{flow_data['name']}' already exists in this bot")
+                raise FlowValidationError(
+                    message=f"Flow name '{flow_data['name']}' already exists in this bot",
+                    error_code="DUPLICATE_FLOW_NAME",
+                    flow_name=flow_data['name'],
+                    bot_id=str(bot_id)
+                )
             raise
     
     async def get_flow(self, flow_id: UUID, bot_id: UUID) -> Optional[Flow]:
@@ -184,40 +196,29 @@ class FlowService:
         limit: int = 100
     ) -> List[Flow]:
         """
-        List flows for a bot.
-        
+        List flows for a bot
+
         Args:
             bot_id: Bot ID
             skip: Number of records to skip
             limit: Maximum records to return
-            
+
         Returns:
             List of flows ordered by creation time (oldest first)
         """
-        result = await self.db.execute(
-            select(Flow)
-            .where(Flow.bot_id == bot_id)
-            .offset(skip)
-            .limit(limit)
-            .order_by(Flow.created_at.asc())
-        )
-        return list(result.scalars().all())
-    
+        return await self.flow_repo.get_bot_flows(bot_id, offset=skip, limit=limit)
+
     async def count_flows(self, bot_id: UUID) -> int:
         """
-        Count total flows for a bot.
-        
+        Count total flows for a bot
+
         Args:
             bot_id: Bot ID
-            
+
         Returns:
             Total number of flows
         """
-        result = await self.db.execute(
-            select(func.count(Flow.id))
-            .where(Flow.bot_id == bot_id)
-        )
-        return result.scalar_one()
+        return await self.flow_repo.count_flows_by_bot(bot_id)
     
     async def update_flow(
         self,
@@ -242,27 +243,29 @@ class FlowService:
         """
         # Get existing flow directly from database (bypass cache for updates)
         # Cache objects aren't attached to session and can't be refreshed
-        result = await self.db.execute(
-            select(Flow).where(
-                Flow.id == flow_id,
-                Flow.bot_id == bot_id
-            )
-        )
-        flow = result.scalar_one_or_none()
+        flow = await self.flow_repo.get_by_id_and_bot(flow_id, bot_id)
         if not flow:
-            raise NotFoundError(f"Flow '{flow_id}' not found")
-        
+            raise FlowNotFoundError(
+                message=f"Flow '{flow_id}' not found",
+                error_code="FLOW_NOT_FOUND",
+                flow_id=str(flow_id),
+                bot_id=str(bot_id)
+            )
+
         # Validate flow size (prevent PostgreSQL JSONB issues)
         flow_json = json.dumps(flow_data, default=str)
         # Use actual UTF-8 byte size, not Python object overhead
         flow_size = len(flow_json.encode('utf-8'))
-        
-        if flow_size > settings.MAX_FLOW_SIZE:
-            raise ValidationError(
-                f"Flow definition too large ({flow_size} bytes). "
-                f"Maximum allowed: {settings.MAX_FLOW_SIZE} bytes"
+
+        if flow_size > settings.flow_constraints.max_flow_size:
+            raise FlowValidationError(
+                message=f"Flow definition too large ({flow_size} bytes). "
+                        f"Maximum allowed: {settings.flow_constraints.max_flow_size} bytes",
+                error_code="FLOW_TOO_LARGE",
+                flow_size=flow_size,
+                max_size=settings.flow_constraints.max_flow_size
             )
-        
+
         # Validate new flow data (pass current flow_id to exclude from duplicate checks)
         validation_result = await self.validator.validate_flow(
             flow_data,
@@ -270,7 +273,11 @@ class FlowService:
             current_flow_id=flow_id
         )
         if not validation_result.is_valid():
-            raise ValidationError(f"Flow validation failed: {validation_result.errors}")
+            raise FlowValidationError(
+                message="Flow validation failed",
+                error_code="FLOW_VALIDATION_FAILED",
+                errors=validation_result.errors
+            )
         
         # Get old keywords for cleanup
         old_keywords = flow.trigger_keywords or []
@@ -308,12 +315,12 @@ class FlowService:
     
     async def delete_flow(self, flow_id: UUID, bot_id: UUID) -> bool:
         """
-        Delete a flow.
-        
+        Delete a flow
+
         Args:
             flow_id: Flow UUID identifier
             bot_id: Bot ID
-            
+
         Returns:
             True if deleted, False if not found
         """
@@ -321,21 +328,17 @@ class FlowService:
         flow = await self.get_flow(flow_id, bot_id)
         if not flow:
             return False
-        
+
         flow_id_str = str(flow_id)
-        
-        # Delete from database
-        await self.db.execute(
-            delete(Flow).where(
-                Flow.id == flow_id,
-                Flow.bot_id == bot_id
-            )
-        )
-        await self.db.commit()
-        
+
+        # Delete from database using repository
+        deleted = await self.flow_repo.delete_by_id_and_bot(flow_id, bot_id)
+        if deleted:
+            await self.db.commit()
+
         # Invalidate cache
         await redis_manager.invalidate_flow_cache(flow_id_str)
-        
+
         # Remove trigger keywords
         if flow.trigger_keywords:
             await redis_manager.invalidate_all_triggers_for_flow(
@@ -343,44 +346,38 @@ class FlowService:
                 flow.trigger_keywords,
                 str(bot_id)
             )
-        
+
         logger.info(f"Flow deleted: {flow_id} (name: {flow.name})", bot_id=str(bot_id))
-        return True
+        return deleted
     
     async def find_flow_by_keyword(self, keyword: str, bot_id: UUID) -> Optional[Flow]:
         """
-        Find flow by trigger keyword within a specific bot.
-        
+        Find flow by trigger keyword within a specific bot
+
         Args:
             keyword: Trigger keyword
             bot_id: Bot ID to search within
-            
+
         Returns:
             Flow or None if not found
         """
         # Try Redis first (bot-scoped) - returns UUID strings
         flow_id_strs = await redis_manager.get_flows_by_keyword(keyword, str(bot_id))
-        
+
         if flow_id_strs:
             # Return first flow (sorted alphabetically for deterministic behavior)
             flow_id = UUID(flow_id_strs[0])
             flow = await self.get_flow(flow_id, bot_id)
             return flow
-        
-        # Fallback to database query (bot-scoped)
-        result = await self.db.execute(
-            select(Flow).where(
-                Flow.bot_id == bot_id,
-                Flow.trigger_keywords.contains([keyword.upper()])
-            ).order_by(Flow.id)
-        )
-        flow = result.scalars().first()
-        
+
+        # Fallback to database query using repository
+        flow = await self.flow_repo.get_by_trigger_keyword(bot_id, keyword)
+
         if flow:
             # Cache for future lookups
             await self._cache_flow(flow)
             await self._cache_trigger_keywords(flow)
-        
+
         return flow
     
     async def _cache_flow(self, flow: Flow):
@@ -401,7 +398,7 @@ class FlowService:
         await redis_manager.cache_flow(
             str(flow.id),  # Cache key is UUID string
             flow_data,
-            ttl=settings.FLOW_CACHE_TTL
+            ttl=settings.cache.flow_ttl
         )
     
     async def _cache_trigger_keywords(self, flow: Flow):

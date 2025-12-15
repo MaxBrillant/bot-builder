@@ -158,7 +158,7 @@ class APIActionProcessor(BaseProcessor):
                 url=rendered_url,
                 headers=headers_dict,
                 json=rendered_body,
-                timeout=settings.API_TIMEOUT
+                timeout=settings.http_client.timeout
             )
             
             # Wrap external response in validated model
@@ -174,7 +174,7 @@ class APIActionProcessor(BaseProcessor):
             )
         except httpx.TimeoutException:
             # Return error response with proper structure
-            self.logger.warning(f"API call timed out after {settings.API_TIMEOUT}s", url=rendered_url)
+            self.logger.warning(f"API call timed out after {settings.http_client.timeout}s", url=rendered_url)
             return APIResponse(
                 status_code=408,
                 body={"error": "Request timeout"},

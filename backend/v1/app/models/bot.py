@@ -3,12 +3,11 @@ Bot Model
 Stores bot definitions with ownership and webhook configuration
 """
 
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, UniqueConstraint, Index, select
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
-from typing import Optional, List
 import uuid
 
 from app.database import Base
@@ -53,7 +52,22 @@ class Bot(Base):
     __table_args__ = (
         UniqueConstraint('name', 'owner_user_id', name='unique_bot_name_per_user'),
     )
-    
+
+    # Relationships
+    owner = relationship("User", back_populates="bots")
+    flows = relationship(
+        "Flow",
+        back_populates="bot",
+        lazy="selectin",  # Eager load flows to solve N+1 queries
+        cascade="all, delete-orphan"
+    )
+    sessions = relationship(
+        "Session",
+        back_populates="bot",
+        lazy="noload",  # Don't load by default (too many)
+        cascade="all, delete-orphan"
+    )
+
     def __repr__(self):
         return f"<Bot(bot_id='{self.bot_id}', name='{self.name}', owner='{self.owner_user_id}')>"
     
@@ -85,61 +99,9 @@ class Bot(Base):
         
         if include_webhook_secret:
             result["webhook_secret"] = self.webhook_secret
-        
+
         return result
-    
-    @classmethod
-    async def get_by_id(cls, db: AsyncSession, bot_id: uuid.UUID) -> Optional["Bot"]:
-        """
-        Get bot by ID
-        
-        Args:
-            db: Database session
-            bot_id: Bot identifier
-            
-        Returns:
-            Bot object or None if not found
-        """
-        result = await db.execute(
-            select(cls).where(cls.bot_id == bot_id)
-        )
-        return result.scalar_one_or_none()
-    
-    @classmethod
-    async def get_by_owner(cls, db: AsyncSession, owner_user_id) -> List["Bot"]:
-        """
-        Get all bots owned by a user
-        
-        Args:
-            db: Database session
-            owner_user_id: Owner's user ID (UUID or string)
-            
-        Returns:
-            List of Bot objects
-        """
-        result = await db.execute(
-            select(cls).where(cls.owner_user_id == owner_user_id).order_by(cls.created_at.desc())
-        )
-        return result.scalars().all()
-    
-    @classmethod
-    async def get_by_name_and_owner(cls, db: AsyncSession, name: str, owner_user_id) -> Optional["Bot"]:
-        """
-        Get bot by name and owner
-        
-        Args:
-            db: Database session
-            name: Bot name
-            owner_user_id: Owner's user ID (UUID or string)
-            
-        Returns:
-            Bot object or None if not found
-        """
-        result = await db.execute(
-            select(cls).where(cls.name == name, cls.owner_user_id == owner_user_id)
-        )
-        return result.scalar_one_or_none()
-    
+
     def is_active(self) -> bool:
         """Check if bot is active"""
         return self.status == 'active'

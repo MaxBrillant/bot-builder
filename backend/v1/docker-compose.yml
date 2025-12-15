@@ -5,13 +5,18 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://botbuilder:${DB_PASSWORD:-password}@db:5432/botbuilder
-      - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY}
-      - ALGORITHM=HS256
-      - ACCESS_TOKEN_EXPIRE_MINUTES=30
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DEBUG=${DEBUG:-True}
+      # Database config (nested with __)
+      - DATABASE__URL=postgresql+asyncpg://botbuilder:${DB_PASSWORD:-password}@db:5432/botbuilder
+      # Redis config (nested with __)
+      - REDIS__URL=redis://redis:6379/0
+      - REDIS__ENABLED=true
+      # Security config (nested with __)
+      - SECURITY__SECRET_KEY=${SECRET_KEY}
+      - SECURITY__ALGORITHM=HS256
+      - SECURITY__ACCESS_TOKEN_EXPIRE_MINUTES=30
+      # App config (lowercase)
+      - environment=${ENVIRONMENT:-development}
+      - debug=${DEBUG:-True}
     depends_on:
       db:
         condition: service_healthy

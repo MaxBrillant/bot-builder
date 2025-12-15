@@ -6,6 +6,7 @@ Presents options (static or dynamic) and captures user selection
 from typing import Optional, Dict, Any, List
 from app.models.node_configs import FlowNode, MenuNodeConfig, MenuStaticOption, MenuOutputMapping
 from app.processors.base_processor import BaseProcessor, ProcessResult
+from app.processors.retry_handler import RetryHandler
 from app.utils.constants import MenuSourceType, ErrorMessages, SpecialVariables
 from app.utils.logger import get_logger
 
@@ -111,62 +112,46 @@ class MenuProcessor(BaseProcessor):
             error_msg = ErrorMessages.INVALID_SELECTION
             # Render template if it contains variables
             error_msg = self.template_engine.render(error_msg, context)
-            
+
             if session and db:
-                # Track validation attempts
+                # Initialize retry handler with session manager
                 from app.core.session_manager import SessionManager
                 session_mgr = SessionManager(db)
-                new_attempt_count = await session_mgr.increment_validation_attempts(session.session_id)
-                
-                # Get retry logic from flow defaults
-                flow_defaults = context.get('_flow_defaults', {})
-                retry_logic = flow_defaults.get('retry_logic', {})
-                max_attempts = retry_logic.get('max_attempts', 3)
-                fail_route = retry_logic.get('fail_route')
-                counter_text = retry_logic.get('counter_text', '')
-                
-                # Check if max attempts exceeded
-                if new_attempt_count >= max_attempts:
-                    # Max attempts reached
-                    await session_mgr.reset_validation_attempts(session.session_id)
-                    
-                    if fail_route:
-                        # Route to fail_route
-                        self.logger.warning(
-                            f"Max validation attempts reached, routing to fail_route",
-                            attempts=new_attempt_count,
-                            max_attempts=max_attempts,
-                            fail_route=fail_route
-                        )
-                        return ProcessResult(
-                            next_node=fail_route,
-                            context=context
-                        )
-                    else:
-                        # No fail_route defined, terminate session per spec
-                        self.logger.warning(
-                            f"Max validation attempts reached, terminating session (no fail_route)",
-                            attempts=new_attempt_count,
-                            max_attempts=max_attempts
-                        )
-                        await session_mgr.error_session(session.session_id)
-                        return ProcessResult(
-                            message=f"{error_msg}\n\nMaximum attempts exceeded.",
-                            terminal=True,
-                            context=context
-                        )
-                
-                # Render counter text if defined
-                if counter_text:
-                    counter_context = {
-                        **context,
-                        'current_attempt': new_attempt_count,
-                        'max_attempts': max_attempts
-                    }
-                    rendered_counter = self.template_engine.render(counter_text, counter_context)
-                    error_msg = f"{error_msg}\n{rendered_counter}"
-            
-            # Re-display menu with error
+                retry_handler = RetryHandler(session_mgr, self.template_engine)
+
+                # Handle validation failure
+                retry_result = await retry_handler.handle_validation_failure(
+                    session,
+                    context,
+                    error_msg
+                )
+
+                # Check if should continue with retry
+                if retry_result.should_continue:
+                    # Re-display menu with error
+                    menu_text = self._format_menu(config.text, options, context)
+                    full_message = f"{retry_result.error_message}\n\n{menu_text}"
+                    return ProcessResult(
+                        message=full_message,
+                        needs_input=True,
+                        context=context
+                    )
+
+                # Max attempts reached - route or terminate
+                if retry_result.terminal:
+                    return ProcessResult(
+                        message=retry_result.error_message,
+                        terminal=True,
+                        context=context
+                    )
+
+                # Route to fail_route
+                return ProcessResult(
+                    next_node=retry_result.next_node,
+                    context=context
+                )
+
+            # No session/db - re-display menu with error
             menu_text = self._format_menu(config.text, options, context)
             full_message = f"{error_msg}\n\n{menu_text}"
             return ProcessResult(
@@ -179,7 +164,8 @@ class MenuProcessor(BaseProcessor):
         if session and db:
             from app.core.session_manager import SessionManager
             session_mgr = SessionManager(db)
-            await session_mgr.reset_validation_attempts(session.session_id)
+            retry_handler = RetryHandler(session_mgr, self.template_engine)
+            await retry_handler.reset_attempts(session)
         
         # Save selection (as integer, 1-based index)
         # Selection variable is INTEGER type for numeric comparisons

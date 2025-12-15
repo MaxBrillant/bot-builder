@@ -91,6 +91,7 @@ def upgrade() -> None:
         sa.Column('validation_attempts', sa.Integer(), nullable=False, server_default='0'),
         sa.CheckConstraint("status IN ('ACTIVE', 'COMPLETED', 'EXPIRED', 'ERROR')", name='check_session_status'),
         sa.ForeignKeyConstraint(['bot_id'], ['bots.bot_id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['flow_id'], ['flows.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('session_id')
     )
     op.create_index(op.f('ix_sessions_channel_user_id'), 'sessions', ['channel_user_id'], unique=False)

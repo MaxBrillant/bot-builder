@@ -6,6 +6,7 @@ Collects and validates user input, saves to context variables
 from typing import Optional, Dict, Any
 from app.models.node_configs import FlowNode, PromptNodeConfig, ValidationRule
 from app.processors.base_processor import BaseProcessor, ProcessResult
+from app.processors.retry_handler import RetryHandler
 from app.utils.constants import ValidationType, ErrorMessages
 from app.utils.logger import get_logger
 
@@ -15,7 +16,7 @@ logger = get_logger(__name__)
 class PromptProcessor(BaseProcessor):
     """
     Process PROMPT nodes - collect and validate user input
-    
+
     Features:
     - Display message to user
     - Wait for input
@@ -25,7 +26,7 @@ class PromptProcessor(BaseProcessor):
     - Type conversion on save
     - Retry tracking
     - Route to fail_route after max attempts
-    
+
     Processing Order:
     1. Display message (first call, no user_input)
     2. Check interrupts (if matched, bypass all validation)
@@ -35,7 +36,19 @@ class PromptProcessor(BaseProcessor):
     6. Save to variable
     7. Evaluate routes
     """
-    
+
+    def __init__(
+        self,
+        template_engine,
+        condition_evaluator,
+        validation_system
+    ):
+        """Initialize with dependencies including retry handler"""
+        super().__init__(template_engine, condition_evaluator, validation_system)
+        # Create retry handler with shared dependencies
+        # Note: SessionManager will be passed from process() context
+        self.retry_handler = None  # Initialized lazily in process()
+
     async def process(
         self,
         node: FlowNode,
@@ -118,59 +131,41 @@ class PromptProcessor(BaseProcessor):
         # Handle validation failure with retry logic
         if validation_failed:
             if session and db:
-                # Track validation attempts
+                # Initialize retry handler with session manager
                 from app.core.session_manager import SessionManager
                 session_mgr = SessionManager(db)
-                new_attempt_count = await session_mgr.increment_validation_attempts(session.session_id)
-                
-                # Get retry logic from flow defaults
-                flow_defaults = context.get('_flow_defaults', {})
-                retry_logic = flow_defaults.get('retry_logic', {})
-                max_attempts = retry_logic.get('max_attempts', 3)
-                fail_route = retry_logic.get('fail_route')
-                counter_text = retry_logic.get('counter_text', '')
-                
-                # Check if max attempts exceeded
-                if new_attempt_count >= max_attempts:
-                    # Max attempts reached
-                    await session_mgr.reset_validation_attempts(session.session_id)
-                    
-                    if fail_route:
-                        # Route to fail_route
-                        self.logger.warning(
-                            f"Max validation attempts reached, routing to fail_route",
-                            attempts=new_attempt_count,
-                            max_attempts=max_attempts,
-                            fail_route=fail_route
-                        )
-                        return ProcessResult(
-                            next_node=fail_route,
-                            context=context
-                        )
-                    else:
-                        # No fail_route defined, terminate session per spec
-                        self.logger.warning(
-                            f"Max validation attempts reached, terminating session (no fail_route)",
-                            attempts=new_attempt_count,
-                            max_attempts=max_attempts
-                        )
-                        await session_mgr.error_session(session.session_id)
-                        return ProcessResult(
-                            message=f"{error_msg}\n\nMaximum attempts exceeded.",
-                            terminal=True,
-                            context=context
-                        )
-                
-                # Render counter text if defined
-                if counter_text:
-                    counter_context = {
-                        **context,
-                        'current_attempt': new_attempt_count,
-                        'max_attempts': max_attempts
-                    }
-                    rendered_counter = self.template_engine.render(counter_text, counter_context)
-                    error_msg = f"{error_msg}\n{rendered_counter}"
-            
+                retry_handler = RetryHandler(session_mgr, self.template_engine)
+
+                # Handle validation failure
+                retry_result = await retry_handler.handle_validation_failure(
+                    session,
+                    context,
+                    error_msg
+                )
+
+                # Check if should continue with retry
+                if retry_result.should_continue:
+                    return ProcessResult(
+                        message=retry_result.error_message,
+                        needs_input=True,
+                        context=context
+                    )
+
+                # Max attempts reached - route or terminate
+                if retry_result.terminal:
+                    return ProcessResult(
+                        message=retry_result.error_message,
+                        terminal=True,
+                        context=context
+                    )
+
+                # Route to fail_route
+                return ProcessResult(
+                    next_node=retry_result.next_node,
+                    context=context
+                )
+
+            # No session/db - just return error
             return ProcessResult(
                 message=error_msg,
                 needs_input=True,
@@ -181,7 +176,8 @@ class PromptProcessor(BaseProcessor):
         if session and db:
             from app.core.session_manager import SessionManager
             session_mgr = SessionManager(db)
-            await session_mgr.reset_validation_attempts(session.session_id)
+            retry_handler = RetryHandler(session_mgr, self.template_engine)
+            await retry_handler.reset_attempts(session)
         
         # Save to variable
         if config.save_to_variable:

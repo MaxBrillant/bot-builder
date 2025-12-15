@@ -5,6 +5,7 @@ Stores flow definitions with ownership
 
 from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
 import uuid
@@ -67,7 +68,15 @@ class Flow(Base):
         # GIN index for trigger keyword searches
         Index('idx_flows_keywords', 'trigger_keywords', postgresql_using='gin'),
     )
-    
+
+    # Relationships
+    bot = relationship("Bot", back_populates="flows")
+    sessions = relationship(
+        "Session",
+        back_populates="flow",
+        lazy="noload"  # Don't load by default (too many)
+    )
+
     def __repr__(self):
         return f"<Flow(id='{self.id}', name='{self.name}', bot_id='{self.bot_id}')>"
     

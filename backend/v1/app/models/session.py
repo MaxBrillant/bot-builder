@@ -5,6 +5,7 @@ Stores active and historical conversation sessions
 
 from sqlalchemy import Column, String, Integer, DateTime, CheckConstraint, Index, ForeignKey, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
 import uuid
@@ -55,7 +56,7 @@ class Session(Base):
     channel = Column(String(50), nullable=False)
     channel_user_id = Column(String(255), nullable=False, index=True)
     bot_id = Column(UUID(as_uuid=True), ForeignKey("bots.bot_id", ondelete="CASCADE"), nullable=False, index=True)
-    flow_id = Column(UUID(as_uuid=True), nullable=False, index=True)  # Stores flow.id (immutable UUID)
+    flow_id = Column(UUID(as_uuid=True), ForeignKey("flows.id", ondelete="CASCADE"), nullable=False, index=True)
     flow_snapshot = Column(JSONB, nullable=False)
     current_node_id = Column(String(96), nullable=False)
     context = Column(JSONB, default=dict, nullable=False)
@@ -90,7 +91,11 @@ class Session(Base):
             postgresql_where=text("status = 'ACTIVE'")
         ),
     )
-    
+
+    # Relationships
+    bot = relationship("Bot", back_populates="sessions")
+    flow = relationship("Flow", back_populates="sessions")
+
     def __setattr__(self, name, value):
         """Prevent modification of flow_snapshot after session creation"""
         if (name == 'flow_snapshot' and

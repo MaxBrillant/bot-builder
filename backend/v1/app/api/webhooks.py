@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.bot_service import BotService
-from app.core.conversation_engine import ConversationEngine
+from app.core.engine import ConversationOrchestrator
 from app.core.redis_manager import redis_manager
 from app.config import settings
 from app.schemas.webhook_schema import WebhookMessageRequest, WebhookMessageResponse
@@ -96,12 +96,12 @@ async def process_bot_message(
         )
     
     # Check rate limit for channel user
-    if settings.REDIS_ENABLED and redis_manager.is_connected():
+    if settings.redis.enabled and redis_manager.is_connected():
         allowed = await redis_manager.check_rate_limit_channel_user(
             message_data.channel,
             message_data.channel_user_id,
-            settings.RATE_LIMIT_WEBHOOK_MAX,
-            settings.RATE_LIMIT_WEBHOOK_WINDOW
+            settings.rate_limit.webhook_max,
+            settings.rate_limit.webhook_window
         )
         if not allowed:
             logger.warning(
@@ -115,7 +115,7 @@ async def process_bot_message(
     
     # Process message through conversation engine
     try:
-        conversation_engine = ConversationEngine(db)
+        conversation_engine = ConversationOrchestrator(db)
         
         result = await conversation_engine.process_message(
             channel=message_data.channel,

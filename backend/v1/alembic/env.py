@@ -16,6 +16,7 @@ from app.database import Base
 
 # Import all models so Alembic can detect them
 from app.models.user import User
+from app.models.bot import Bot
 from app.models.flow import Flow
 from app.models.session import Session
 
@@ -24,7 +25,7 @@ from app.models.session import Session
 config = context.config
 
 # Override sqlalchemy.url with the one from our settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", settings.database.url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

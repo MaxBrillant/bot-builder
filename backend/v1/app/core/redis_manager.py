@@ -6,11 +6,14 @@ Handles Redis operations for:
 - Trigger keyword lookup
 - Active session caching
 - JWT token blacklist
+
+Features circuit breaker pattern to prevent cascading failures.
 """
 
 import json
 from typing import Optional, List, Dict, Any
-from datetime import timedelta
+from datetime import datetime, timedelta
+from enum import Enum
 import asyncio
 import redis.asyncio as redis
 from app.config import settings
@@ -19,8 +22,158 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+# ===== Circuit Breaker Pattern =====
+class CircuitState(Enum):
+    """Circuit breaker states"""
+    CLOSED = "closed"        # Normal operation
+    OPEN = "open"            # Failing, reject requests
+    HALF_OPEN = "half_open"  # Testing recovery
+
+
+class CircuitBreaker:
+    """
+    Circuit breaker for Redis operations
+
+    Prevents cascading failures by:
+    - Opening circuit after failure threshold
+    - Rejecting requests while OPEN (fast fail)
+    - Periodically testing recovery (HALF_OPEN)
+    - Closing circuit when successful again
+
+    States:
+    - CLOSED: Normal operation, all requests pass through
+    - OPEN: Too many failures, reject all requests immediately
+    - HALF_OPEN: Testing if service recovered, allow one test request
+    """
+
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        timeout_seconds: int = 60,
+        success_threshold: int = 2
+    ):
+        """
+        Initialize circuit breaker
+
+        Args:
+            failure_threshold: Failures before opening circuit
+            timeout_seconds: Seconds to wait before attempting recovery
+            success_threshold: Successes needed to close circuit from HALF_OPEN
+        """
+        self.failure_threshold = failure_threshold
+        self.timeout = timedelta(seconds=timeout_seconds)
+        self.success_threshold = success_threshold
+
+        self.state = CircuitState.CLOSED
+        self.failures = 0
+        self.successes = 0
+        self.last_failure_time: Optional[datetime] = None
+        self.last_state_change: datetime = datetime.utcnow()
+
+    def record_success(self):
+        """Record successful operation"""
+        if self.state == CircuitState.HALF_OPEN:
+            self.successes += 1
+            logger.debug(
+                f"Circuit breaker: Success in HALF_OPEN ({self.successes}/{self.success_threshold})"
+            )
+
+            if self.successes >= self.success_threshold:
+                # Close circuit - service recovered
+                self._transition_to(CircuitState.CLOSED)
+                self.failures = 0
+                self.successes = 0
+                logger.info("Circuit breaker: CLOSED (service recovered)")
+
+        elif self.state == CircuitState.CLOSED:
+            # Reset failure counter on success
+            if self.failures > 0:
+                self.failures = 0
+
+    def record_failure(self):
+        """Record failed operation"""
+        self.last_failure_time = datetime.utcnow()
+
+        if self.state == CircuitState.HALF_OPEN:
+            # Failed during recovery test - reopen circuit
+            self._transition_to(CircuitState.OPEN)
+            self.successes = 0
+            logger.warning("Circuit breaker: OPEN (recovery test failed)")
+
+        elif self.state == CircuitState.CLOSED:
+            self.failures += 1
+            logger.debug(
+                f"Circuit breaker: Failure recorded ({self.failures}/{self.failure_threshold})"
+            )
+
+            if self.failures >= self.failure_threshold:
+                # Too many failures - open circuit
+                self._transition_to(CircuitState.OPEN)
+                logger.warning(
+                    f"Circuit breaker: OPEN (threshold reached: {self.failures} failures)"
+                )
+
+    def can_attempt(self) -> bool:
+        """
+        Check if operation should be attempted
+
+        Returns:
+            True if operation should proceed, False if circuit is OPEN
+        """
+        if self.state == CircuitState.CLOSED:
+            return True
+
+        if self.state == CircuitState.OPEN:
+            # Check if timeout expired - try half-open
+            if self._should_attempt_reset():
+                self._transition_to(CircuitState.HALF_OPEN)
+                self.successes = 0
+                logger.info("Circuit breaker: HALF_OPEN (attempting recovery)")
+                return True
+
+            # Still in timeout period - reject request
+            return False
+
+        # HALF_OPEN state - allow attempt
+        return True
+
+    def _should_attempt_reset(self) -> bool:
+        """Check if enough time passed to attempt recovery"""
+        if not self.last_failure_time:
+            return True
+
+        elapsed = datetime.utcnow() - self.last_failure_time
+        return elapsed >= self.timeout
+
+    def _transition_to(self, new_state: CircuitState):
+        """Transition to new state"""
+        old_state = self.state
+        self.state = new_state
+        self.last_state_change = datetime.utcnow()
+        logger.debug(f"Circuit breaker: {old_state.value} -> {new_state.value}")
+
+    def get_state(self) -> str:
+        """Get current circuit state"""
+        return self.state.value
+
+    def reset(self):
+        """Manually reset circuit breaker"""
+        self.state = CircuitState.CLOSED
+        self.failures = 0
+        self.successes = 0
+        self.last_failure_time = None
+        logger.info("Circuit breaker: Manually reset to CLOSED")
+
+
 class RedisManager:
-    """Manages all Redis operations for the Bot Builder system."""
+    """
+    Manages all Redis operations for the Bot Builder system.
+
+    Features:
+    - Automatic reconnection with exponential backoff
+    - Circuit breaker to prevent cascading failures
+    - Graceful degradation when Redis unavailable
+    """
 
     def __init__(self):
         self.redis: Optional[redis.Redis] = None
@@ -28,24 +181,33 @@ class RedisManager:
         self._reconnect_lock = asyncio.Lock()
         self._reconnect_attempts = 0
 
+        # Circuit breaker to prevent cascading failures
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=5,      # Open after 5 failures
+            timeout_seconds=60,       # Wait 60s before testing recovery
+            success_threshold=2       # Need 2 successes to close circuit
+        )
+
     async def connect(self):
         """Establish Redis connection."""
         try:
             self.redis = redis.from_url(
-                settings.REDIS_URL,
+                settings.redis.url,
                 encoding="utf-8",
                 decode_responses=True,
-                socket_connect_timeout=settings.REDIS_SOCKET_TIMEOUT,
+                socket_connect_timeout=settings.redis.socket_connect_timeout,
                 socket_keepalive=True,
             )
             # Test connection
             await self.redis.ping()
             self._connected = True
             self._reconnect_attempts = 0
+            self.circuit_breaker.record_success()  # Record successful connection
             logger.info("Redis connection established")
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
             self._connected = False
+            self.circuit_breaker.record_failure()  # Record connection failure
             # Don't raise - system should work without Redis (degraded performance)
 
     async def _attempt_reconnect(self) -> bool:
@@ -60,11 +222,11 @@ class RedisManager:
             # Check if another task already reconnected
             if self._connected:
                 return True
-            
-            if self._reconnect_attempts >= settings.REDIS_MAX_RECONNECT_ATTEMPTS:
-                logger.error(f"Max reconnection attempts ({settings.REDIS_MAX_RECONNECT_ATTEMPTS}) reached")
+
+            if self._reconnect_attempts >= settings.redis.max_reconnect_attempts:
+                logger.error(f"Max reconnection attempts ({settings.redis.max_reconnect_attempts}) reached")
                 return False
-            
+
             # Clean up old connection before reconnecting to prevent leaks
             if self.redis:
                 try:
@@ -72,11 +234,11 @@ class RedisManager:
                     await self.redis.connection_pool.disconnect()
                 except Exception as e:
                     logger.warning(f"Error cleaning up old connection: {e}")
-            
+
             self._reconnect_attempts += 1
-            backoff = min(2 ** self._reconnect_attempts, settings.REDIS_RECONNECT_BACKOFF_CAP)
-            
-            logger.info(f"Attempting Redis reconnection (attempt {self._reconnect_attempts}/{settings.REDIS_MAX_RECONNECT_ATTEMPTS})")
+            backoff = min(2 ** self._reconnect_attempts, settings.redis.reconnect_backoff_cap)
+
+            logger.info(f"Attempting Redis reconnection (attempt {self._reconnect_attempts}/{settings.redis.max_reconnect_attempts})")
             await asyncio.sleep(backoff)
             
             try:
@@ -98,6 +260,68 @@ class RedisManager:
     def is_connected(self) -> bool:
         """Check if Redis is connected."""
         return self._connected
+
+    async def _execute_with_circuit_breaker(
+        self,
+        operation_name: str,
+        operation_func,
+        *args,
+        **kwargs
+    ):
+        """
+        Execute Redis operation with circuit breaker protection
+
+        Args:
+            operation_name: Name of operation (for logging)
+            operation_func: Async function to execute
+            *args, **kwargs: Arguments to pass to operation_func
+
+        Returns:
+            Operation result, or None if circuit is OPEN
+
+        Note:
+            Automatically records success/failure with circuit breaker
+        """
+        # Check if we should attempt the operation
+        if not self.circuit_breaker.can_attempt():
+            logger.warning(
+                f"Circuit breaker OPEN - rejecting {operation_name}",
+                circuit_state=self.circuit_breaker.get_state()
+            )
+            return None
+
+        # Check connection status
+        if not self.is_connected():
+            logger.debug(f"Redis not connected - skipping {operation_name}")
+            return None
+
+        try:
+            result = await operation_func(*args, **kwargs)
+            self.circuit_breaker.record_success()
+            return result
+
+        except (redis.ConnectionError, redis.TimeoutError) as e:
+            logger.warning(f"Redis connection error during {operation_name}: {e}")
+            self._connected = False
+            self.circuit_breaker.record_failure()
+
+            # Attempt reconnection if needed
+            if await self._attempt_reconnect():
+                # Retry operation once after successful reconnection
+                try:
+                    result = await operation_func(*args, **kwargs)
+                    self.circuit_breaker.record_success()
+                    return result
+                except Exception as retry_e:
+                    logger.error(f"Retry failed for {operation_name}: {retry_e}")
+                    self.circuit_breaker.record_failure()
+                    return None
+            return None
+
+        except Exception as e:
+            logger.error(f"Redis operation error during {operation_name}: {e}")
+            self.circuit_breaker.record_failure()
+            return None
 
     # ==================== Flow Caching ====================
 
@@ -491,14 +715,17 @@ class RedisManager:
     async def health_check(self) -> Dict[str, Any]:
         """
         Perform Redis health check.
-        
+
         Returns:
-            Health status dict
+            Health status dict with circuit breaker state
         """
+        circuit_state = self.circuit_breaker.get_state()
+
         if not self.is_connected():
             return {
                 "status": "unhealthy",
                 "connected": False,
+                "circuit_breaker": circuit_state,
                 "error": "Not connected"
             }
 
@@ -508,14 +735,17 @@ class RedisManager:
             return {
                 "status": "healthy",
                 "connected": True,
+                "circuit_breaker": circuit_state,
                 "redis_version": info.get("redis_version"),
                 "uptime_seconds": info.get("uptime_in_seconds")
             }
         except Exception as e:
             logger.error(f"Redis health check failed: {e}")
+            self.circuit_breaker.record_failure()
             return {
                 "status": "unhealthy",
                 "connected": False,
+                "circuit_breaker": circuit_state,
                 "error": str(e)
             }
 

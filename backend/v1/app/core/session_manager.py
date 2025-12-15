@@ -81,7 +81,7 @@ class SessionManager:
             
             # Calculate expiration time (30 minutes from now, absolute)
             created_at = datetime.now(timezone.utc)
-            expires_at = created_at + timedelta(minutes=settings.SESSION_TIMEOUT_MINUTES)
+            expires_at = created_at + timedelta(minutes=settings.flow_constraints.session_timeout_minutes)
             
             # Initialize context with flow variables and defaults
             initial_context = self._initialize_context(flow_snapshot)
