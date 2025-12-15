@@ -15,8 +15,10 @@ from app.core.template_engine import TemplateEngine
 from app.core.condition_evaluator import ConditionEvaluator
 from app.core.validation_system import ValidationSystem
 from app.core.session_manager import SessionManager
+from app.core.route_sorter import sort_routes
 from app.models.flow import Flow
 from app.models.session import Session
+from app.models.node_configs import FlowNode
 from app.processors.base_processor import ProcessResult
 from app.processors.prompt_processor import PromptProcessor
 from app.processors.menu_processor import MenuProcessor
@@ -369,9 +371,9 @@ class ConversationEngine:
             # Get current node from flow snapshot
             flow_def = session.flow_snapshot
             nodes = flow_def.get('nodes', {})
-            current_node = nodes.get(session.current_node_id)
+            current_node_dict = nodes.get(session.current_node_id)
             
-            if not current_node:
+            if not current_node_dict:
                 self.logger.error(
                     f"Node not found in flow",
                     node_id=session.current_node_id,
@@ -383,8 +385,25 @@ class ConversationEngine:
                     node_id=session.current_node_id
                 )
             
+            # Sort routes by priority before parsing node (spec requirement)
+            # Routes are sorted at runtime to ensure optimal evaluation order
+            if 'routes' in current_node_dict and current_node_dict['routes']:
+                node_type_for_sorting = current_node_dict.get('type')
+                sorted_routes = sort_routes(current_node_dict['routes'], node_type_for_sorting)
+                current_node_dict['routes'] = sorted_routes
+
+                self.logger.debug(
+                    f"Routes sorted for node '{session.current_node_id}'",
+                    node_type=node_type_for_sorting,
+                    route_count=len(sorted_routes),
+                    conditions=[r.get('condition') for r in sorted_routes]
+                )
+
+            # Parse node from dict to FlowNode model (with sorted routes)
+            current_node = FlowNode.model_validate(current_node_dict)
+
             # Get processor for node type
-            node_type = current_node.get('type')
+            node_type = current_node.type
             processor = self.processors.get(node_type)
             
             if not processor:

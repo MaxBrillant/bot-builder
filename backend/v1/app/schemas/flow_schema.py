@@ -7,16 +7,17 @@ from pydantic import BaseModel, Field, field_serializer, field_validator
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from uuid import UUID
+from app.models.node_configs import FlowNode, VariableDefinition, FlowDefaults
 
 
 class FlowCreate(BaseModel):
     """Schema for creating a flow"""
     name: str = Field(..., min_length=1, max_length=96, description="User-provided flow name (unique per bot)")
     trigger_keywords: List[str] = Field(default_factory=list)
-    variables: Optional[Dict[str, Dict[str, Any]]] = Field(default_factory=dict)
-    defaults: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    variables: Optional[Dict[str, VariableDefinition]] = Field(default_factory=dict)
+    defaults: Optional[FlowDefaults] = None
     start_node_id: str = Field(..., min_length=1, max_length=96)
-    nodes: Dict[str, Dict[str, Any]] = Field(...)
+    nodes: Dict[str, FlowNode] = Field(...)
     
     @field_validator('trigger_keywords')
     @classmethod
@@ -92,10 +93,10 @@ class FlowCreate(BaseModel):
 class FlowUpdate(BaseModel):
     """Schema for updating a flow"""
     trigger_keywords: Optional[List[str]] = None
-    variables: Optional[Dict[str, Dict[str, Any]]] = None
-    defaults: Optional[Dict[str, Any]] = None
+    variables: Optional[Dict[str, VariableDefinition]] = None
+    defaults: Optional[FlowDefaults] = None
     start_node_id: Optional[str] = None
-    nodes: Optional[Dict[str, Dict[str, Any]]] = None
+    nodes: Optional[Dict[str, FlowNode]] = None
     
     @field_validator('trigger_keywords')
     @classmethod

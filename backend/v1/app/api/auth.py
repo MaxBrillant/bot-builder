@@ -196,9 +196,9 @@ async def login(
         data={"sub": str(user.user_id)},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    
+
     logger.info(f"User logged in", user_id=str(user.user_id))
-    
+
     return LoginResponse(
         access_token=access_token,
         token_type="bearer",

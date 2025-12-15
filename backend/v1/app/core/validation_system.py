@@ -326,44 +326,91 @@ class ValidationSystem:
         except Exception:
             return False
     
-    def convert_type(self, value: str, target_type: str) -> Any:
+    def convert_type(self, value: Any, target_type: str) -> Any:
         """
-        Convert input string to target variable type
-        
+        Convert value to target variable type
+
         Args:
-            value: Input string
+            value: Input value (can be string or any type from API responses)
             target_type: Target type (string, integer, boolean, array)
-        
+
         Returns:
             Converted value
-        
+
         Raises:
             InvalidInputError: If conversion fails
+
+        Note:
+            This method now handles both string inputs (from user) and
+            typed inputs (from API responses) for better flexibility.
         """
+        # Handle null values - always return None regardless of target type
+        if value is None:
+            return None
+
         if target_type == VariableType.STRING.value:
-            return value
-        
+            # Always convert to string
+            return str(value) if not isinstance(value, str) else value
+
         elif target_type == VariableType.INTEGER.value:
+            # If already an integer, return as-is
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+            # If it's a float, truncate to int
+            if isinstance(value, float):
+                return int(value)
+            # Try to convert string to integer
+            if isinstance(value, str):
+                try:
+                    return int(value)
+                except ValueError:
+                    raise InvalidInputError(f"Cannot convert '{value}' to integer")
+            # For other types, try conversion
             try:
                 return int(value)
-            except ValueError:
-                raise InvalidInputError(f"Cannot convert '{value}' to integer")
-        
+            except (ValueError, TypeError):
+                raise InvalidInputError(f"Cannot convert {type(value).__name__} to integer")
+
         elif target_type == VariableType.BOOLEAN.value:
-            value_lower = value.lower()
-            if value_lower in ['true', '1', 'yes', 'y']:
-                return True
-            elif value_lower in ['false', '0', 'no', 'n']:
-                return False
-            else:
-                raise InvalidInputError(f"Cannot convert '{value}' to boolean")
-        
+            # If already a boolean, return as-is
+            if isinstance(value, bool):
+                return value
+            # Convert string to boolean
+            if isinstance(value, str):
+                value_lower = value.lower().strip()
+                if value_lower in ['true', '1', 'yes', 'y']:
+                    return True
+                elif value_lower in ['false', '0', 'no', 'n', '']:
+                    return False
+                else:
+                    raise InvalidInputError(f"Cannot convert '{value}' to boolean")
+            # Convert numbers to boolean (0 = false, non-zero = true)
+            if isinstance(value, (int, float)):
+                return bool(value)
+            raise InvalidInputError(f"Cannot convert {type(value).__name__} to boolean")
+
         elif target_type == VariableType.ARRAY.value:
-            # Arrays typically come from API responses, not user input
-            # If needed, parse as comma-separated
-            if ',' in value:
-                return [item.strip() for item in value.split(',')]
+            # If already an array, return as-is
+            if isinstance(value, list):
+                return value
+            # Try to parse JSON string as array
+            if isinstance(value, str):
+                import json
+                # First try JSON parsing
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        return parsed
+                except (json.JSONDecodeError, ValueError):
+                    pass
+                # Fallback: parse as comma-separated
+                if ',' in value:
+                    return [item.strip() for item in value.split(',')]
+                # Single value -> single-element array
+                return [value] if value.strip() else []
+            # For other types, wrap in array
             return [value]
-        
+
         else:
+            # Unknown type, return as-is
             return value

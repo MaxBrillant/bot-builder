@@ -4,6 +4,7 @@ Presents options (static or dynamic) and captures user selection
 """
 
 from typing import Optional, Dict, Any, List
+from app.models.node_configs import FlowNode, MenuNodeConfig, MenuStaticOption, MenuOutputMapping
 from app.processors.base_processor import BaseProcessor, ProcessResult
 from app.utils.constants import MenuSourceType, ErrorMessages, SpecialVariables
 from app.utils.logger import get_logger
@@ -36,7 +37,7 @@ class MenuProcessor(BaseProcessor):
     
     async def process(
         self,
-        node: Dict[str, Any],
+        node: FlowNode,
         context: Dict[str, Any],
         user_input: Optional[str] = None,
         session: Optional[Any] = None,
@@ -46,26 +47,24 @@ class MenuProcessor(BaseProcessor):
         Process MENU node
         
         Args:
-            node: MENU node definition
+            node: Typed FlowNode with MENU configuration
             context: Session context
             user_input: User's input (None on first call)
         
         Returns:
             ProcessResult with menu or next node
         """
-        config = node.get('config', {})
-        source_type = config.get('source_type')
+        # Type narrow config for IDE support
+        config: MenuNodeConfig = node.config
         
         # Build options based on source type
-        if source_type == MenuSourceType.STATIC.value:
-            options = config.get('static_options', [])
-        elif source_type == MenuSourceType.DYNAMIC.value:
-            source_var = config.get('source_variable')
-            source_array = context.get(source_var) or []
-            item_template = config.get('item_template', '')
-            options = self._render_dynamic_options(source_array, item_template, context)
+        if config.source_type == MenuSourceType.STATIC.value:
+            options = config.static_options
+        elif config.source_type == MenuSourceType.DYNAMIC.value:
+            source_array = context.get(config.source_variable) or []
+            options = self._render_dynamic_options(source_array, config.item_template, context)
         else:
-            self.logger.error(f"Invalid source_type: {source_type}")
+            self.logger.error(f"Invalid source_type: {config.source_type}")
             return ProcessResult(
                 message="Configuration error. Please contact support.",
                 next_node=None,
@@ -74,7 +73,7 @@ class MenuProcessor(BaseProcessor):
         
         # First call: display menu
         if user_input is None:
-            menu_text = self._format_menu(config.get('text', ''), options, context)
+            menu_text = self._format_menu(config.text, options, context)
             return ProcessResult(
                 message=menu_text,
                 needs_input=True,
@@ -85,8 +84,7 @@ class MenuProcessor(BaseProcessor):
         user_input = self.sanitize_input(user_input)
         
         # Check interrupts first
-        interrupts = config.get('interrupts', [])
-        interrupt_target = self.check_interrupt(user_input, interrupts)
+        interrupt_target = self.check_interrupt(user_input, config.interrupts or [])
         if interrupt_target:
             self.logger.info(f"Interrupt triggered to {interrupt_target}")
             # Reset validation attempts on interrupt
@@ -110,7 +108,7 @@ class MenuProcessor(BaseProcessor):
         
         # Handle validation failure with retry logic
         if validation_failed:
-            error_msg = config.get('error_message', ErrorMessages.INVALID_SELECTION)
+            error_msg = ErrorMessages.INVALID_SELECTION
             # Render template if it contains variables
             error_msg = self.template_engine.render(error_msg, context)
             
@@ -169,7 +167,7 @@ class MenuProcessor(BaseProcessor):
                     error_msg = f"{error_msg}\n{rendered_counter}"
             
             # Re-display menu with error
-            menu_text = self._format_menu(config.get('text', ''), options, context)
+            menu_text = self._format_menu(config.text, options, context)
             full_message = f"{error_msg}\n\n{menu_text}"
             return ProcessResult(
                 message=full_message,
@@ -190,10 +188,9 @@ class MenuProcessor(BaseProcessor):
         self.logger.info(f"Menu selection: {selection}", selection=selection)
         
         # Apply output mapping (dynamic menus only)
-        if source_type == MenuSourceType.DYNAMIC.value:
-            source_var = config.get('source_variable')
-            source_array = context.get(source_var) or []
-            output_mapping = config.get('output_mapping', [])
+        if config.source_type == MenuSourceType.DYNAMIC.value:
+            source_array = context.get(config.source_variable) or []
+            output_mapping = config.output_mapping or []
             
             if output_mapping and source_array:
                 # Get selected item (0-based index)
@@ -203,8 +200,7 @@ class MenuProcessor(BaseProcessor):
                     self._apply_output_mapping(selected_item, output_mapping, context)
         
         # Evaluate routes
-        routes = node.get('routes', [])
-        next_node = self.evaluate_routes(routes, context, node.get('type'))
+        next_node = self.evaluate_routes(node.routes, context, node.type)
         
         return ProcessResult(
             next_node=next_node,
@@ -283,11 +279,14 @@ class MenuProcessor(BaseProcessor):
         # Build option list
         option_lines = []
         for i, option in enumerate(options, start=1):
-            # Handle option format (string or dict with 'label')
+            # Handle option format (MenuStaticOption or rendered string)
             if isinstance(option, dict):
                 label = option.get('label', str(option))
                 # Render template in label
                 label = self.template_engine.render(label, context)
+            elif hasattr(option, 'label'):
+                # MenuStaticOption instance
+                label = self.template_engine.render(option.label, context)
             else:
                 label = str(option)
             
@@ -304,7 +303,7 @@ class MenuProcessor(BaseProcessor):
     def _apply_output_mapping(
         self,
         selected_item: Any,
-        mappings: List[Dict[str, str]],
+        mappings: List[MenuOutputMapping],
         context: Dict[str, Any]
     ):
         """
@@ -312,7 +311,7 @@ class MenuProcessor(BaseProcessor):
         
         Args:
             selected_item: The selected item object
-            mappings: List of mapping definitions
+            mappings: List of typed MenuOutputMapping instances
             context: Session context (updated in place)
         
         Note:
@@ -323,9 +322,9 @@ class MenuProcessor(BaseProcessor):
         Example:
             selected_item = {"id": "123", "name": "Alice", "age": "25"}
             mappings = [
-                {"source_path": "id", "target_variable": "user_id"},
-                {"source_path": "name", "target_variable": "user_name"},
-                {"source_path": "age", "target_variable": "user_age"}
+                MenuOutputMapping(source_path="id", target_variable="user_id"),
+                MenuOutputMapping(source_path="name", target_variable="user_name"),
+                MenuOutputMapping(source_path="age", target_variable="user_age")
             ]
             
             With flow variables:
@@ -337,8 +336,8 @@ class MenuProcessor(BaseProcessor):
         variables = context.get("_flow_variables", {})
         
         for mapping in mappings:
-            source_path = mapping.get('source_path', '')
-            target_var = mapping.get('target_variable', '')
+            source_path = mapping.source_path
+            target_var = mapping.target_variable
             
             if not target_var:
                 continue
@@ -362,16 +361,17 @@ class MenuProcessor(BaseProcessor):
                 continue
             
             # Attempt type conversion based on variable's declared type
+            # Pass value directly without stringification - convert_type handles all types
             try:
-                converted_value = self.validation_system.convert_type(str(value), var_type)
+                converted_value = self.validation_system.convert_type(value, var_type)
                 context[target_var] = converted_value
-                
+
                 self.logger.debug(
                     f"Output mapping: {source_path} -> {target_var}",
                     source=source_path,
                     target=target_var,
                     inferred_type=var_type,
-                    value_type=type(value).__name__,
+                    original_type=type(value).__name__,
                     converted_type=type(converted_value).__name__
                 )
             except Exception as e:

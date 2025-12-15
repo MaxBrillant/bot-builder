@@ -4,6 +4,7 @@ Terminates conversation flow
 """
 
 from typing import Optional, Dict, Any
+from app.models.node_configs import FlowNode, EndNodeConfig
 from app.processors.base_processor import BaseProcessor, ProcessResult
 from app.utils.logger import get_logger
 from app.utils.constants import SessionStatus
@@ -35,7 +36,7 @@ class EndProcessor(BaseProcessor):
     
     async def process(
         self,
-        node: Dict[str, Any],
+        node: FlowNode,
         context: Dict[str, Any],
         user_input: Optional[str] = None,
         session: Optional[Any] = None,
@@ -45,16 +46,19 @@ class EndProcessor(BaseProcessor):
         Process END node
         
         Args:
-            node: END node definition
+            node: Typed FlowNode with END configuration
             context: Session context
             user_input: Not used (END nodes don't process input)
         
         Returns:
             ProcessResult with terminal flag set
         """
+        # Type narrow config for IDE support (config is empty for end nodes)
+        config: EndNodeConfig = node.config
+        
         self.logger.info(
             f"END node reached",
-            node_id=node.get('id', 'unknown')
+            node_id=node.id
         )
         
         # Terminal node - no message, no next node

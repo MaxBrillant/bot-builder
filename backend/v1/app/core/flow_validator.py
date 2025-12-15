@@ -4,17 +4,19 @@ Validates flow structure on submission
 Performs comprehensive checks against all system constraints
 """
 
-from typing import Dict, List, Any, Set, Tuple, Optional
+from typing import Dict, List, Any, Set, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from pydantic import ValidationError
 from app.utils.logger import get_logger
 from app.utils.exceptions import FlowValidationError, DuplicateFlowError
 from app.utils.constants import (
-    NodeType, ValidationType, MenuSourceType, HTTPMethod, VariableType,
-    SystemConstraints, ReservedKeywords
+    NodeType, VariableType, SystemConstraints, ReservedKeywords
 )
 from app.utils.security import validate_flow_id_format, validate_node_id_format
+from app.models.node_configs import FlowNode
+from app.core.route_validator import RouteConditionValidator
 
 logger = get_logger(__name__)
 
@@ -73,15 +75,15 @@ class FlowValidator:
     8. No circular references
     9. Variable types valid
     10. System constraints respected
-    11. Node configs match type requirements
+    11. Node configs validated by Pydantic
     12. fail_route exists if defined
-    13. Validation rules are valid
-    14. Trigger keywords format
+    13. Trigger keywords format
     """
     
     def __init__(self, db: Optional[AsyncSession] = None):
         self.logger = get_logger(__name__)
         self.db = db
+        self.route_validator = RouteConditionValidator()
     
     async def validate_flow(
         self,
@@ -123,11 +125,11 @@ class FlowValidator:
         self._validate_variables(flow_data.get('variables', {}), result)
         
         # 5. Validate defaults
-        self._validate_defaults(flow_data.get('defaults', {}), flow_data.get('nodes', {}), result)
+        nodes_dict = flow_data.get('nodes', {})
+        self._validate_defaults(flow_data.get('defaults', {}), nodes_dict, result)
         
         # 6. Check nodes structure
-        nodes = flow_data.get('nodes', {})
-        if not nodes or not isinstance(nodes, dict):
+        if not nodes_dict or not isinstance(nodes_dict, dict):
             result.add_error(
                 "invalid_structure",
                 "Flow must contain at least one node",
@@ -136,19 +138,67 @@ class FlowValidator:
             return result
         
         # 7. Validate node count constraint
-        if len(nodes) > SystemConstraints.MAX_NODES_PER_FLOW:
+        if len(nodes_dict) > SystemConstraints.MAX_NODES_PER_FLOW:
             result.add_error(
                 "constraint_violation",
-                f"Flow exceeds maximum of {SystemConstraints.MAX_NODES_PER_FLOW} nodes (has {len(nodes)})",
+                f"Flow exceeds maximum of {SystemConstraints.MAX_NODES_PER_FLOW} nodes (has {len(nodes_dict)})",
                 "nodes"
             )
         
-        # === PASS 1: INDEX ALL NODE IDs ===
-        node_ids = set(nodes.keys())
+        # 8. Parse and validate all nodes with Pydantic (this validates all configs)
+        nodes: Dict[str, FlowNode] = {}
+        for node_id, node_data in nodes_dict.items():
+            # Validate node ID format
+            if not validate_node_id_format(node_id):
+                result.add_error(
+                    "invalid_format",
+                    f"Node ID '{node_id}' must contain only alphanumeric characters and underscores",
+                    f"nodes.{node_id}"
+                )
+                continue
+            
+            # Validate node ID matches key
+            if node_data.get('id') != node_id:
+                result.add_error(
+                    "id_mismatch",
+                    f"Node ID in config ('{node_data.get('id')}') does not match key ('{node_id}')",
+                    f"nodes.{node_id}.id"
+                )
+                continue
+            
+            # Parse with Pydantic - this validates all config fields
+            try:
+                nodes[node_id] = FlowNode.model_validate(node_data)
+            except ValidationError as e:
+                # Convert Pydantic errors to our format
+                for error in e.errors():
+                    # Build location path
+                    loc_parts = ['nodes', node_id] + [str(x) for x in error['loc']]
+                    location = '.'.join(loc_parts)
+                    
+                    # Get error message
+                    msg = error['msg']
+                    error_type = error['type']
+                    
+                    # Add contextual information
+                    if 'ctx' in error and error['ctx']:
+                        ctx = error['ctx']
+                        if 'error' in ctx:
+                            msg = str(ctx['error'])
+                    
+                    result.add_error(
+                        "validation_error",
+                        f"Node '{node_id}': {msg}",
+                        location
+                    )
         
-        # 9. Check start_node_id exists (using node_ids index)
+        # If Pydantic validation failed, return early
+        if not result.is_valid():
+            return result
+        
+        # 9. Validate start_node_id exists
         start_node_id = flow_data.get('start_node_id')
-        if start_node_id not in node_ids:
+        if start_node_id not in nodes:
             result.add_error(
                 "missing_node",
                 f"start_node_id '{start_node_id}' does not exist in nodes",
@@ -156,24 +206,19 @@ class FlowValidator:
                 f"Add node with id '{start_node_id}' or change start_node_id"
             )
         
-        # === PASS 2: VALIDATE ALL REFERENCES ===
-        # 8. Validate each node (using node_ids index for reference validation)
-        for node_id, node in nodes.items():
-            self._validate_node(node_id, node, node_ids, result)
-        
-        # 9. Validate unique node names (case-insensitive)
+        # 10. Validate unique node names (case-insensitive)
         self._validate_unique_node_names(nodes, result)
         
-        # 10. Validate no orphan nodes (only start node should have no parent)
+        # 11. Validate no orphan nodes (only start node should have no parent)
         self._validate_no_orphan_nodes(nodes, start_node_id, result)
         
-        # 11. Check all route references (redundant check, already done in Pass 2)
-        # self._check_node_references is no longer needed as validation happens in Pass 2
+        # 12. Validate all routes and their conditions
+        self._validate_all_routes(nodes, result)
         
-        # 12. Detect circular references
+        # 13. Detect circular references
         self._detect_circular_references(nodes, start_node_id, result)
         
-        # 13. Check for unreachable nodes (warning only)
+        # 14. Check for unreachable nodes (warning only)
         self._check_unreachable_nodes(nodes, start_node_id, result)
         
         return result
@@ -280,13 +325,18 @@ class FlowValidator:
                     f"Trigger keyword at index {i} cannot be empty or whitespace only",
                     f"trigger_keywords[{i}]"
                 )
+            elif len(keyword) > SystemConstraints.MAX_INTERRUPT_KEYWORD_LENGTH:
+                result.add_error(
+                    "constraint_violation",
+                    f"Trigger keyword '{keyword}' exceeds maximum length of {SystemConstraints.MAX_INTERRUPT_KEYWORD_LENGTH} characters (current: {len(keyword)})",
+                    f"trigger_keywords[{i}]"
+                )
         
         # If format validation failed or no database access, stop here
         if not result.is_valid() or not self.db or not keywords:
             return
         
         # Check for duplicate keywords within same bot's flows
-        # Import Flow model here to avoid circular dependency
         from app.models.flow import Flow
         
         # Normalize keywords to uppercase for comparison (matching storage format)
@@ -506,113 +556,7 @@ class FlowValidator:
                     "defaults.retry_logic.fail_route"
                 )
     
-    def _validate_node(self, node_id: str, node: Dict[str, Any], node_ids: Set[str], result: ValidationResult):
-        """Validate individual node"""
-        location_prefix = f"nodes.{node_id}"
-        
-        # Check node ID format
-        if not validate_node_id_format(node_id):
-            result.add_error(
-                "invalid_format",
-                f"Node ID '{node_id}' must contain only alphanumeric characters and underscores",
-                location_prefix
-            )
-        
-        # Check node ID matches key
-        if node.get('id') != node_id:
-            result.add_error(
-                "id_mismatch",
-                f"Node ID in config ('{node.get('id')}') does not match key ('{node_id}')",
-                f"{location_prefix}.id"
-            )
-        
-        # Validate name field (required)
-        if 'name' not in node:
-            result.add_error(
-                "missing_field",
-                f"Node '{node_id}' is missing required field 'name'",
-                f"{location_prefix}.name"
-            )
-            # Continue with other validations even if name is missing
-        else:
-            node_name = node['name']
-            
-            if not isinstance(node_name, str):
-                result.add_error(
-                    "invalid_type",
-                    f"Node '{node_id}' name must be a string",
-                    f"{location_prefix}.name"
-                )
-            elif not node_name or not node_name.strip():
-                result.add_error(
-                    "invalid_value",
-                    f"Node '{node_id}' has an empty name",
-                    f"{location_prefix}.name"
-                )
-            elif len(node_name) > 50:
-                result.add_error(
-                    "constraint_violation",
-                    f"Node '{node_id}' name exceeds maximum length of 50 characters (current: {len(node_name)})",
-                    f"{location_prefix}.name"
-                )
-        
-        # Check required fields
-        if 'type' not in node:
-            result.add_error("missing_field", "Node missing required field 'type'", f"{location_prefix}.type")
-            return
-        
-        if 'config' not in node:
-            result.add_error("missing_field", "Node missing required field 'config'", f"{location_prefix}.config")
-            return
-        
-        # Validate node type
-        node_type = node.get('type')
-        try:
-            NodeType(node_type)
-        except ValueError:
-            result.add_error(
-                "invalid_type",
-                f"Invalid node type '{node_type}'. Must be one of: {', '.join([nt.value for nt in NodeType])}",
-                f"{location_prefix}.type"
-            )
-            return
-        
-        # Get config for validation
-        config = node.get('config', {})
-        
-        # Validate routes (required for all except END)
-        if node_type != NodeType.END.value:
-            routes = node.get('routes')
-            if not routes:
-                result.add_error(
-                    "missing_field",
-                    f"{node_type} node must have routes",
-                    f"{location_prefix}.routes"
-                )
-            else:
-                self._validate_routes(node_id, routes, node_ids, result)
-                
-                # Validate route conditions using RouteConditionValidator
-                from app.core.route_validator import RouteConditionValidator
-                
-                route_validator = RouteConditionValidator()
-                route_errors = route_validator.validate_node_routes(
-                    node_id, node_type, config, routes
-                )
-                
-                # Add route validation errors to result
-                for error in route_errors:
-                    result.add_error(
-                        error["type"],
-                        error["message"],
-                        error.get("location"),
-                        error.get("suggestion")
-                    )
-        
-        # Validate node-specific config
-        self._validate_node_config(node_id, node_type, config, result)
-    
-    def _validate_unique_node_names(self, nodes: Dict[str, Any], result: ValidationResult):
+    def _validate_unique_node_names(self, nodes: Dict[str, FlowNode], result: ValidationResult):
         """Validate that all node names are unique (case-insensitive)"""
         if not nodes:
             return
@@ -620,17 +564,8 @@ class FlowValidator:
         name_to_nodes = {}  # Maps lowercase name to list of node IDs
         
         for node_id, node in nodes.items():
-            node_name = node.get('name', '')
-            if not node_name:
-                continue  # Already caught by _validate_node
-            
-            # Skip if name is not a string (already caught by _validate_node)
-            if not isinstance(node_name, str):
-                continue
-            
+            node_name = node.name
             name_lower = node_name.lower().strip()
-            if not name_lower:
-                continue  # Empty names already caught by _validate_node
             
             if name_lower not in name_to_nodes:
                 name_to_nodes[name_lower] = []
@@ -640,7 +575,7 @@ class FlowValidator:
         for name_lower, node_ids in name_to_nodes.items():
             if len(node_ids) > 1:
                 # Get original name (any will do, they're case-insensitive duplicates)
-                original_name = nodes[node_ids[0]]['name']
+                original_name = nodes[node_ids[0]].name
                 nodes_str = ', '.join(sorted(node_ids))
                 result.add_error(
                     "duplicate_node_name",
@@ -649,7 +584,7 @@ class FlowValidator:
                     "Each node must have a unique name (case-insensitive)"
                 )
     
-    def _validate_no_orphan_nodes(self, nodes: Dict[str, Any], start_node_id: str, result: ValidationResult):
+    def _validate_no_orphan_nodes(self, nodes: Dict[str, FlowNode], start_node_id: str, result: ValidationResult):
         """
         Validate that only the start node has no parent.
         All other nodes must be referenced in at least one route.
@@ -664,11 +599,9 @@ class FlowValidator:
         nodes_with_parents = set()
         
         for node_id, node in nodes.items():
-            routes = node.get('routes', [])
-            for route in routes:
-                target_node = route.get('target_node')
-                if target_node:
-                    nodes_with_parents.add(target_node)
+            if node.routes:
+                for route in node.routes:
+                    nodes_with_parents.add(route.target_node)
         
         # Find orphan nodes (no parent and not start node)
         orphan_nodes = []
@@ -685,8 +618,7 @@ class FlowValidator:
             node_names = []
             for node_id in orphan_nodes:
                 node = nodes[node_id]
-                node_name = node.get('name', node_id)
-                node_names.append(f"'{node_name}' ({node_id})")
+                node_names.append(f"'{node.name}' ({node_id})")
             
             nodes_str = ', '.join(node_names)
             result.add_error(
@@ -697,244 +629,69 @@ class FlowValidator:
                 "nodes"
             )
     
-    def _validate_routes(self, node_id: str, routes: List[Dict[str, Any]], node_ids: Set[str], result: ValidationResult):
-        """Validate node routes using node_ids index"""
-        location_prefix = f"nodes.{node_id}.routes"
+    def _validate_all_routes(self, nodes: Dict[str, FlowNode], result: ValidationResult):
+        """Validate all node routes including target existence and conditions"""
+        node_ids = set(nodes.keys())
         
-        if not isinstance(routes, list):
-            result.add_error("invalid_type", "routes must be an array", location_prefix)
-            return
-        
-        if len(routes) > SystemConstraints.MAX_ROUTES_PER_NODE:
-            result.add_error(
-                "constraint_violation",
-                f"Node has {len(routes)} routes, exceeds maximum of {SystemConstraints.MAX_ROUTES_PER_NODE}",
-                location_prefix
-            )
-        
-        # Check for duplicate route conditions (case-insensitive, whitespace-trimmed)
-        seen_conditions = {}
-        for i, route in enumerate(routes):
-            if isinstance(route, dict) and 'condition' in route:
-                condition = route['condition']
+        for node_id, node in nodes.items():
+            if not node.routes:
+                continue
+            
+            # Check route count constraint
+            if len(node.routes) > SystemConstraints.MAX_ROUTES_PER_NODE:
+                result.add_error(
+                    "constraint_violation",
+                    f"Node has {len(node.routes)} routes, exceeds maximum of {SystemConstraints.MAX_ROUTES_PER_NODE}",
+                    f"nodes.{node_id}.routes"
+                )
+            
+            # Check for duplicate route conditions (case-insensitive, whitespace-trimmed)
+            seen_conditions = {}
+            for i, route in enumerate(node.routes):
+                condition = route.condition
                 if condition:
                     # Normalize: trim whitespace and convert to lowercase
-                    normalized_condition = str(condition).strip().lower()
+                    normalized_condition = condition.strip().lower()
                     if normalized_condition in seen_conditions:
                         result.add_error(
                             "duplicate_route_condition",
                             f"Node '{node_id}' has duplicate route condition: '{condition.strip()}'",
-                            location_prefix,
+                            f"nodes.{node_id}.routes",
                             "Each route must have a unique condition"
                         )
                     else:
                         seen_conditions[normalized_condition] = i
-        
-        for i, route in enumerate(routes):
-            route_location = f"{location_prefix}[{i}]"
             
-            if not isinstance(route, dict):
-                result.add_error("invalid_type", f"Route at index {i} must be an object", route_location)
-                continue
-            
-            # Check required fields
-            if 'condition' not in route:
-                result.add_error("missing_field", "Route missing 'condition'", f"{route_location}.condition")
-            
-            if 'target_node' not in route:
-                result.add_error("missing_field", "Route missing 'target_node'", f"{route_location}.target_node")
-            else:
-                target = route['target_node']
-                if target not in node_ids:
+            # Validate each route
+            for i, route in enumerate(node.routes):
+                route_location = f"nodes.{node_id}.routes[{i}]"
+                
+                # Check target node exists
+                if route.target_node not in node_ids:
                     result.add_error(
                         "missing_node",
-                        f"Route target '{target}' does not exist in nodes",
+                        f"Route target '{route.target_node}' does not exist in nodes",
                         f"{route_location}.target_node"
                     )
-    
-    def _validate_content_length(self, content: str, max_length: int, field_name: str, result: ValidationResult):
-        """Validate content length against spec limits"""
-        if content and len(content) > max_length:
-            result.add_error(
-                "constraint_violation",
-                f"{field_name} exceeds maximum length of {max_length} characters (current: {len(content)})",
-                field_name
+            
+            # Validate route conditions using RouteConditionValidator
+            node_config = node.config.model_dump()
+            routes_list = [route.model_dump() for route in node.routes]
+            
+            route_errors = self.route_validator.validate_node_routes(
+                node_id, node.type, node_config, routes_list
             )
-    
-    def _validate_node_config(self, node_id: str, node_type: str, config: Dict[str, Any], result: ValidationResult):
-        """Validate node configuration based on type"""
-        location = f"nodes.{node_id}.config"
-        
-        if node_type == NodeType.PROMPT.value:
-            self._validate_prompt_config(config, location, result)
-        elif node_type == NodeType.MENU.value:
-            self._validate_menu_config(config, location, result)
-        elif node_type == NodeType.API_ACTION.value:
-            self._validate_api_action_config(config, location, result)
-        elif node_type == NodeType.MESSAGE.value:
-            self._validate_message_config(config, location, result)
-    
-    def _validate_prompt_config(self, config: Dict[str, Any], location: str, result: ValidationResult):
-        """Validate PROMPT node config"""
-        if 'text' not in config:
-            result.add_error("missing_field", "PROMPT node must have 'text'", f"{location}.text")
-        else:
-            # Validate text length
-            self._validate_content_length(
-                config['text'],
-                SystemConstraints.MAX_MESSAGE_LENGTH,
-                f"{location}.text",
-                result
-            )
-        
-        if 'save_to_variable' not in config:
-            result.add_error("missing_field", "PROMPT node must have 'save_to_variable'", f"{location}.save_to_variable")
-        
-        # Validate validation if present
-        validation = config.get('validation')
-        if validation:
-            if 'type' not in validation or 'rule' not in validation or 'error_message' not in validation:
+            
+            # Add route validation errors to result
+            for error in route_errors:
                 result.add_error(
-                    "invalid_structure",
-                    "validation must have 'type', 'rule', and 'error_message'",
-                    f"{location}.validation"
+                    error["type"],
+                    error["message"],
+                    error.get("location"),
+                    error.get("suggestion")
                 )
-            else:
-                # Validate error_message length
-                self._validate_content_length(
-                    validation.get('error_message', ''),
-                    SystemConstraints.MAX_ERROR_MESSAGE_LENGTH,
-                    f"{location}.validation.error_message",
-                    result
-                )
-                
-                # Validate rule length based on type
-                rule = validation.get('rule', '')
-                val_type = validation.get('type')
-                if val_type == ValidationType.REGEX.value:
-                    self._validate_content_length(
-                        rule,
-                        SystemConstraints.MAX_REGEX_LENGTH,
-                        f"{location}.validation.rule",
-                        result
-                    )
-                elif val_type == ValidationType.EXPRESSION.value:
-                    self._validate_content_length(
-                        rule,
-                        SystemConstraints.MAX_EXPRESSION_LENGTH,
-                        f"{location}.validation.rule",
-                        result
-                    )
     
-    def _validate_menu_config(self, config: Dict[str, Any], location: str, result: ValidationResult):
-        """Validate MENU node config"""
-        if 'text' not in config:
-            result.add_error("missing_field", "MENU node must have 'text'", f"{location}.text")
-        else:
-            # Validate text length
-            self._validate_content_length(
-                config['text'],
-                SystemConstraints.MAX_MESSAGE_LENGTH,
-                f"{location}.text",
-                result
-            )
-        
-        if 'source_type' not in config:
-            result.add_error("missing_field", "MENU node must have 'source_type'", f"{location}.source_type")
-            return
-        
-        source_type = config['source_type']
-        
-        if source_type == MenuSourceType.STATIC.value:
-            if 'static_options' not in config:
-                result.add_error(
-                    "missing_field",
-                    "STATIC menu must have 'static_options'",
-                    f"{location}.static_options"
-                )
-            else:
-                # Validate option labels length
-                static_options = config.get('static_options', [])
-                if isinstance(static_options, list):
-                    for i, option in enumerate(static_options):
-                        if isinstance(option, dict) and 'label' in option:
-                            self._validate_content_length(
-                                option['label'],
-                                SystemConstraints.MAX_OPTION_LABEL_LENGTH,
-                                f"{location}.static_options[{i}].label",
-                                result
-                            )
-        elif source_type == MenuSourceType.DYNAMIC.value:
-            if 'source_variable' not in config:
-                result.add_error(
-                    "missing_field",
-                    "DYNAMIC menu must have 'source_variable'",
-                    f"{location}.source_variable"
-                )
-            if 'item_template' not in config:
-                result.add_error(
-                    "missing_field",
-                    "DYNAMIC menu must have 'item_template'",
-                    f"{location}.item_template"
-                )
-            else:
-                # Validate item_template length
-                self._validate_content_length(
-                    config['item_template'],
-                    SystemConstraints.MAX_TEMPLATE_LENGTH,
-                    f"{location}.item_template",
-                    result
-                )
-        
-        # Validate counter_text if present
-        if 'counter_text' in config:
-            self._validate_content_length(
-                config['counter_text'],
-                SystemConstraints.MAX_TEMPLATE_LENGTH,
-                f"{location}.counter_text",
-                result
-            )
-    
-    def _validate_api_action_config(self, config: Dict[str, Any], location: str, result: ValidationResult):
-        """Validate API_ACTION node config"""
-        if 'request' not in config:
-            result.add_error("missing_field", "API_ACTION node must have 'request'", f"{location}.request")
-            return
-        
-        request = config['request']
-        if 'method' not in request:
-            result.add_error("missing_field", "request must have 'method'", f"{location}.request.method")
-        
-        if 'url' not in request:
-            result.add_error("missing_field", "request must have 'url'", f"{location}.request.url")
-    
-    def _validate_message_config(self, config: Dict[str, Any], location: str, result: ValidationResult):
-        """Validate MESSAGE node config"""
-        if 'text' not in config:
-            result.add_error("missing_field", "MESSAGE node must have 'text'", f"{location}.text")
-        else:
-            # Validate text length
-            self._validate_content_length(
-                config['text'],
-                SystemConstraints.MAX_MESSAGE_LENGTH,
-                f"{location}.text",
-                result
-            )
-    
-    def _check_node_references(self, nodes: Dict[str, Any], result: ValidationResult):
-        """Check all route target_nodes exist"""
-        for node_id, node in nodes.items():
-            routes = node.get('routes', [])
-            for route in routes:
-                target = route.get('target_node')
-                if target and target not in nodes:
-                    result.add_error(
-                        "missing_node",
-                        f"Node '{node_id}' routes to non-existent node '{target}'",
-                        f"nodes.{node_id}.routes"
-                    )
-    
-    def _check_cycle_from_node(self, node_id: str, nodes: Dict[str, Any], visited_in_path: Set[str]) -> Optional[List[str]]:
+    def _check_cycle_from_node(self, node_id: str, nodes: Dict[str, FlowNode], visited_in_path: Set[str]) -> Optional[List[str]]:
         """Check for cycle starting from a specific node using DFS"""
         if node_id in visited_in_path:
             # Circular reference detected - return the cycle
@@ -946,20 +703,20 @@ class FlowValidator:
         
         visited_in_path.add(node_id)
         
-        routes = node.get('routes', [])
-        for route in routes:
-            target = route.get('target_node')
-            if target and target in nodes:
-                cycle = self._check_cycle_from_node(target, nodes, visited_in_path)
-                if cycle:
-                    # Build full cycle path
-                    cycle.insert(0, node_id)
-                    return cycle
+        if node.routes:
+            for route in node.routes:
+                target = route.target_node
+                if target in nodes:
+                    cycle = self._check_cycle_from_node(target, nodes, visited_in_path)
+                    if cycle:
+                        # Build full cycle path
+                        cycle.insert(0, node_id)
+                        return cycle
         
         visited_in_path.remove(node_id)
         return None
     
-    def _detect_circular_references(self, nodes: Dict[str, Any], start_node_id: str, result: ValidationResult):
+    def _detect_circular_references(self, nodes: Dict[str, FlowNode], start_node_id: str, result: ValidationResult):
         """Detect circular references in ALL nodes, not just reachable ones"""
         checked_nodes = set()
         
@@ -985,7 +742,7 @@ class FlowValidator:
             else:
                 checked_nodes.add(node_id)
     
-    def _check_unreachable_nodes(self, nodes: Dict[str, Any], start_node_id: str, result: ValidationResult):
+    def _check_unreachable_nodes(self, nodes: Dict[str, FlowNode], start_node_id: str, result: ValidationResult):
         """Check for unreachable nodes (warning only)"""
         if not start_node_id or start_node_id not in nodes:
             return
@@ -998,11 +755,9 @@ class FlowValidator:
             
             reachable.add(node_id)
             node = nodes[node_id]
-            routes = node.get('routes', [])
-            for route in routes:
-                target = route.get('target_node')
-                if target:
-                    mark_reachable(target)
+            if node.routes:
+                for route in node.routes:
+                    mark_reachable(route.target_node)
         
         mark_reachable(start_node_id)
         

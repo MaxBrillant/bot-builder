@@ -98,7 +98,7 @@
         "source_type": "DYNAMIC",
         "source_variable": "recent_trips",
         "item_template": "{{index}}. Repeat trip: {{item.origin}} to {{item.destination}} at {{item.time}}",
-        "static_options": [{ "label": "Start a NEW trip", "value": "NEW" }],
+        "static_options": [{ "label": "Start a NEW trip" }],
         "output_mapping": [
           {
             "source_path": "{{item.id}}",
@@ -192,8 +192,8 @@
         "text": "Confirm trip: From {{context.from_location}} to {{context.destination}} at {{context.departure_time}} with {{context.available_seats}} seats. Reply 1 or 2.",
         "source_type": "STATIC",
         "static_options": [
-          { "label": "Confirm and Post", "value": "1" },
-          { "label": "Cancel", "value": "2" }
+          { "label": "Confirm and Post" },
+          { "label": "Cancel" }
         ]
       },
       "routes": [

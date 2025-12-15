@@ -17,7 +17,8 @@ from app.utils.exceptions import (
     SessionExpiredError,
     SessionNotFoundError,
     MaxAutoProgressionError,
-    ContextSizeExceededError
+    ContextSizeExceededError,
+    ConstraintViolationError
 )
 from app.utils.constants import SessionStatus, SystemConstraints
 from app.config import settings
@@ -200,23 +201,27 @@ class SessionManager:
     
     async def update_context(self, session_id: UUID, context: Dict[str, Any]):
         """
-        Update session context variables with size validation
-        
+        Update session context variables with size and array length validation
+
         Args:
             session_id: Session UUID
             context: New context dictionary
-            
+
         Raises:
             ContextSizeExceededError: If context exceeds 100KB limit
-            
+            ConstraintViolationError: If any array exceeds 24 items
+
         Note:
             Does NOT commit - caller's transaction will commit.
         """
-        # Validate context size BEFORE updating (100 KB limit per spec)
+        # Validate array lengths FIRST (per spec line 1597)
+        self._validate_array_lengths(context)
+
+        # Validate context size (100 KB limit per spec)
         context_json = json.dumps(context, default=str)
         # Use actual UTF-8 byte size, not Python object overhead
         context_size = len(context_json.encode('utf-8'))
-        
+
         if context_size > SystemConstraints.MAX_CONTEXT_SIZE:
             self.logger.error(
                 f"Context size limit exceeded",
@@ -228,14 +233,14 @@ class SessionManager:
                 f"Context size ({context_size} bytes) exceeds maximum "
                 f"({SystemConstraints.MAX_CONTEXT_SIZE} bytes)"
             )
-        
-        # Only update if validation passed
+
+        # Only update if all validations passed
         stmt = (
             update(Session)
             .where(Session.session_id == session_id)
             .values(context=context)
         )
-        
+
         await self.db.execute(stmt)
         # No commit - let outer transaction handle it
     
@@ -430,22 +435,47 @@ class SessionManager:
         
         self.logger.log_session_event(str(session_id), "error")
     
+    def _validate_array_lengths(self, context: Dict[str, Any]):
+        """
+        Validate that no array in context exceeds MAX_ARRAY_LENGTH
+
+        Args:
+            context: Context dictionary to validate
+
+        Raises:
+            ConstraintViolationError: If any array exceeds maximum length
+
+        Note:
+            Per spec line 1597: "Array length in context: 24 items - Performance"
+        """
+        for key, value in context.items():
+            # Skip internal metadata keys (start with underscore)
+            if key.startswith('_'):
+                continue
+
+            if isinstance(value, list):
+                if len(value) > SystemConstraints.MAX_ARRAY_LENGTH:
+                    raise ConstraintViolationError(
+                        f"Array '{key}' exceeds maximum length of {SystemConstraints.MAX_ARRAY_LENGTH} items (has {len(value)} items)",
+                        constraint="MAX_ARRAY_LENGTH"
+                    )
+
     def check_timeout(self, session: Session) -> bool:
         """
         Check if session has exceeded 30-minute timeout
-        
+
         Args:
             session: Session instance
-        
+
         Returns:
             True if session has expired, False otherwise
-        
+
         Note:
             Timeout is absolute from session creation, not sliding window
         """
         if not session.expires_at:
             return False
-        
+
         return datetime.now(timezone.utc) > session.expires_at
     
     async def cleanup_expired_sessions(self):
@@ -486,16 +516,17 @@ class SessionManager:
         context: Optional[Dict[str, Any]] = None
     ):
         """
-        Update session node and/or context in single operation with size validation
-        
+        Update session node and/or context in single operation with size and array length validation
+
         Args:
             session_id: Session UUID
             node_id: New node ID (optional)
             context: New context (optional)
-            
+
         Raises:
             ContextSizeExceededError: If context exceeds 100KB limit
-            
+            ConstraintViolationError: If any array exceeds 24 items
+
         Note:
             Does NOT commit - caller's transaction will commit.
             This prevents detaching session object during flow execution loop.
@@ -504,11 +535,14 @@ class SessionManager:
         if node_id is not None:
             values['current_node_id'] = node_id
         if context is not None:
-            # Validate context size BEFORE updating (critical for data integrity)
+            # Validate array lengths FIRST (per spec line 1597)
+            self._validate_array_lengths(context)
+
+            # Validate context size (critical for data integrity)
             context_json = json.dumps(context, default=str)
             # Use actual UTF-8 byte size, not Python object overhead
             context_size = len(context_json.encode('utf-8'))
-            
+
             if context_size > SystemConstraints.MAX_CONTEXT_SIZE:
                 self.logger.error(
                     f"Context size limit exceeded",
@@ -520,9 +554,9 @@ class SessionManager:
                     f"Context size ({context_size} bytes) exceeds maximum "
                     f"({SystemConstraints.MAX_CONTEXT_SIZE} bytes)"
                 )
-            
+
             values['context'] = context
-        
+
         # Only update if all validations passed
         if values:
             stmt = (
@@ -530,7 +564,7 @@ class SessionManager:
                 .where(Session.session_id == session_id)
                 .values(**values)
             )
-            
+
             await self.db.execute(stmt)
             # No commit - let outer transaction handle it
     

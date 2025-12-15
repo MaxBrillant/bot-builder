@@ -117,6 +117,20 @@ class RouteConditionValidator:
             List of error dictionaries
         """
         errors = []
+        
+        # Special handling for LOGIC_EXPRESSION nodes
+        # They accept any non-empty string as a condition
+        if node_type == NodeType.LOGIC_EXPRESSION.value:
+            if not condition or condition.strip() == "":
+                errors.append({
+                    "type": "invalid_route_condition",
+                    "message": "Route condition cannot be empty",
+                    "location": f"nodes.{node_id}.routes[{route_index}].condition",
+                    "suggestion": "Use any valid expression as a condition (e.g., context.age > 18, true)"
+                })
+            # Any non-empty string is valid for LOGIC_EXPRESSION
+            return errors
+        
         allowed_conditions = self._get_allowed_conditions(node_type, node_config)
         
         # Check if condition is in allowed list

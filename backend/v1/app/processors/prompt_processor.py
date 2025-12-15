@@ -4,6 +4,7 @@ Collects and validates user input, saves to context variables
 """
 
 from typing import Optional, Dict, Any
+from app.models.node_configs import FlowNode, PromptNodeConfig, ValidationRule
 from app.processors.base_processor import BaseProcessor, ProcessResult
 from app.utils.constants import ValidationType, ErrorMessages
 from app.utils.logger import get_logger
@@ -37,7 +38,7 @@ class PromptProcessor(BaseProcessor):
     
     async def process(
         self,
-        node: Dict[str, Any],
+        node: FlowNode,
         context: Dict[str, Any],
         user_input: Optional[str] = None,
         session: Optional[Any] = None,
@@ -47,18 +48,19 @@ class PromptProcessor(BaseProcessor):
         Process PROMPT node
         
         Args:
-            node: PROMPT node definition
+            node: Typed FlowNode with PROMPT configuration
             context: Session context
             user_input: User's input (None on first call)
         
         Returns:
             ProcessResult with message and/or next node
         """
-        config = node.get('config', {})
+        # Type narrow config for IDE support
+        config: PromptNodeConfig = node.config
         
         # First call: display message and wait for input
         if user_input is None:
-            text = self.template_engine.render(config.get('text', ''), context)
+            text = self.template_engine.render(config.text, context)
             return ProcessResult(
                 message=text,
                 needs_input=True,
@@ -69,8 +71,7 @@ class PromptProcessor(BaseProcessor):
         user_input = self.sanitize_input(user_input)
         
         # Check interrupts first (bypasses validation)
-        interrupts = config.get('interrupts', [])
-        interrupt_target = self.check_interrupt(user_input, interrupts)
+        interrupt_target = self.check_interrupt(user_input, config.interrupts or [])
         if interrupt_target:
             self.logger.info(f"Interrupt triggered to {interrupt_target}")
             # Reset validation attempts on interrupt
@@ -84,7 +85,7 @@ class PromptProcessor(BaseProcessor):
             )
         
         # Get validation configuration
-        validation = config.get('validation')
+        validation = config.validation
         
         # Perform validation
         validation_failed = False
@@ -97,7 +98,7 @@ class PromptProcessor(BaseProcessor):
                 is_valid = self._validate_input(user_input, validation, context)
                 if not is_valid:
                     validation_failed = True
-                    error_msg = validation.get('error_message', ErrorMessages.FIELD_REQUIRED)
+                    error_msg = validation.error_message
                     # Render template if it contains variables
                     error_msg = self.template_engine.render(error_msg, context)
             else:
@@ -110,7 +111,7 @@ class PromptProcessor(BaseProcessor):
                 is_valid = self._validate_input(user_input, validation, context)
                 if not is_valid:
                     validation_failed = True
-                    error_msg = validation.get('error_message', ErrorMessages.VALIDATION_FAILED)
+                    error_msg = validation.error_message
                     # Render template if it contains variables
                     error_msg = self.template_engine.render(error_msg, context)
         
@@ -183,25 +184,24 @@ class PromptProcessor(BaseProcessor):
             await session_mgr.reset_validation_attempts(session.session_id)
         
         # Save to variable
-        save_to_var = config.get('save_to_variable')
-        if save_to_var:
+        if config.save_to_variable:
             # Get variable type from flow variables definition
-            var_type = self._get_variable_type(save_to_var, context)
+            var_type = self._get_variable_type(config.save_to_variable, context)
             
             # Convert input to appropriate type
             try:
                 converted_value = self.validation_system.convert_type(user_input, var_type)
-                context[save_to_var] = converted_value
+                context[config.save_to_variable] = converted_value
                 
                 self.logger.info(
-                    f"Saved input to variable '{save_to_var}'",
-                    variable=save_to_var,
+                    f"Saved input to variable '{config.save_to_variable}'",
+                    variable=config.save_to_variable,
                     type=var_type
                 )
             except Exception as e:
                 self.logger.error(f"Type conversion failed: {str(e)}")
                 # If type conversion fails, treat as validation error
-                error_msg = validation.get('error_message', f"Invalid input format") if validation else "Invalid input format"
+                error_msg = validation.error_message if validation else "Invalid input format"
                 return ProcessResult(
                     message=error_msg,
                     needs_input=True,
@@ -209,8 +209,7 @@ class PromptProcessor(BaseProcessor):
                 )
         
         # Evaluate routes
-        routes = node.get('routes', [])
-        next_node = self.evaluate_routes(routes, context, node.get('type'))
+        next_node = self.evaluate_routes(node.routes, context, node.type)
         
         return ProcessResult(
             next_node=next_node,
@@ -220,7 +219,7 @@ class PromptProcessor(BaseProcessor):
     def _validate_input(
         self,
         input_value: str,
-        validation: Dict[str, Any],
+        validation: ValidationRule,
         context: Dict[str, Any]
     ) -> bool:
         """
@@ -228,30 +227,27 @@ class PromptProcessor(BaseProcessor):
         
         Args:
             input_value: User's input
-            validation: Validation configuration
+            validation: Typed ValidationRule instance
             context: Session context
         
         Returns:
             True if validation passes, False otherwise
         """
-        validation_type = validation.get('type')
-        rule = validation.get('rule', '')
-        
         try:
-            if validation_type == ValidationType.REGEX.value:
+            if validation.type == ValidationType.REGEX.value:
                 # Render template variables in regex pattern
-                rendered_rule = self.template_engine.render(rule, context)
+                rendered_rule = self.template_engine.render(validation.rule, context)
                 return self.validation_system.validate_regex(input_value, rendered_rule)
             
-            elif validation_type == ValidationType.EXPRESSION.value:
-                return self.validation_system.validate_expression(input_value, rule, context)
+            elif validation.type == ValidationType.EXPRESSION.value:
+                return self.validation_system.validate_expression(input_value, validation.rule, context)
             
             else:
-                self.logger.warning(f"Unknown validation type: {validation_type}")
+                self.logger.warning(f"Unknown validation type: {validation.type}")
                 return True  # Unknown validation type, pass by default
         
         except Exception as e:
-            self.logger.error(f"Validation error: {str(e)}", rule=rule)
+            self.logger.error(f"Validation error: {str(e)}", rule=validation.rule)
             return False
     
     def _get_variable_type(self, var_name: str, context: Dict[str, Any]) -> str:

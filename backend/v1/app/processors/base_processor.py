@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 
+from app.models.node_configs import FlowNode, Route, Interrupt
 from app.core.template_engine import TemplateEngine
 from app.core.condition_evaluator import ConditionEvaluator
 from app.core.validation_system import ValidationSystem
@@ -75,7 +76,7 @@ class BaseProcessor(ABC):
     @abstractmethod
     async def process(
         self,
-        node: Dict[str, Any],
+        node: FlowNode,
         context: Dict[str, Any],
         user_input: Optional[str] = None,
         session: Optional[Any] = None,
@@ -85,7 +86,7 @@ class BaseProcessor(ABC):
         Process node and return result
         
         Args:
-            node: Node definition from flow
+            node: Typed FlowNode instance from flow
             context: Current session context
             user_input: User's input message (None if first call or auto-progression)
             session: Session instance (for retry tracking)
@@ -103,7 +104,7 @@ class BaseProcessor(ABC):
     
     def evaluate_routes(
         self,
-        routes: List[Dict[str, Any]],
+        routes: List[Route],
         context: Dict[str, Any],
         node_type: Optional[str] = None
     ) -> Optional[str]:
@@ -111,7 +112,7 @@ class BaseProcessor(ABC):
         Evaluate routes in order, return first match
         
         Args:
-            routes: List of route definitions
+            routes: List of typed Route instances
             context: Current context for condition evaluation
             node_type: Type of node (for route sorting). If None, routes are not sorted.
         
@@ -127,13 +128,16 @@ class BaseProcessor(ABC):
         if not routes:
             return None
         
+        # Convert to dict format for route_sorter (which expects dicts)
+        routes_as_dicts = [{'condition': r.condition, 'target_node': r.target_node} for r in routes]
+        
         # Sort routes by priority if node_type is provided
         if node_type:
-            routes = sort_routes(routes, node_type)
+            routes_as_dicts = sort_routes(routes_as_dicts, node_type)
         
-        for route in routes:
-            condition = route.get('condition', 'false')
-            target_node = route.get('target_node')
+        for route_dict in routes_as_dicts:
+            condition = route_dict['condition']
+            target_node = route_dict['target_node']
             
             try:
                 if self.condition_evaluator.evaluate(condition, context):
@@ -157,14 +161,14 @@ class BaseProcessor(ABC):
     def check_interrupt(
         self,
         user_input: str,
-        interrupts: List[Dict[str, Any]]
+        interrupts: List[Interrupt]
     ) -> Optional[str]:
         """
         Check if input matches any interrupt keyword
         
         Args:
             user_input: User's input message
-            interrupts: List of interrupt definitions
+            interrupts: List of typed Interrupt instances
         
         Returns:
             target_node ID if interrupt matched, None otherwise
@@ -182,8 +186,8 @@ class BaseProcessor(ABC):
         trimmed_input = user_input.strip().lower()
         
         for interrupt in interrupts:
-            interrupt_keyword = interrupt.get('input', '').strip().lower()
-            target_node = interrupt.get('target_node')
+            interrupt_keyword = interrupt.input.strip().lower()
+            target_node = interrupt.target_node
             
             if trimmed_input == interrupt_keyword:
                 self.logger.info(

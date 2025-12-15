@@ -4,6 +4,7 @@ Display information and auto-progress to next node
 """
 
 from typing import Optional, Dict, Any
+from app.models.node_configs import FlowNode, MessageNodeConfig
 from app.processors.base_processor import BaseProcessor, ProcessResult
 from app.utils.logger import get_logger
 from app.utils.exceptions import NoMatchingRouteError
@@ -35,7 +36,7 @@ class MessageProcessor(BaseProcessor):
     
     async def process(
         self,
-        node: Dict[str, Any],
+        node: FlowNode,
         context: Dict[str, Any],
         user_input: Optional[str] = None,
         session: Optional[Any] = None,
@@ -45,7 +46,7 @@ class MessageProcessor(BaseProcessor):
         Process MESSAGE node
         
         Args:
-            node: MESSAGE node definition
+            node: Typed FlowNode with MESSAGE configuration
             context: Session context
             user_input: Not used (message nodes don't require input)
         
@@ -55,31 +56,29 @@ class MessageProcessor(BaseProcessor):
         Raises:
             NoMatchingRouteError: If no route matches
         """
-        config = node.get('config', {})
+        # Type narrow config for IDE support
+        config: MessageNodeConfig = node.config
         
         # Render message with context variables
-        text_template = config.get('text', '')
-        message = self.template_engine.render(text_template, context)
+        message = self.template_engine.render(config.text, context)
         
         self.logger.debug(
             f"MESSAGE node displaying",
-            node_id=node.get('id'),
+            node_id=node.id,
             message_length=len(message)
         )
         
         # Evaluate routes for next node
-        routes = node.get('routes', [])
-        next_node = self.evaluate_routes(routes, context, node.get('type'))
+        next_node = self.evaluate_routes(node.routes, context, node.type)
         
         if next_node is None:
-            node_id = node.get('id', 'unknown')
             self.logger.error(
-                f"No matching route in MESSAGE node '{node_id}'",
-                node_id=node_id
+                f"No matching route in MESSAGE node '{node.id}'",
+                node_id=node.id
             )
             raise NoMatchingRouteError(
-                f"No route condition matched in MESSAGE node '{node_id}'",
-                node_id=node_id
+                f"No route condition matched in MESSAGE node '{node.id}'",
+                node_id=node.id
             )
         
         return ProcessResult(

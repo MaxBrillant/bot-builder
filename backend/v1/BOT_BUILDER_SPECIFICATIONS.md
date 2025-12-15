@@ -787,8 +787,7 @@ Every node has this base structure:
   "item_template": "string (required if DYNAMIC)",
   "static_options": [
     {
-      "label": "string (required)",
-      "value": "string (required)"
+      "label": "string (required)"
     }
   ],
   "interrupts": [
@@ -1809,10 +1808,10 @@ When user enters invalid selection (out of range, non-numeric, etc.):
 ```json
 {
   "static_options": [
-    { "label": "Option 1", "value": "val1" },
-    { "label": "Option 2", "value": "val2" },
-    { "label": "Option 3", "value": "val3" },
-    { "label": "Go back", "value": "back" } // This is option 4
+    { "label": "Option 1" },
+    { "label": "Option 2" },
+    { "label": "Option 3" },
+    { "label": "Go back" } // This is option 4
   ],
   "interrupts": [
     { "input": "4", "target_node": "node_cancel" } // ❌ CONFLICT!
@@ -2344,10 +2343,7 @@ The system validates route conditions and counts based on node type to prevent i
 {
   "config": {
     "source_type": "STATIC",
-    "static_options": [
-      { "label": "M-Pesa", "value": "mpesa" },
-      { "label": "Card", "value": "card" }
-    ]
+    "static_options": [{ "label": "M-Pesa" }, { "label": "Card" }]
   },
   "routes": [
     { "condition": "selection == 1", "target_node": "node_mpesa" }, // ✅ Valid
