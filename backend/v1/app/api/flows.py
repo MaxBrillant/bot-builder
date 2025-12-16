@@ -117,24 +117,26 @@ async def list_flows(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     skip: int = Query(0, ge=0, description="Number of flows to skip"),
-    limit: int = Query(100, ge=1, le=100, description="Maximum number of flows to return")
+    limit: int = Query(100, ge=1, le=100, description="Maximum number of flows to return"),
+    order_by: str = Query("desc", regex="^(asc|desc)$", description="Sort order: 'asc' for oldest first, 'desc' for newest first")
 ):
     """
     List bot's flows with pagination
-    
+
     Args:
         bot_id: Bot ID to list flows for
         current_user: Current authenticated user
         db: Database session
         skip: Number of flows to skip (for pagination)
         limit: Maximum number of flows to return (1-100)
-    
+        order_by: Sort order - "asc" for oldest first (default), "desc" for newest first
+
     Returns:
         Paginated list of flows with total count
-        
+
     Example:
-        GET /bots/{bot_id}/flows?skip=0&limit=20  # First page (20 items)
-        GET /bots/{bot_id}/flows?skip=20&limit=20 # Second page
+        GET /bots/{bot_id}/flows?skip=0&limit=20&order_by=asc  # First page (oldest first)
+        GET /bots/{bot_id}/flows?skip=0&limit=20&order_by=desc # First page (newest first)
     """
     # Verify bot ownership
     bot_service = BotService(db)
@@ -144,14 +146,15 @@ async def list_flows(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Bot '{bot_id}' not found"
         )
-    
+
     flow_service = FlowService(db)
-    
+
     # Get paginated flows
     flows = await flow_service.list_flows(
         bot_id,
         skip=skip,
-        limit=limit
+        limit=limit,
+        order_by=order_by
     )
     
     # Get total count efficiently

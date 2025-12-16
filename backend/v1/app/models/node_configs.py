@@ -627,7 +627,23 @@ class FlowNode(BaseModel):
         max_length=SystemConstraints.MAX_ROUTES_PER_NODE,
         description="Routing configuration (required for all nodes except END)"
     )
-    
+    position: Dict[str, float] = Field(
+        ...,
+        description="Node position on canvas (x, y coordinates)"
+    )
+
+    @field_validator('position')
+    @classmethod
+    def validate_position(cls, v: Dict[str, float]) -> Dict[str, float]:
+        """Validate that position has required x and y keys with numeric values"""
+        if not isinstance(v, dict):
+            raise ValueError("Position must be a dictionary")
+        if 'x' not in v or 'y' not in v:
+            raise ValueError("Position must have 'x' and 'y' keys")
+        if not isinstance(v['x'], (int, float)) or not isinstance(v['y'], (int, float)):
+            raise ValueError("Position x and y must be numeric values")
+        return v
+
     @model_validator(mode='before')
     @classmethod
     def inject_type_into_config(cls, data: Any) -> Any:

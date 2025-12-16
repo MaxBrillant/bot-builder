@@ -4,7 +4,7 @@ Flow repository - centralizes all flow queries
 
 from typing import Optional, List
 from uuid import UUID
-from sqlalchemy import select, func
+from sqlalchemy import select, delete, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.base import BaseRepository
@@ -16,6 +16,28 @@ class FlowRepository(BaseRepository[Flow]):
 
     def __init__(self, session: AsyncSession):
         super().__init__(session, Flow)
+
+    async def get_by_id_and_bot(
+        self,
+        flow_id: UUID,
+        bot_id: UUID
+    ) -> Optional[Flow]:
+        """
+        Get flow by ID and bot (for ownership verification)
+
+        Args:
+            flow_id: Flow UUID
+            bot_id: Bot UUID
+
+        Returns:
+            Flow or None if not found or not owned by bot
+        """
+        stmt = select(Flow).where(
+            Flow.id == flow_id,
+            Flow.bot_id == bot_id
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def get_by_name_and_bot(
         self,
@@ -39,21 +61,38 @@ class FlowRepository(BaseRepository[Flow]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_bot_flows(self, bot_id: UUID) -> List[Flow]:
+    async def get_bot_flows(
+        self,
+        bot_id: UUID,
+        offset: int = 0,
+        limit: Optional[int] = None,
+        order_by: str = "desc"
+    ) -> List[Flow]:
         """
-        Get all flows for a bot
+        Get flows for a bot with pagination support
 
         Args:
             bot_id: Bot UUID
+            offset: Number of records to skip (default: 0)
+            limit: Maximum records to return (default: None for all)
+            order_by: Sort order - "asc" for oldest first, "desc" for newest first (default: "desc")
 
         Returns:
             List of flows ordered by creation date
         """
-        stmt = (
-            select(Flow)
-            .where(Flow.bot_id == bot_id)
-            .order_by(Flow.created_at.desc())
-        )
+        stmt = select(Flow).where(Flow.bot_id == bot_id)
+
+        # Apply ordering
+        if order_by == "desc":
+            stmt = stmt.order_by(Flow.created_at.desc())
+        else:
+            stmt = stmt.order_by(Flow.created_at.asc())
+
+        stmt = stmt.offset(offset)
+
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -74,13 +113,10 @@ class FlowRepository(BaseRepository[Flow]):
         """
         keyword_upper = keyword.upper()
 
-        # Use PostgreSQL's JSONB contains operator
+        # Use PostgreSQL's JSONB path query with explicit cast to jsonpath
         stmt = select(Flow).where(
             Flow.bot_id == bot_id,
-            func.jsonb_path_exists(
-                Flow.trigger_keywords,
-                f'$[*] ? (@ == "{keyword_upper}")'
-            )
+            text(f"jsonb_path_exists(flows.trigger_keywords, '$[*] ? (@ == \"{keyword_upper}\")'::jsonpath)")
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -97,10 +133,7 @@ class FlowRepository(BaseRepository[Flow]):
         """
         stmt = select(Flow).where(
             Flow.bot_id == bot_id,
-            func.jsonb_path_exists(
-                Flow.trigger_keywords,
-                '$[*] ? (@ == "*")'
-            )
+            text("jsonb_path_exists(flows.trigger_keywords, '$[*] ? (@ == \"*\")'::jsonpath)")
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -140,10 +173,7 @@ class FlowRepository(BaseRepository[Flow]):
 
         stmt = select(Flow).where(
             Flow.bot_id == bot_id,
-            func.jsonb_path_exists(
-                Flow.trigger_keywords,
-                f'$[*] ? (@ == "{keyword_upper}")'
-            )
+            text(f"jsonb_path_exists(flows.trigger_keywords, '$[*] ? (@ == \"{keyword_upper}\")'::jsonpath)")
         )
 
         if exclude_flow_id:
@@ -151,3 +181,21 @@ class FlowRepository(BaseRepository[Flow]):
 
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def delete_by_id_and_bot(self, flow_id: UUID, bot_id: UUID) -> bool:
+        """
+        Delete flow by ID and bot (for ownership verification)
+
+        Args:
+            flow_id: Flow UUID
+            bot_id: Bot UUID (for ownership check)
+
+        Returns:
+            True if flow was deleted, False if not found
+        """
+        stmt = delete(Flow).where(
+            Flow.id == flow_id,
+            Flow.bot_id == bot_id
+        )
+        result = await self.session.execute(stmt)
+        return result.rowcount > 0

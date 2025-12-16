@@ -136,19 +136,13 @@ class FlowService:
                 flow.updated_at = datetime.fromisoformat(cached["updated_at"])
             return flow
         
-        # Cache miss - query database
-        result = await self.db.execute(
-            select(Flow).where(
-                Flow.id == flow_id,
-                Flow.bot_id == bot_id
-            )
-        )
-        flow = result.scalar_one_or_none()
-        
+        # Cache miss - query database using repository
+        flow = await self.flow_repo.get_by_id_and_bot(flow_id, bot_id)
+
         if flow:
             # Cache for future requests
             await self._cache_flow(flow)
-        
+
         return flow
     
     async def get_flow_by_id_only(self, flow_id: UUID) -> Optional[Flow]:
@@ -178,22 +172,20 @@ class FlowService:
                 flow.updated_at = datetime.fromisoformat(cached["updated_at"])
             return flow
         
-        # Cache miss
-        result = await self.db.execute(
-            select(Flow).where(Flow.id == flow_id)
-        )
-        flow = result.scalar_one_or_none()
-        
+        # Cache miss - query database using repository
+        flow = await self.flow_repo.get_by_id(flow_id)
+
         if flow:
             await self._cache_flow(flow)
-        
+
         return flow
     
     async def list_flows(
         self,
         bot_id: UUID,
         skip: int = 0,
-        limit: int = 100
+        limit: int = 100,
+        order_by: str = "desc"
     ) -> List[Flow]:
         """
         List flows for a bot
@@ -202,11 +194,12 @@ class FlowService:
             bot_id: Bot ID
             skip: Number of records to skip
             limit: Maximum records to return
+            order_by: Sort order - "asc" for oldest first, "desc" for newest first (default: "desc")
 
         Returns:
-            List of flows ordered by creation time (oldest first)
+            List of flows ordered by creation time
         """
-        return await self.flow_repo.get_bot_flows(bot_id, offset=skip, limit=limit)
+        return await self.flow_repo.get_bot_flows(bot_id, offset=skip, limit=limit, order_by=order_by)
 
     async def count_flows(self, bot_id: UUID) -> int:
         """
@@ -218,7 +211,7 @@ class FlowService:
         Returns:
             Total number of flows
         """
-        return await self.flow_repo.count_flows_by_bot(bot_id)
+        return await self.flow_repo.count_bot_flows(bot_id)
     
     async def update_flow(
         self,
