@@ -168,7 +168,7 @@ class MenuProcessor(BaseProcessor):
             await retry_handler.reset_attempts(session)
         
         # Save selection (as integer, 1-based index)
-        # Selection variable is INTEGER type for numeric comparisons
+        # Selection variable is NUMBER type for numeric comparisons
         context[SpecialVariables.SELECTION] = selection
         
         self.logger.info(f"Menu selection: {selection}", selection=selection)
@@ -314,9 +314,9 @@ class MenuProcessor(BaseProcessor):
             ]
             
             With flow variables:
-                {"user_id": {"type": "string"}, "user_name": {"type": "string"}, "user_age": {"type": "integer"}}
-            
-            Result: context updated with user_id="123", user_name="Alice", user_age=25 (as integer)
+                {"user_id": {"type": "string"}, "user_name": {"type": "string"}, "user_age": {"type": "number"}}
+
+            Result: context updated with user_id="123", user_name="Alice", user_age=25 (as number)
         """
         # Get variable definitions from flow for type inference
         variables = context.get("_flow_variables", {})

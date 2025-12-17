@@ -175,7 +175,15 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
         )
-    
+
+    # Check if user is OAuth-only (no password set)
+    if not user.password_hash:
+        logger.warning(f"Login failed - OAuth-only user attempted password login", user_id=str(user.user_id))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account uses Google Sign-In. Please use the 'Sign in with Google' button."
+        )
+
     # Verify password
     if not verify_password(credentials.password, user.password_hash):
         logger.warning(f"Login failed - invalid password", user_id=str(user.user_id))

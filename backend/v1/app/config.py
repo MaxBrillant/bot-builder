@@ -58,6 +58,15 @@ class SecurityConfig(BaseSettings):
         return v
 
 
+class GoogleOAuthConfig(BaseSettings):
+    """Google OAuth2 configuration"""
+    client_id: str = Field("", description="Google OAuth2 Client ID")
+    client_secret: str = Field("", description="Google OAuth2 Client Secret")
+    redirect_uri: str = Field("http://localhost:8000/auth/google/callback", description="OAuth2 redirect URI")
+
+    model_config = SettingsConfigDict(env_prefix="GOOGLE_")
+
+
 class HTTPClientConfig(BaseSettings):
     """HTTP client configuration for external API calls"""
     timeout: float = Field(30.0, ge=1.0, le=300.0, description="Request timeout in seconds")
@@ -100,6 +109,7 @@ class Settings(BaseSettings):
     environment: str = Field("development", pattern="^(development|staging|production)$")
     debug: bool = True
     base_url: str = "http://localhost:8000"
+    frontend_url: str = "http://localhost:3000"
 
     # CORS configuration
     allowed_origins: str = "http://localhost:3000,http://localhost:8000"
@@ -109,6 +119,7 @@ class Settings(BaseSettings):
     redis: RedisConfig = Field(default_factory=RedisConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    google: GoogleOAuthConfig = Field(default_factory=GoogleOAuthConfig)
     http_client: HTTPClientConfig = Field(default_factory=HTTPClientConfig)
     flow_constraints: FlowConstraintsConfig = Field(default_factory=FlowConstraintsConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)

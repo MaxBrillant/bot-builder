@@ -22,7 +22,7 @@ from app.utils.constants import (
     NodeType, VariableType, ValidationType, MenuSourceType,
     SystemConstraints, ReservedKeywords
 )
-from app.utils.security import validate_flow_id_format, validate_node_id_format
+from app.utils.security import validate_node_id_format
 from app.models.node_configs import FlowNode
 
 logger = get_logger(__name__)
@@ -259,7 +259,7 @@ class InputValidator:
 
         Args:
             value: Input value
-            target_type: Target type (string, integer, boolean, array)
+            target_type: Target type (string, number, boolean, array)
 
         Returns:
             Converted value
@@ -270,11 +270,11 @@ class InputValidator:
         try:
             if target_type == VariableType.STRING.value:
                 return self.type_converter.to_string(value)
-            elif target_type == VariableType.INTEGER.value:
+            elif target_type == VariableType.NUMBER.value:
                 result = self.type_converter.to_integer(value)
                 if result is None and value is not None:
                     raise InputValidationError(
-                        message=f"Cannot convert '{value}' to integer",
+                        message=f"Cannot convert '{value}' to number",
                         error_code="TYPE_CONVERSION_ERROR",
                         value=str(value),
                         target_type=target_type
@@ -817,21 +817,14 @@ class FlowValidator:
         result: ValidationResult
     ):
         """Validate flow name format and uniqueness per bot"""
-        if not flow_name:
-            result.add_error("invalid_name", "name cannot be empty", "name")
+        if not flow_name or not flow_name.strip():
+            result.add_error("invalid_name", "name cannot be empty or whitespace-only", "name")
             return
 
         if len(flow_name) > SystemConstraints.MAX_FLOW_ID_LENGTH:
             result.add_error(
                 "constraint_violation",
                 f"name exceeds maximum length of {SystemConstraints.MAX_FLOW_ID_LENGTH} characters",
-                "name"
-            )
-
-        if not validate_flow_id_format(flow_name):
-            result.add_error(
-                "invalid_format",
-                "name must contain only alphanumeric characters and underscores",
                 "name"
             )
 
@@ -990,30 +983,30 @@ class FlowValidator:
                     location,
                     "Provide a string value or null"
                 )
-        elif var_type == VariableType.INTEGER.value:
+        elif var_type == VariableType.NUMBER.value:
             if isinstance(default_value, bool):
                 result.add_error(
                     "invalid_default_value",
-                    f"Variable '{var_name}' has type 'integer' but default value is a boolean",
+                    f"Variable '{var_name}' has type 'number' but default value is a boolean",
                     location,
-                    "Provide an integer (e.g., 42, -10, 0) or null"
+                    "Provide a number (e.g., 42, -10, 0, 3.14) or null"
                 )
             elif isinstance(default_value, str):
                 try:
-                    int(default_value)
+                    float(default_value)
                 except ValueError:
                     result.add_error(
                         "invalid_default_value",
-                        f"Variable '{var_name}' has type 'integer' but default value '{default_value}' cannot be converted to an integer",
+                        f"Variable '{var_name}' has type 'number' but default value '{default_value}' cannot be converted to a number",
                         location,
-                        "Provide a valid integer (e.g., 42, -10, 0) or null"
+                        "Provide a valid number (e.g., 42, -10, 0, 3.14) or null"
                     )
-            elif not isinstance(default_value, int):
+            elif not isinstance(default_value, (int, float)):
                 result.add_error(
                     "invalid_default_value",
-                    f"Variable '{var_name}' has type 'integer' but default value is {type(default_value).__name__}",
+                    f"Variable '{var_name}' has type 'number' but default value is {type(default_value).__name__}",
                     location,
-                    "Provide an integer (e.g., 42, -10, 0) or null"
+                    "Provide a number (e.g., 42, -10, 0, 3.14) or null"
                 )
         elif var_type == VariableType.BOOLEAN.value:
             if isinstance(default_value, str):

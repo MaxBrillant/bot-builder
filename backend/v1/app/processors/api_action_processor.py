@@ -34,7 +34,7 @@ class APIActionProcessor(BaseProcessor):
     - 30-second fixed timeout
     - JSON-only responses
     - Response data extraction with path notation
-    - Type conversion (string, integer, boolean, array)
+    - Type conversion (string, number, boolean, array)
     - Success/failure routing
     - Server-side credential injection
     
@@ -356,9 +356,9 @@ class APIActionProcessor(BaseProcessor):
             ]
             
             With flow variables:
-                {"user_id": {"type": "integer"}, "user_name": {"type": "string"}}
-            
-            Result: context updated with user_id=123 (as integer), user_name="Alice"
+                {"user_id": {"type": "number"}, "user_name": {"type": "string"}}
+
+            Result: context updated with user_id=123 (as number), user_name="Alice"
         """
         if not isinstance(api_response.body, dict):
             self.logger.warning(f"API response body is not a dict, cannot map: {type(api_response.body)}")

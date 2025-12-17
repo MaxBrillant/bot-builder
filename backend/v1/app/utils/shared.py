@@ -269,7 +269,7 @@ class TypeConverter:
 
         Args:
             value: Input value
-            target_type: Target type (string, integer, boolean, array)
+            target_type: Target type (string, number, boolean, array)
 
         Returns:
             Converted value
@@ -283,10 +283,10 @@ class TypeConverter:
         if target_type == "string":
             return TypeConverter.to_string(value)
 
-        elif target_type == "integer":
+        elif target_type == "number":
             result = TypeConverter.to_integer(value)
             if result is None:
-                raise InputValidationError(f"Cannot convert '{value}' to integer")
+                raise InputValidationError(f"Cannot convert '{value}' to number")
             return result
 
         elif target_type == "boolean":

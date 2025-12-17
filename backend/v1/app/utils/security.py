@@ -185,27 +185,6 @@ def sanitize_input(text: str) -> str:
     return text.strip()
 
 
-def validate_flow_id_format(flow_id: str) -> bool:
-    """
-    Validate flow_id format
-    
-    Args:
-        flow_id: Flow identifier
-    
-    Returns:
-        True if valid format, False otherwise
-    
-    Rules:
-        - Alphanumeric and underscores only
-        - No spaces
-        - Length <= 96 characters
-    """
-    if not flow_id or len(flow_id) > 96:
-        return False
-    
-    return bool(re.match(r'^[A-Za-z0-9_]+$', flow_id))
-
-
 def validate_node_id_format(node_id: str) -> bool:
     """
     Validate node_id format

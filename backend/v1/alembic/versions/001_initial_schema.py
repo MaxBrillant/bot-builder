@@ -22,7 +22,9 @@ def upgrade() -> None:
         'users',
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('email', sa.String(length=255), nullable=False),
-        sa.Column('password_hash', sa.String(length=255), nullable=False),
+        sa.Column('password_hash', sa.String(length=255), nullable=True),  # Nullable for OAuth-only users
+        sa.Column('oauth_provider', sa.String(length=50), nullable=True),  # OAuth provider (e.g., 'google')
+        sa.Column('oauth_id', sa.String(length=255), nullable=True),  # OAuth provider's unique user ID
         sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -31,6 +33,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_users_user_id'), 'users', ['user_id'], unique=False)
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=False)
+    op.create_index('ix_users_oauth_provider_id', 'users', ['oauth_provider', 'oauth_id'], unique=True)
 
     # Create bots table
     op.create_table(
@@ -130,6 +133,7 @@ def downgrade() -> None:
     op.drop_table('bots')
     
     # Drop users table
+    op.drop_index('ix_users_oauth_provider_id', table_name='users')
     op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_index(op.f('ix_users_user_id'), table_name='users')
     op.drop_table('users')

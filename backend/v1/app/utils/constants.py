@@ -48,7 +48,7 @@ class HTTPMethod(str, Enum):
 # Variable Types
 class VariableType(str, Enum):
     STRING = "string"
-    INTEGER = "integer"
+    NUMBER = "number"
     BOOLEAN = "boolean"
     ARRAY = "array"
 

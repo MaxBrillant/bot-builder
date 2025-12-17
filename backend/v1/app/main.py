@@ -6,6 +6,7 @@ FastAPI application entry point
 import asyncio
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
@@ -13,7 +14,7 @@ from app.config import settings
 from app.database import init_db, close_db, check_database, AsyncSessionLocal
 from app.core.redis_manager import redis_manager
 from app.core.engine import init_http_client, close_http_client
-from app.api import auth_router, bots_router, flows_router, webhooks_router
+from app.api import auth_router, bots_router, flows_router, webhooks_router, oauth_router
 from app.api.middleware import register_exception_handlers
 from app.utils.logger import get_logger
 
@@ -142,6 +143,17 @@ app = FastAPI(
 )
 
 
+# Session middleware - Required for OAuth flows
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.security.secret_key,
+    session_cookie="session",
+    max_age=1800,  # 30 minutes
+    same_site="lax",
+    https_only=settings.is_production
+)
+
+
 # CORS - Restrictive configuration for security (10 MB request limit handled by Uvicorn)
 app.add_middleware(
     CORSMiddleware,
@@ -185,6 +197,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # Register routers
 app.include_router(auth_router)
+app.include_router(oauth_router)
 app.include_router(bots_router)
 app.include_router(flows_router)  # Nested under /bots/{bot_id}/flows
 app.include_router(webhooks_router)

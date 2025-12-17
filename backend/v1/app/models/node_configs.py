@@ -18,6 +18,7 @@ from app.utils.constants import (
     ValidationType,
     MenuSourceType,
     HTTPMethod,
+    VariableType,
     SystemConstraints,
     ReservedKeywords
 )
@@ -26,14 +27,6 @@ from app.utils.constants import (
 # ============================================================================
 # FLOW METADATA MODELS
 # ============================================================================
-
-class VariableType(str, Enum):
-    """Valid flow variable types"""
-    STRING = "string"
-    NUMBER = "number"
-    BOOLEAN = "boolean"
-    ARRAY = "array"
-
 
 class VariableDefinition(BaseModel):
     """Flow variable definition with type validation"""
@@ -486,10 +479,10 @@ class MenuNodeConfig(BaseModel):
     )
     
     # Optional fields
-    counter_text: Optional[str] = Field(
+    error_message: Optional[str] = Field(
         default=None,
-        max_length=SystemConstraints.MAX_COUNTER_TEXT_LENGTH,
-        description="Custom counter text template (e.g., '{{index}}. {{label}}')"
+        max_length=SystemConstraints.MAX_ERROR_MESSAGE_LENGTH,
+        description="Custom error message for invalid menu selection"
     )
     interrupts: Optional[List[Interrupt]] = Field(
         default=None,
@@ -552,16 +545,12 @@ class APIActionNodeConfig(BaseModel):
 class LogicExpressionNodeConfig(BaseModel):
     """
     Configuration for LOGIC_EXPRESSION nodes.
-    
+
     Evaluates expressions for conditional branching without user interaction.
+    All logic is defined in the node's routes array.
     """
     type: Literal["LOGIC_EXPRESSION"] = Field(default="LOGIC_EXPRESSION", frozen=True)
-    expression: Optional[str] = Field(
-        default=None,
-        max_length=SystemConstraints.MAX_EXPRESSION_LENGTH,
-        description="Expression to evaluate (optional, routes handle conditions)"
-    )
-    
+
     model_config = {"frozen": True, "extra": "forbid"}
 
 

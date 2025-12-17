@@ -27,6 +27,14 @@ router = APIRouter(prefix="/bots", tags=["bots"])
 
 def bot_to_response(bot, include_secret: bool = False) -> BotResponse:
     """Convert Bot model to BotResponse schema"""
+    # Access flows directly - SQLAlchemy lazy="selectin" ensures this is loaded
+    # The flows attribute always exists on the model, we just need to check if it's loaded
+    try:
+        flow_count = len(bot.flows)
+    except Exception:
+        # Fallback if flows somehow aren't loaded
+        flow_count = 0
+
     return BotResponse(
         bot_id=bot.bot_id,
         owner_user_id=bot.owner_user_id,
@@ -36,7 +44,8 @@ def bot_to_response(bot, include_secret: bool = False) -> BotResponse:
         webhook_secret=bot.webhook_secret if include_secret else None,
         status=bot.status,
         created_at=bot.created_at,
-        updated_at=bot.updated_at
+        updated_at=bot.updated_at,
+        flow_count=flow_count
     )
 
 
