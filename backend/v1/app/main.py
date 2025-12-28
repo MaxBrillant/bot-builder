@@ -14,7 +14,15 @@ from app.config import settings
 from app.database import init_db, close_db, check_database, AsyncSessionLocal
 from app.core.redis_manager import redis_manager
 from app.core.engine import init_http_client, close_http_client
-from app.api import auth_router, bots_router, flows_router, webhooks_router, oauth_router
+from app.api import (
+    auth_router,
+    bots_router,
+    flows_router,
+    webhooks_router,
+    oauth_router,
+    whatsapp_router,
+    evolution_webhooks_router
+)
 from app.api.middleware import register_exception_handlers
 from app.utils.logger import get_logger
 
@@ -201,6 +209,8 @@ app.include_router(oauth_router)
 app.include_router(bots_router)
 app.include_router(flows_router)  # Nested under /bots/{bot_id}/flows
 app.include_router(webhooks_router)
+app.include_router(whatsapp_router)  # WhatsApp/Evolution API integration
+app.include_router(evolution_webhooks_router)  # Evolution API webhook receiver
 
 
 # Health check endpoint

@@ -5,7 +5,7 @@ Improved validation and organization
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import model_validator, Field, field_validator
+from pydantic import model_validator, Field, field_validator, HttpUrl
 from typing import List
 
 
@@ -93,6 +93,29 @@ class RateLimitConfig(BaseSettings):
     login_window: int = Field(3600, ge=60, description="Login window in seconds (1 hour)")
 
 
+class EvolutionAPIConfig(BaseSettings):
+    """Evolution API configuration (shared/managed instance)"""
+    url: str = Field(
+        default="http://localhost:8080",
+        description="Evolution API base URL (managed by platform)"
+    )
+    api_key: str = Field(
+        default="",
+        min_length=0,
+        description="Evolution API authentication key"
+    )
+    enabled: bool = Field(
+        default=False,
+        description="Enable WhatsApp integration via Evolution API"
+    )
+    webhook_base_url: str = Field(
+        default="http://localhost:8000",
+        description="Base URL for webhooks (e.g., https://yourplatform.com)"
+    )
+
+    model_config = SettingsConfigDict(env_prefix="EVOLUTION_API__")
+
+
 class Settings(BaseSettings):
     """
     Main application settings with nested configuration groups
@@ -123,6 +146,7 @@ class Settings(BaseSettings):
     http_client: HTTPClientConfig = Field(default_factory=HTTPClientConfig)
     flow_constraints: FlowConstraintsConfig = Field(default_factory=FlowConstraintsConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
+    evolution_api: EvolutionAPIConfig = Field(default_factory=EvolutionAPIConfig)
 
     model_config = SettingsConfigDict(
         env_file=".env",

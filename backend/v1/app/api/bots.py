@@ -35,6 +35,10 @@ def bot_to_response(bot, include_secret: bool = False) -> BotResponse:
         # Fallback if flows somehow aren't loaded
         flow_count = 0
 
+    # Compute WhatsApp connection status
+    whatsapp_connected = bot.evolution_instance_status == 'connected'
+    whatsapp_status = bot.evolution_instance_status or 'disconnected'
+
     return BotResponse(
         bot_id=bot.bot_id,
         owner_user_id=bot.owner_user_id,
@@ -45,7 +49,11 @@ def bot_to_response(bot, include_secret: bool = False) -> BotResponse:
         status=bot.status,
         created_at=bot.created_at,
         updated_at=bot.updated_at,
-        flow_count=flow_count
+        flow_count=flow_count,
+        # WhatsApp connection info
+        whatsapp_connected=whatsapp_connected,
+        whatsapp_phone_number=bot.whatsapp_phone_number,
+        whatsapp_status=whatsapp_status
     )
 
 

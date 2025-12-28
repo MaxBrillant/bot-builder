@@ -35,6 +35,11 @@ class BotResponse(BaseModel):
     updated_at: datetime
     flow_count: Optional[int] = None  # Optional aggregation
 
+    # WhatsApp connection info
+    whatsapp_connected: bool = False  # Computed from evolution_instance_status
+    whatsapp_phone_number: Optional[str] = None
+    whatsapp_status: Optional[str] = None  # disconnected/pending/connected/error
+
     class Config:
         from_attributes = True
 

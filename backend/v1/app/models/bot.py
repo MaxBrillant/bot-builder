@@ -48,7 +48,13 @@ class Bot(Base):
     status = Column(String(20), nullable=False, default='active', index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False, index=True)
-    
+
+    # WhatsApp/Evolution API integration fields
+    evolution_instance_name = Column(String(255), nullable=True, unique=True, index=True)
+    evolution_instance_status = Column(String(20), nullable=True, default='disconnected')
+    whatsapp_phone_number = Column(String(50), nullable=True)
+    whatsapp_connected_at = Column(DateTime(timezone=True), nullable=True)
+
     __table_args__ = (
         UniqueConstraint('name', 'owner_user_id', name='unique_bot_name_per_user'),
     )

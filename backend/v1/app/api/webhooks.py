@@ -9,10 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.bot_service import BotService
-from app.core.engine import ConversationOrchestrator
+from app.services.evolution_service import EvolutionAPIService, EvolutionAPIError
+from app.core.engine import ConversationOrchestrator, get_http_client
 from app.core.redis_manager import redis_manager
 from app.config import settings
 from app.schemas.webhook_schema import WebhookMessageRequest, WebhookMessageResponse
+from app.schemas.whatsapp_schema import EvolutionWebhookData
 from app.utils.exceptions import NotFoundError
 from app.utils.logger import logger
 
@@ -147,3 +149,195 @@ async def process_bot_message(
             status="error",
             error="An error occurred processing your message. Please try again."
         )
+
+
+@router.post("/webhook/whatsapp/{bot_id}")
+async def process_whatsapp_webhook(
+    bot_id: UUID,
+    webhook_data: dict,
+    x_webhook_secret: str = Header(None, alias="X-Webhook-Secret"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Process Evolution API webhook for WhatsApp messages
+
+    Evolution API sends webhooks with this structure:
+    {
+        "event": "messages.upsert",
+        "instance": "bot_abc_instance",
+        "data": {
+            "key": {
+                "remoteJid": "5511999999999@s.whatsapp.net",
+                "fromMe": false,
+                "id": "3EB0..."
+            },
+            "message": {
+                "conversation": "Hello bot!"
+            },
+            "messageType": "conversation",
+            "pushName": "John Doe"
+        }
+    }
+
+    This endpoint:
+    1. Validates webhook secret
+    2. Filters for user messages (not bot's own messages)
+    3. Transforms Evolution API format → Bot Builder format
+    4. Processes through conversation engine
+    5. Sends response back to WhatsApp via Evolution API
+
+    Returns: {"status": "success"} or {"status": "error"}
+    """
+    # Validate webhook secret
+    if not x_webhook_secret:
+        logger.warning(f"WhatsApp webhook call to bot {bot_id} without secret header")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="X-Webhook-Secret header is required"
+        )
+
+    bot_service = BotService(db)
+
+    # Verify webhook authentication
+    is_valid = await bot_service.verify_webhook_secret(bot_id, x_webhook_secret)
+    if not is_valid:
+        logger.warning(f"Invalid webhook secret for bot {bot_id}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook secret"
+        )
+
+    # Get bot and check status
+    try:
+        bot = await bot_service.get_bot(bot_id, check_ownership=False)
+    except NotFoundError:
+        logger.error(f"Bot {bot_id} not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Bot {bot_id} not found"
+        )
+
+    # Check if bot is active
+    if not bot.is_active():
+        logger.info(f"WhatsApp webhook call to inactive bot {bot_id}")
+        return {"status": "error", "message": "Bot is currently inactive"}
+
+    # Parse webhook data
+    event = webhook_data.get("event")
+    data = webhook_data.get("data", {})
+
+    # Only process "messages.upsert" events (new messages)
+    if event != "messages.upsert":
+        logger.debug(f"Ignoring non-message event: {event}")
+        return {"status": "ignored", "message": f"Event {event} not processed"}
+
+    # Extract message details
+    key = data.get("key", {})
+    message_obj = data.get("message", {})
+
+    # Ignore messages from the bot itself
+    if key.get("fromMe", False):
+        logger.debug(f"Ignoring message from bot itself")
+        return {"status": "ignored", "message": "Bot's own message ignored"}
+
+    # Extract phone number from remoteJid
+    remote_jid = key.get("remoteJid", "")
+    if not remote_jid:
+        logger.warning(f"No remoteJid in webhook data")
+        return {"status": "error", "message": "Missing remoteJid"}
+
+    # Remove @s.whatsapp.net suffix to get clean phone number
+    channel_user_id = remote_jid.split('@')[0]
+
+    # Extract message text (handle different message types)
+    message_text = None
+
+    # Try different message type fields
+    if "conversation" in message_obj:
+        message_text = message_obj["conversation"]
+    elif "extendedTextMessage" in message_obj:
+        message_text = message_obj["extendedTextMessage"].get("text")
+    elif "imageMessage" in message_obj:
+        # For images with captions
+        message_text = message_obj["imageMessage"].get("caption", "[Image]")
+    elif "videoMessage" in message_obj:
+        message_text = message_obj["videoMessage"].get("caption", "[Video]")
+    elif "documentMessage" in message_obj:
+        message_text = message_obj["documentMessage"].get("caption", "[Document]")
+    elif "audioMessage" in message_obj:
+        message_text = "[Audio]"
+    else:
+        # Fallback for unsupported message types
+        message_type = data.get("messageType", "unknown")
+        message_text = f"[Unsupported message type: {message_type}]"
+        logger.debug(f"Unsupported message type: {message_type}")
+
+    if not message_text:
+        logger.warning(f"Could not extract message text from webhook")
+        return {"status": "error", "message": "Could not extract message text"}
+
+    # Check rate limit for channel user
+    if settings.redis.enabled and redis_manager.is_connected():
+        allowed = await redis_manager.check_rate_limit_channel_user(
+            "whatsapp",
+            channel_user_id,
+            settings.rate_limit.webhook_max,
+            settings.rate_limit.webhook_window
+        )
+        if not allowed:
+            logger.warning(
+                f"Rate limit exceeded for WhatsApp user: {channel_user_id}",
+                bot_id=str(bot_id)
+            )
+            return {"status": "error", "message": "Rate limit exceeded"}
+
+    # Process message through conversation engine
+    try:
+        conversation_engine = ConversationOrchestrator(db)
+
+        result = await conversation_engine.process_message(
+            channel="whatsapp",
+            channel_user_id=channel_user_id,
+            bot_id=bot_id,
+            message=message_text
+        )
+
+        # Join multiple messages into single response text
+        messages = result.get("messages", [])
+        response_text = "\n\n".join(messages) if messages else ""
+
+        logger.info(
+            f"WhatsApp message processed for bot {bot_id}, user={channel_user_id}"
+        )
+
+        # Send response back to WhatsApp via Evolution API
+        if response_text and bot.evolution_instance_name:
+            try:
+                http_client = await get_http_client()
+                evolution_service = EvolutionAPIService(http_client)
+
+                await evolution_service.send_text_message(
+                    instance_name=bot.evolution_instance_name,
+                    phone_number=channel_user_id,
+                    text=response_text
+                )
+                logger.info(f"WhatsApp response sent for bot {bot_id} to {channel_user_id}")
+            except EvolutionAPIError as e:
+                logger.error(f"Failed to send WhatsApp response: {str(e)}")
+                # Don't fail the webhook - message was processed, just couldn't send response
+            except Exception as e:
+                logger.error(f"Unexpected error sending WhatsApp response: {str(e)}", exc_info=True)
+                # Continue without failing
+
+        return {
+            "status": "success",
+            "message": "Message processed",
+            "session_id": result.get("session_id")
+        }
+
+    except Exception as e:
+        logger.error(f"Error processing WhatsApp message for bot {bot_id}: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "message": "An error occurred processing your message"
+        }

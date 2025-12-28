@@ -53,6 +53,11 @@ class HTTPClientError(SystemException):
     pass
 
 
+class ExternalServiceError(SystemException):
+    """External service integration failures (Evolution API, etc.)"""
+    pass
+
+
 class APITimeoutError(SystemException):
     """External API timeout"""
 

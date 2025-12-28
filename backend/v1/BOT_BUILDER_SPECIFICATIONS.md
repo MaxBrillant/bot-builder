@@ -233,11 +233,11 @@ A flow is defined as a JSON object with the following top-level structure:
   - Users reference flows by this `name` in API calls
 - **Constraints**:
   - Must be **unique per bot** (not globally unique)
-  - Alphanumeric, underscores, hyphens, and spaces allowed
+  - Any printable characters allowed (including apostrophes, punctuation, emojis, etc.)
   - Cannot be empty
   - Maximum 96 characters
-  - Recommended: Use descriptive names like "Driver Onboarding Flow" or "Checkout Process v2"
-- **Example**: `"driver_onboarding"`, `"checkout_flow"`, `"customer_support_v1"`
+  - Recommended: Use descriptive names like "Driver Onboarding Flow", "Max's Flow", or "Checkout Process v2"
+- **Example**: `"driver_onboarding"`, `"checkout_flow"`, `"customer_support_v1"`, `"Max's Personal Flow"`
 - **Uniqueness Scope**: Each bot can have flows with unique names. Different bots can use the same flow names.
 
 #### `trigger_keywords` (required)
@@ -535,7 +535,7 @@ This allows nodes to reference other nodes that appear later in the JSON (order-
 - **Only start node has no parent** - only the start_node_id should have no parent (not be referenced in any route). All other nodes must have at least one parent (be referenced as target_node in at least one route). Orphan nodes are invalid.
 - **Route conditions unique per node** - no duplicate conditions within a single node's routes array (case-insensitive)
 - No circular references (infinite loops)
-- Variable types valid (string, integer, boolean, array)
+- Variable types valid (string, number, boolean, array)
 - Fail_route (if defined) references existing node
 - Constraints respected:
   - Max 48 nodes per flow
@@ -622,14 +622,14 @@ Bot Builder Instance 3 ←
   ```json
   {
     "variable_name": {
-      "type": "string|integer|boolean|array",
+      "type": "string|number|boolean|array",
       "default": null | value
     }
   }
   ```
 - **Supported Types**:
   - `string`: Text values
-  - `integer`: Whole numbers
+  - `number`: Numeric values (integers and decimals)
   - `boolean`: true/false
   - `array`: Lists of items
 - **Type Enforcement & Conversion Process**:
@@ -638,13 +638,13 @@ Bot Builder Instance 3 ←
   3. If validation passes, system attempts type conversion based on declared variable type
   4. If conversion succeeds, value is saved to context
   5. If conversion fails, user sees error and must retry (counts toward max attempts)
-  6. **Note**: Validation ensures input is in convertible format (e.g., `input.isNumeric()` ensures string can convert to integer)
+  6. **Note**: Validation ensures input is in convertible format (e.g., `input.isNumeric()` ensures string can convert to number)
   7. **Output Mappings**: This type enforcement also applies to [`output_mapping`](#menu-node-config) (MENU nodes) and [`response_map`](#api_action-node-config) (API_ACTION nodes). During conversation, when mapping extracted values to variables, the system attempts conversion to the variable's declared type. Conversion failures in mappings result in `null` (don't count toward max validation attempts). See [Type Inference in Output Mappings](#type-inference-in-output-mappings) for details.
 - **Example**:
   ```json
   "variables": {
     "user_name": { "type": "string", "default": null },
-    "age": { "type": "integer", "default": 0 },
+    "age": { "type": "number", "default": 0 },
     "is_verified": { "type": "boolean", "default": false },
     "items": { "type": "array", "default": [] }
   }
@@ -695,9 +695,11 @@ Every node has this base structure:
 ```json
 {
   "id": "string (required)",
+  "name": "string (required)",
   "type": "PROMPT|MENU|API_ACTION|LOGIC_EXPRESSION|MESSAGE|END (required)",
   "config": { "object (required)" },
-  "routes": [ "array (optional)" ]
+  "routes": [ "array (optional)" ],
+  "position": { "object (required)" }
 }
 ```
 
@@ -712,6 +714,16 @@ Every node has this base structure:
   - Alphanumeric and underscores only
   - No spaces
 - **Example**: `"node_get_origin"`
+
+##### `name` (required)
+
+- **Type**: `string`
+- **Description**: Human-readable display name for the node
+- **Constraints**:
+  - Maximum 50 characters
+  - Cannot be empty or whitespace only
+  - Should be unique within the flow (case-insensitive)
+- **Example**: `"Get User Location"`
 
 ##### `type` (required)
 
@@ -751,6 +763,22 @@ Every node has this base structure:
     { "condition": "error", "target_node": "node_error" }
   ]
   ```
+
+##### `position` (required)
+
+- **Type**: `object`
+- **Description**: Node position on the visual canvas for the flow editor
+- **Structure**:
+  ```json
+  {
+    "x": number,
+    "y": number
+  }
+  ```
+- **Constraints**:
+  - Must have both `x` and `y` properties
+  - Both values must be numeric (integer or float)
+- **Example**: `{"x": 250.5, "y": 100}`
 
 ### Node Configuration by Type
 
@@ -822,7 +850,7 @@ When extracting fields from selected menu item, the system uses **type inference
 
 1. **Extract value** using `source_path` from the selected item
 2. **Look up** `target_variable` in the flow's `variables` section to determine the declared type
-3. **Attempt type conversion** based on the variable's declared type (string, integer, boolean, array)
+3. **Attempt type conversion** based on the variable's declared type (string, number, boolean, array)
 4. **On success**: Save converted value to context
 5. **On failure** (missing path OR conversion error): Set variable to `null`
 6. **All mappings execute independently** - one failure doesn't affect others
@@ -832,8 +860,8 @@ When extracting fields from selected menu item, the system uses **type inference
 - No `type` field exists in `output_mapping` structure
 - Type is determined by variable declaration in flow's `variables` section
 - Missing or null fields in source → variable set to `null`
-- Invalid type conversion (e.g., "abc" to integer) → variable set to `null`
-- `selection` variable automatically set to numeric index as **integer** (1, 2, 3, etc.)
+- Invalid type conversion (e.g., "abc" to number) → variable set to `null`
+- `selection` variable automatically set to numeric index as **number** (1, 2, 3, etc.)
 
 **Example**:
 
@@ -842,7 +870,7 @@ When extracting fields from selected menu item, the system uses **type inference
 "variables": {
   "trip_id": { "type": "string", "default": null },
   "driver": { "type": "string", "default": null },
-  "seats_available": { "type": "integer", "default": 0 },
+  "seats_available": { "type": "number", "default": 0 },
   "is_verified": { "type": "boolean", "default": false }
 }
 
@@ -858,10 +886,10 @@ When extracting fields from selected menu item, the system uses **type inference
 ]
 
 // Result in context (after type inference):
-// selection = 2  (integer, automatically set)
+// selection = 2  (number, automatically set)
 // trip_id = "123"  (string, as declared)
 // driver = null  (missing field)
-// seats_available = 5  (converted from "5" string to integer)
+// seats_available = 5  (converted from "5" string to number)
 // is_verified = true  (boolean, as declared)
 ```
 
@@ -869,15 +897,15 @@ When extracting fields from selected menu item, the system uses **type inference
 
 ```json
 // Source data: {"price": "29.99", "quantity": "3", "active": "true"}
-// Variable declarations: price (string), quantity (integer), active (boolean)
+// Variable declarations: price (string), quantity (number), active (boolean)
 
 // Result:
 // price = "29.99"  (kept as string)
-// quantity = 3  (converted to integer)
+// quantity = 3  (converted to number)
 // active = true  (converted to boolean)
 
 // Source data: {"invalid_number": "abc", "missing_field": null}
-// Variable declarations: invalid_number (integer), missing_field (string)
+// Variable declarations: invalid_number (number), missing_field (string)
 
 // Result:
 // invalid_number = null  (conversion failed)
@@ -890,7 +918,6 @@ See [Type Inference in Output Mappings](#type-inference-in-output-mappings) sect
 
 ```json
 {
-  "description": "string (optional)",
   "request": {
     "method": "GET|POST|PUT|DELETE|PATCH (required)",
     "url": "string (required, supports templates for query parameters)",
@@ -904,7 +931,7 @@ See [Type Inference in Output Mappings](#type-inference-in-output-mappings) sect
     }
   ],
   "success_check": {
-    "status_code_in": [200, 201],
+    "status_codes": [200, 201],
     "expression": "string (optional)"
   }
 }
@@ -916,7 +943,7 @@ The `response_map` uses **type inference** to convert API response values based 
 
 1. **Extract value** from response using `source_path` (supports dot notation: `data.user.id`)
 2. **Look up** `target_variable` in flow's `variables` section to determine declared type
-3. **Attempt type conversion** based on variable's declared type (string, integer, boolean, array)
+3. **Attempt type conversion** based on variable's declared type (string, number, boolean, array)
 4. **On success**: Save converted value to context
 5. **On failure** (missing path OR conversion error): Set variable to `null`
 6. **All mappings execute independently** - conversion failures don't affect other mappings
@@ -935,7 +962,7 @@ The `response_map` uses **type inference** to convert API response values based 
 // Flow variables declaration:
 "variables": {
   "user_id": { "type": "string", "default": null },
-  "age": { "type": "integer", "default": 0 },
+  "age": { "type": "number", "default": 0 },
   "is_verified": { "type": "boolean", "default": false },
   "tags": { "type": "array", "default": [] }
 }
@@ -952,7 +979,7 @@ The `response_map` uses **type inference** to convert API response values based 
 
 // Result in context (after type inference):
 // user_id = "user_123"  (string, as declared)
-// age = 25  (converted from "25" string to integer)
+// age = 25  (converted from "25" string to number)
 // is_verified = true  (converted from "true" string to boolean)
 // tags = ["active", "premium"]  (array, as declared)
 ```
@@ -963,7 +990,7 @@ The `response_map` uses **type inference** to convert API response values based 
 // API Response: {"data": {"user_id": "user_123"}}
 // Note: age, is_verified, tags are missing
 
-// Variables declared: user_id (string), age (integer), is_verified (boolean), tags (array)
+// Variables declared: user_id (string), age (number), is_verified (boolean), tags (array)
 
 "response_map": [
   {"source_path": "data.user_id", "target_variable": "user_id"},
@@ -980,7 +1007,7 @@ The `response_map` uses **type inference** to convert API response values based 
 
 // Invalid conversion example:
 // API Response: {"count": "not_a_number"}
-// Variable: count (integer)
+// Variable: count (number)
 // Result: count = null  (conversion failed)
 ```
 
@@ -998,13 +1025,13 @@ See [Type Inference in Output Mappings](#type-inference-in-output-mappings) sect
 
 ```json
 "success_check": {
-  "status_code_in": [200, 201],
+  "status_codes": [200, 201],
   "expression": "response.body.id != null && response.body.success == true"
 }
 ```
 
 **Required**: `request` with `method` and `url`
-**Optional**: `description`, `response_map`, `success_check`, `headers`, `body`
+**Optional**: `response_map`, `success_check`, `headers`, `body`
 
 ### Type Inference in Output Mappings
 
@@ -1028,7 +1055,7 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 | Declared Type | Conversion Behavior               | Examples                                                                              |
 | ------------- | --------------------------------- | ------------------------------------------------------------------------------------- |
 | `string`      | No conversion, value stored as-is | `"123"` → `"123"`, `123` → `"123"`                                                    |
-| `integer`     | Parse to whole number             | `"42"` → `42`, `"3.14"` → `3`, `"abc"` → `null`                                       |
+| `number`      | Parse to numeric value            | `"42"` → `42`, `"3.14"` → `3.14`, `"abc"` → `null`                                    |
 | `boolean`     | Parse to true/false               | `"true"` → `true`, `"false"` → `false`, `1` → `true`, `0` → `false`, `"yes"` → `null` |
 | `array`       | Expect array value                | `["a","b"]` → `["a","b"]`, `"abc"` → `null`                                           |
 
@@ -1060,13 +1087,13 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 
 // Scenario 2: Type conversion error
 // Source: {"age": "twenty-five"}
-// Variable: age (integer)
+// Variable: age (number)
 // Mapping: {"source_path": "age", "target_variable": "age"}
 // Result: age = null
 
 // Scenario 3: Null in source
 // Source: {"count": null}
-// Variable: count (integer)
+// Variable: count (number)
 // Mapping: {"source_path": "count", "target_variable": "count"}
 // Result: count = null
 ```
@@ -1078,8 +1105,8 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
   "variables": {
     "trip_id": { "type": "string", "default": null },
     "departure_time": { "type": "string", "default": null },
-    "available_seats": { "type": "integer", "default": 0 },
-    "price": { "type": "integer", "default": 0 },
+    "available_seats": { "type": "number", "default": 0 },
+    "price": { "type": "number", "default": 0 },
     "is_express": { "type": "boolean", "default": false }
   },
   "nodes": {
@@ -1116,11 +1143,11 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 // ]
 
 // Result in context after type inference:
-// selection = 2 (integer, automatically set by MENU)
+// selection = 2 (number, automatically set by MENU)
 // trip_id = "t2" (string, no conversion needed)
 // departure_time = "10:00" (string, no conversion needed)
-// available_seats = 2 (converted from "2" string to integer)
-// price = 450 (converted from "450" string to integer)
+// available_seats = 2 (converted from "2" string to number)
+// price = 450 (converted from "450" string to number)
 // is_express = false (boolean, no conversion needed)
 ```
 
@@ -1130,7 +1157,7 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 {
   "variables": {
     "booking_id": { "type": "string", "default": null },
-    "total_amount": { "type": "integer", "default": 0 },
+    "total_amount": { "type": "number", "default": 0 },
     "is_confirmed": { "type": "boolean", "default": false },
     "payment_methods": { "type": "array", "default": [] }
   },
@@ -1162,7 +1189,7 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
           }
         ],
         "success_check": {
-          "status_code_in": [200, 201]
+          "status_codes": [200, 201]
         }
       },
       "routes": [
@@ -1185,7 +1212,7 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 
 // Result in context after type inference:
 // booking_id = "BK12345" (string, no conversion)
-// total_amount = 1500 (converted from "1500" string to integer)
+// total_amount = 1500 (converted from "1500" string to number)
 // is_confirmed = true (converted from "true" string to boolean)
 // payment_methods = ["mpesa", "card"] (array, no conversion)
 ```
@@ -1196,9 +1223,9 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 
 2. **Choose Appropriate Types**: Use the type that matches your business logic
 
-   - Numeric IDs that need comparison: `integer`
+   - Numeric IDs that need comparison: `number`
    - IDs used as references: `string`
-   - Counts, quantities, amounts: `integer`
+   - Counts, quantities, amounts: `number`
    - Flags, status indicators: `boolean`
    - Lists of items: `array`
 
@@ -1247,7 +1274,7 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 **Example**:
 
 ```json
-// PROMPT: User enters "abc" for integer variable
+// PROMPT: User enters "abc" for number variable
 // Result: Validation error, user sees error message, must retry
 
 // API_ACTION response_map: API returns {"age": "abc"}
@@ -1259,12 +1286,12 @@ This design allows flows to continue gracefully when external data is malformed,
 #### LOGIC_EXPRESSION Node Config
 
 ```json
-{
-  "description": "string (optional)"
-}
+{}
 ```
 
-**Optional**: `description`
+No configuration needed (empty object).
+
+**Note**: LOGIC_EXPRESSION nodes perform internal conditional routing based on the `routes` array. All logic is defined in the route conditions, not in the node config.
 
 #### MESSAGE Node Config
 
@@ -1872,7 +1899,7 @@ When user enters invalid selection (out of range, non-numeric, etc.):
 - ✅ Custom headers
 - ✅ Response data extraction with path notation
 - ✅ Success/failure routing
-- ✅ Type conversion (string, integer, boolean, array)
+- ✅ Type conversion (string, number, boolean, array)
 
 **Constraints**:
 
@@ -2541,16 +2568,21 @@ sorted_routes = [
 1. **API Response Mapping** (recommended):
 
 ```json
+// First, declare variables with correct types
+"variables": {
+  "age": { "type": "number", "default": 0 },
+  "verified": { "type": "boolean", "default": false }
+}
+
+// Then use response_map (type inference automatic)
 "response_map": [
   {
     "source_path": "age",
-    "target_variable": "age",
-    "type": "integer"  // Converts to number
+    "target_variable": "age"  // Will convert to number (from variables)
   },
   {
     "source_path": "verified",
-    "target_variable": "verified",
-    "type": "boolean"  // Converts to boolean
+    "target_variable": "verified"  // Will convert to boolean (from variables)
   }
 ]
 ```
@@ -2576,18 +2608,18 @@ context.age = "25"; // string (before type conversion)
 ("context.age > 18"); // FAILS (string vs number comparison returns false)
 ("context.age == '25'"); // WORKS (string vs string)
 
-// After PROMPT type conversion with declared type: "integer"
+// After PROMPT type conversion with declared type: "number"
 context.age = 25; // number (after successful conversion)
 
 ("context.age > 18"); // WORKS (number vs number)
 ("context.age == 25"); // WORKS (number vs number)
 
-// Example with MENU selection (always integer)
-context.selection = 2; // integer (automatically set by MENU)
+// Example with MENU selection (always number)
+context.selection = 2; // number (automatically set by MENU)
 
-("context.selection == 2"); // WORKS (integer vs integer)
-("context.selection == '2'"); // FAILS (integer vs string)
-("context.selection > 1"); // WORKS (integer vs integer)
+("context.selection == 2"); // WORKS (number vs number)
+("context.selection == '2'"); // FAILS (number vs string)
+("context.selection > 1"); // WORKS (number vs number)
 ```
 
 ### Type Mismatch Behavior
@@ -2613,13 +2645,13 @@ When comparing values of mismatched types, the system evaluates safely without t
 ```javascript
 // Context values
 context.age = "25"; // string
-context.count = 10; // integer
+context.count = 10; // number
 context.flag = true; // boolean
 context.missing = null; // null value
 
 // Type mismatch comparisons
-("context.age == 25"); // false (string "25" != integer 25)
-("context.count == '10'"); // false (integer 10 != string "10")
+("context.age == 25"); // false (string "25" != number 25)
+("context.count == '10'"); // false (number 10 != string "10")
 ("context.flag == 'true'"); // false (boolean true != string "true")
 ("context.missing == null"); // true (null matches null)
 ("context.missing != null"); // false
@@ -2632,9 +2664,9 @@ context.missing = null; // null value
 
 **Best Practices**:
 
-1. Use explicit type conversion in API_ACTION response_map
-2. Declare correct types for variables in PROMPT nodes
-3. Be aware that MENU `selection` is always an integer
+1. Declare variables with correct types in flow's `variables` section
+2. Type inference handles conversion automatically in response_map and output_mapping
+3. Be aware that MENU `selection` is always a number
 4. Test routes with expected data types during development
 
 ### No-Match Route Behavior
@@ -2778,7 +2810,7 @@ Session expires after 30min or explicit delete
 
 **Capabilities**:
 
-- ✅ Store strings, integers, booleans, arrays
+- ✅ Store strings, numbers, booleans, arrays
 - ✅ Update existing variables
 - ✅ Add new variables during flow
 - ✅ Pass between nodes

@@ -669,6 +669,88 @@ class RedisManager:
         except Exception as e:
             logger.error(f"Failed to invalidate session cache: {e}")
 
+    # ==================== QR Code Storage (Evolution API) ====================
+
+    async def store_qr_code(
+        self,
+        bot_id: str,
+        qr_code: str,
+        instance_name: str,
+        ttl: int = 60
+    ):
+        """
+        Store QR code from Evolution API webhook
+
+        QR codes have a short TTL (60 seconds default) since they expire quickly.
+
+        Args:
+            bot_id: Bot ID (UUID as string)
+            qr_code: Base64-encoded QR code image
+            instance_name: Evolution API instance name
+            ttl: Time to live in seconds (default: 60)
+        """
+        if not self.is_connected():
+            logger.warning("Redis not connected - QR code storage unavailable")
+            return
+
+        try:
+            key = f"evolution:qr:{bot_id}"
+            data = {
+                "qr_code": qr_code,
+                "instance_name": instance_name,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            await self.redis.setex(
+                key,
+                ttl,
+                json.dumps(data)
+            )
+            logger.info(f"Stored QR code for bot {bot_id} (TTL: {ttl}s)")
+        except Exception as e:
+            logger.error(f"Failed to store QR code for bot {bot_id}: {e}")
+
+    async def get_qr_code(self, bot_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve QR code for a bot
+
+        Args:
+            bot_id: Bot ID (UUID as string)
+
+        Returns:
+            Dict with qr_code, instance_name, timestamp, or None if not found
+        """
+        if not self.is_connected():
+            return None
+
+        try:
+            key = f"evolution:qr:{bot_id}"
+            data = await self.redis.get(key)
+            if data:
+                logger.debug(f"QR code cache hit for bot {bot_id}")
+                return json.loads(data)
+            logger.debug(f"QR code cache miss for bot {bot_id}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get QR code for bot {bot_id}: {e}")
+            return None
+
+    async def delete_qr_code(self, bot_id: str):
+        """
+        Delete QR code for a bot
+
+        Args:
+            bot_id: Bot ID (UUID as string)
+        """
+        if not self.is_connected():
+            return
+
+        try:
+            key = f"evolution:qr:{bot_id}"
+            await self.redis.delete(key)
+            logger.debug(f"Deleted QR code for bot {bot_id}")
+        except Exception as e:
+            logger.error(f"Failed to delete QR code for bot {bot_id}: {e}")
+
     # ==================== JWT Token Blacklist ====================
 
     async def blacklist_token(self, jti: str, ttl: int):
@@ -752,3 +834,13 @@ class RedisManager:
 
 # Global Redis manager instance
 redis_manager = RedisManager()
+
+
+def get_redis_manager() -> RedisManager:
+    """
+    Get the global Redis manager instance.
+
+    Returns:
+        RedisManager instance
+    """
+    return redis_manager

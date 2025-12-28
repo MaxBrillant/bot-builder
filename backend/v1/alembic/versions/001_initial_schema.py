@@ -46,6 +46,11 @@ def upgrade() -> None:
         sa.Column('status', sa.String(length=20), nullable=False, server_default='active'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+        # WhatsApp/Evolution API integration fields
+        sa.Column('evolution_instance_name', sa.String(length=255), nullable=True),
+        sa.Column('evolution_instance_status', sa.String(length=20), nullable=True, server_default='disconnected'),
+        sa.Column('whatsapp_phone_number', sa.String(length=50), nullable=True),
+        sa.Column('whatsapp_connected_at', sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(['owner_user_id'], ['users.user_id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('bot_id'),
         sa.UniqueConstraint('name', 'owner_user_id', name='unique_bot_name_per_user')
@@ -54,6 +59,8 @@ def upgrade() -> None:
     op.create_index(op.f('ix_bots_owner_user_id'), 'bots', ['owner_user_id'], unique=False)
     op.create_index(op.f('ix_bots_status'), 'bots', ['status'], unique=False)
     op.create_index(op.f('ix_bots_updated_at'), 'bots', ['updated_at'], unique=False)
+    # Unique index on evolution_instance_name to prevent duplicate instances across all bots
+    op.create_index('ix_bots_evolution_instance_name', 'bots', ['evolution_instance_name'], unique=True)
 
     # Create flows table
     op.create_table(
@@ -126,6 +133,7 @@ def downgrade() -> None:
     op.drop_table('flows')
     
     # Drop bots table
+    op.drop_index('ix_bots_evolution_instance_name', table_name='bots')
     op.drop_index(op.f('ix_bots_updated_at'), table_name='bots')
     op.drop_index(op.f('ix_bots_status'), table_name='bots')
     op.drop_index(op.f('ix_bots_owner_user_id'), table_name='bots')
