@@ -201,7 +201,7 @@ class SessionManager:
     
     async def update_context(self, session_id: UUID, context: Dict[str, Any]):
         """
-        Update session context variables with size and array length validation
+        Update session context variables with size validation and array truncation
 
         Args:
             session_id: Session UUID
@@ -209,13 +209,13 @@ class SessionManager:
 
         Raises:
             ContextSizeExceededError: If context exceeds 100KB limit
-            ConstraintViolationError: If any array exceeds 24 items
 
         Note:
             Does NOT commit - caller's transaction will commit.
+            Arrays exceeding 24 items are silently truncated.
         """
-        # Validate array lengths FIRST (per spec line 1597)
-        self._validate_array_lengths(context)
+        # Truncate arrays FIRST (per spec: silent truncation when writing to context)
+        self._truncate_arrays(context)
 
         # Validate context size (100 KB limit per spec)
         context_json = json.dumps(context, default=str)
@@ -435,18 +435,16 @@ class SessionManager:
         
         self.logger.log_session_event(str(session_id), "error")
     
-    def _validate_array_lengths(self, context: Dict[str, Any]):
+    def _truncate_arrays(self, context: Dict[str, Any]):
         """
-        Validate that no array in context exceeds MAX_ARRAY_LENGTH
+        Truncate arrays in context to MAX_ARRAY_LENGTH (silently)
 
         Args:
-            context: Context dictionary to validate
-
-        Raises:
-            ConstraintViolationError: If any array exceeds maximum length
+            context: Context dictionary to process (modified in-place)
 
         Note:
-            Per spec line 1597: "Array length in context: 24 items - Performance"
+            Per spec: "All arrays written to context are enforced to 24 items max and truncated if exceeded"
+            This is a silent truncation - no errors raised, arrays just limited to first 24 items.
         """
         for key, value in context.items():
             # Skip internal metadata keys (start with underscore)
@@ -455,9 +453,13 @@ class SessionManager:
 
             if isinstance(value, list):
                 if len(value) > SystemConstraints.MAX_ARRAY_LENGTH:
-                    raise ConstraintViolationError(
-                        f"Array '{key}' exceeds maximum length of {SystemConstraints.MAX_ARRAY_LENGTH} items (has {len(value)} items)",
-                        constraint="MAX_ARRAY_LENGTH"
+                    # Silently truncate to first 24 items
+                    context[key] = value[:SystemConstraints.MAX_ARRAY_LENGTH]
+                    self.logger.debug(
+                        f"Array '{key}' truncated from {len(value)} to {SystemConstraints.MAX_ARRAY_LENGTH} items",
+                        key=key,
+                        original_length=len(value),
+                        truncated_length=SystemConstraints.MAX_ARRAY_LENGTH
                     )
 
     def check_timeout(self, session: Session) -> bool:
@@ -516,7 +518,7 @@ class SessionManager:
         context: Optional[Dict[str, Any]] = None
     ):
         """
-        Update session node and/or context in single operation with size and array length validation
+        Update session node and/or context in single operation with size validation and array truncation
 
         Args:
             session_id: Session UUID
@@ -525,18 +527,18 @@ class SessionManager:
 
         Raises:
             ContextSizeExceededError: If context exceeds 100KB limit
-            ConstraintViolationError: If any array exceeds 24 items
 
         Note:
             Does NOT commit - caller's transaction will commit.
             This prevents detaching session object during flow execution loop.
+            Arrays exceeding 24 items are silently truncated.
         """
         values = {}
         if node_id is not None:
             values['current_node_id'] = node_id
         if context is not None:
-            # Validate array lengths FIRST (per spec line 1597)
-            self._validate_array_lengths(context)
+            # Truncate arrays FIRST (per spec: silent truncation when writing to context)
+            self._truncate_arrays(context)
 
             # Validate context size (critical for data integrity)
             context_json = json.dumps(context, default=str)

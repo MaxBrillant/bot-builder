@@ -223,44 +223,59 @@ class TypeConverter:
     @staticmethod
     def to_array(value: Any) -> Optional[List]:
         """
-        Convert value to array/list
+        Convert value to array/list with automatic truncation to 24 items
 
         Args:
             value: Input value
 
         Returns:
-            List or None if conversion fails
+            List (truncated to 24 items if needed) or None if conversion fails
+
+        Note:
+            Per spec: Arrays are enforced to 24 items max and truncated if exceeded
         """
+        from app.utils.constants import SystemConstraints
+
         if value is None:
             return None
 
-        # If already an array, return as-is
+        result = None
+
+        # If already an array, use as-is
         if isinstance(value, list):
-            return value
+            result = value
 
         # If tuple, convert to list
-        if isinstance(value, tuple):
-            return list(value)
+        elif isinstance(value, tuple):
+            result = list(value)
 
         # Try to parse JSON string as array
-        if isinstance(value, str):
+        elif isinstance(value, str):
             # First try JSON parsing
             try:
                 parsed = json.loads(value)
                 if isinstance(parsed, list):
-                    return parsed
+                    result = parsed
             except (json.JSONDecodeError, ValueError):
                 pass
 
-            # Fallback: parse as comma-separated
-            if ',' in value:
-                return [item.strip() for item in value.split(',')]
-
-            # Single value -> single-element array
-            return [value] if value.strip() else []
+            if result is None:
+                # Fallback: parse as comma-separated
+                if ',' in value:
+                    result = [item.strip() for item in value.split(',')]
+                else:
+                    # Single value -> single-element array
+                    result = [value] if value.strip() else []
 
         # For other types, wrap in array
-        return [value]
+        else:
+            result = [value]
+
+        # Truncate to MAX_ARRAY_LENGTH if needed
+        if result and len(result) > SystemConstraints.MAX_ARRAY_LENGTH:
+            result = result[:SystemConstraints.MAX_ARRAY_LENGTH]
+
+        return result
 
     @staticmethod
     def convert(value: Any, target_type: str) -> Any:

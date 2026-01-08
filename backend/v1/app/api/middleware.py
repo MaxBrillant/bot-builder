@@ -10,6 +10,7 @@ from typing import Optional
 from uuid import UUID
 from fastapi import HTTPException, status, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.bot_service import BotService
@@ -404,6 +405,50 @@ async def generic_botbuilder_exception_handler(
     )
 
 
+async def request_validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError
+) -> JSONResponse:
+    """
+    Handle Pydantic validation errors with user-friendly messages
+
+    Returns:
+        422 Unprocessable Entity with detailed validation errors
+    """
+    errors = []
+    for error in exc.errors():
+        # Extract field path
+        loc = error.get("loc", [])
+        # Skip 'body' prefix if present
+        field_path = ".".join(str(x) for x in loc if x != "body")
+
+        # Get error message
+        msg = error.get("msg", "Validation error")
+
+        # Format user-friendly error message
+        if field_path:
+            errors.append(f"{field_path}: {msg}")
+        else:
+            errors.append(msg)
+
+    # Combine all errors into a single message
+    error_message = "; ".join(errors) if errors else "Validation error occurred"
+
+    logger.warning(
+        f"Request validation error: {error_message}",
+        path=str(request.url),
+        errors=exc.errors()
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": error_message,
+            "errors": errors
+        }
+    )
+
+
 # ===== Registration Helper =====
 def register_exception_handlers(app):
     """
@@ -416,6 +461,9 @@ def register_exception_handlers(app):
     Args:
         app: FastAPI application instance
     """
+    # FastAPI/Pydantic validation errors
+    app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
+
     # Category handlers (most specific first)
     app.add_exception_handler(ValidationException, validation_exception_handler)
     app.add_exception_handler(SessionException, session_exception_handler)
@@ -427,4 +475,4 @@ def register_exception_handlers(app):
     # Generic catch-all for any BotBuilderException not handled above
     app.add_exception_handler(BotBuilderException, generic_botbuilder_exception_handler)
 
-    logger.info("Registered exception handlers for all BotBuilderException categories")
+    logger.info("Registered exception handlers for all BotBuilderException categories and RequestValidationError")

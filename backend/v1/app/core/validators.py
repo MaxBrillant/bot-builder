@@ -20,7 +20,7 @@ from app.utils.logger import get_logger
 from app.utils.exceptions import InputValidationError
 from app.utils.constants import (
     NodeType, VariableType, ValidationType, MenuSourceType,
-    SystemConstraints, ReservedKeywords
+    SystemConstraints, ReservedKeywords, RegexPatterns
 )
 from app.utils.security import validate_node_id_format
 from app.models.node_configs import FlowNode
@@ -874,7 +874,11 @@ class FlowValidator:
             )
             return
 
-        # Validate format
+        # Validate format and character constraints
+        # Allowed: letters (A-Z, a-z), numbers (0-9), spaces, underscores (_), hyphens (-)
+        ALLOWED_PATTERN = re.compile(r'^[A-Za-z0-9 _-]+$')
+        has_wildcard = False
+
         for i, keyword in enumerate(keywords):
             if not isinstance(keyword, str):
                 result.add_error(
@@ -882,18 +886,47 @@ class FlowValidator:
                     f"Keyword at index {i} must be a string",
                     f"trigger_keywords[{i}]"
                 )
-            elif not keyword.strip():
+                continue
+
+            if not keyword.strip():
                 result.add_error(
                     "invalid_value",
                     f"Trigger keyword at index {i} cannot be empty or whitespace only",
                     f"trigger_keywords[{i}]"
                 )
-            elif len(keyword) > SystemConstraints.MAX_INTERRUPT_KEYWORD_LENGTH:
+                continue
+
+            # Check for wildcard
+            if keyword.strip() == "*":
+                has_wildcard = True
+                continue
+
+            # Check length
+            if len(keyword) > SystemConstraints.MAX_INTERRUPT_KEYWORD_LENGTH:
                 result.add_error(
                     "constraint_violation",
                     f"Trigger keyword '{keyword}' exceeds maximum length of {SystemConstraints.MAX_INTERRUPT_KEYWORD_LENGTH} characters (current: {len(keyword)})",
                     f"trigger_keywords[{i}]"
                 )
+                continue
+
+            # Check for allowed characters (no punctuation, special characters, or emojis)
+            if not ALLOWED_PATTERN.match(keyword):
+                result.add_error(
+                    "invalid_characters",
+                    f"Trigger keyword '{keyword}' contains invalid characters. Only letters (A-Z, a-z), numbers (0-9), spaces, underscores (_), and hyphens (-) are allowed. No punctuation or special characters permitted.",
+                    f"trigger_keywords[{i}]",
+                    "Remove punctuation, special characters, and emojis from the keyword"
+                )
+
+        # Validate wildcard combination
+        if has_wildcard and len(keywords) > 1:
+            result.add_error(
+                "wildcard_combination_error",
+                "Wildcard trigger '*' cannot be combined with other keywords. The wildcard must be the only keyword in the array.",
+                "trigger_keywords",
+                "Remove other keywords or use a separate flow for the wildcard trigger"
+            )
 
         if not result.is_valid() or not self.db or not keywords:
             return
@@ -941,6 +974,15 @@ class FlowValidator:
                     f"Variable name '{var_name}' is reserved and cannot be used. Reserved keywords: {', '.join(ReservedKeywords.RESERVED)}",
                     f"variables.{var_name}",
                     f"Choose a different variable name"
+                )
+
+            # Validate variable name format
+            if not re.match(RegexPatterns.IDENTIFIER, var_name):
+                result.add_error(
+                    "invalid_format",
+                    f"Variable name '{var_name}' must start with a letter or underscore and contain only letters, numbers, and underscores",
+                    f"variables.{var_name}",
+                    f"Use only letters, numbers, and underscores (e.g., 'user_name', 'age', '_temp')"
                 )
 
             if len(var_name) > SystemConstraints.MAX_VARIABLE_NAME_LENGTH:
@@ -1080,11 +1122,20 @@ class FlowValidator:
                     )
 
             fail_route = retry_logic.get('fail_route')
-            if fail_route and fail_route not in nodes:
+            # fail_route is REQUIRED when retry_logic is defined (per spec)
+            if not fail_route:
+                result.add_error(
+                    "required_field",
+                    "fail_route is REQUIRED when retry_logic is defined. Specify the node to route to when max validation attempts are exceeded.",
+                    "defaults.retry_logic.fail_route",
+                    "Add a fail_route field with a valid node ID (typically a MESSAGE or END node)"
+                )
+            elif fail_route not in nodes:
                 result.add_error(
                     "missing_node",
                     f"fail_route '{fail_route}' does not exist in nodes",
-                    "defaults.retry_logic.fail_route"
+                    "defaults.retry_logic.fail_route",
+                    f"Create a node with ID '{fail_route}' or use an existing node ID"
                 )
 
     def _validate_unique_node_names(self, nodes: Dict[str, FlowNode], result: ValidationResult):

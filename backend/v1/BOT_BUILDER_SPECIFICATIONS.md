@@ -92,8 +92,8 @@ The system is **platform-agnostic** and separates messaging platform integration
 Bot:
   id: UUID (primary key)
   owner_user_id: UUID (foreign key)
-  name: string (e.g., "Tujane Ride Sharing")
-  description: string (optional)
+  name: string (max 96 characters, e.g., "Tujane Ride Sharing")
+  description: string (optional, max 512 characters)
   webhook_url: string (auto-generated: /webhook/{bot_id})
   webhook_secret: string (security token)
   status: enum (active, inactive)
@@ -258,10 +258,12 @@ A flow is defined as a JSON object with the following top-level structure:
   - Returns validation error if multiple flows in the same bot attempt to use `"*"`
   - Allows the same keyword across different bots (bot-level isolation)
 - **Matching Behavior**:
-  - **Standalone messages only**: The entire user message must exactly match ONE keyword (after trimming and removing trailing punctuation)
+  - **Standalone messages only**: The entire user message must exactly match ONE keyword (after trimming)
   - **Case-insensitive**: "START", "start", "Start" all match
   - **Whitespace trimmed**: " START " matches "START"
-  - **Punctuation ignored**: "START!", "START." match "START"
+  - **No punctuation**: Trigger keywords should NOT contain punctuation (keep them simple)
+  - **Allowed characters**: Letters (A-Z, a-z), numbers (0-9), spaces, underscores (_), hyphens (-)
+  - **NOT allowed**: Punctuation (!?.), special characters (@#$%^&*), emojis
   - **No partial matches**: "I want to START" does NOT match "START"
   - **No word-in-sentence**: "STARTING" does NOT match "START"
   - **Wildcard fallback**: The `"*"` keyword matches ANY message that doesn't match other specific keywords
@@ -273,7 +275,7 @@ A flow is defined as a JSON object with the following top-level structure:
   - ✅ "START" → Match
   - ✅ "start" → Match
   - ✅ " START " → Match
-  - ✅ "START!" → Match
+  - ❌ "START!" → No match (punctuation not allowed)
   - ❌ "I want to START" → No match (not standalone)
   - ❌ "STARTING" → No match (different word)
   - ❌ "START NOW" → No match (multiple words)
@@ -328,10 +330,11 @@ User sends "Hello!"    → Flow C activates (wildcard fallback)
 
 **Validation Rules**:
 
-- ✅ Wildcard can be the only keyword: `["*"]`
-- ✅ Wildcard can be combined with specific keywords: `["*", "START"]` (specific keywords will match first)
+- ✅ Wildcard must be the only keyword: `["*"]`
+- ❌ Wildcard CANNOT be combined with other keywords: `["*", "START"]` is INVALID
 - ❌ Only ONE flow per bot can contain `"*"`
 - ❌ Multiple flows cannot share the wildcard
+- **Reason**: Since `"*"` accepts everything, adding other keywords is redundant and confusing
 
 **Validation Error Example**:
 
@@ -534,9 +537,9 @@ This allows nodes to reference other nodes that appear later in the JSON (order-
 - All route target_nodes reference existing nodes
 - **Only start node has no parent** - only the start_node_id should have no parent (not be referenced in any route). All other nodes must have at least one parent (be referenced as target_node in at least one route). Orphan nodes are invalid.
 - **Route conditions unique per node** - no duplicate conditions within a single node's routes array (case-insensitive)
-- No circular references (infinite loops)
+- No circular references - ALL loops are invalid (strict interpretation: any path that returns to a previously visited node is rejected, even if there's an exit path)
 - Variable types valid (string, number, boolean, array)
-- Fail_route (if defined) references existing node
+- fail_route is required when retry_logic is defined, and must reference existing node
 - Constraints respected:
   - Max 48 nodes per flow
   - Max 8 routes per node
@@ -628,10 +631,10 @@ Bot Builder Instance 3 ←
   }
   ```
 - **Supported Types**:
-  - `string`: Text values
-  - `number`: Numeric values (integers and decimals)
+  - `string`: Text values (default max 256 characters)
+  - `number`: Numeric values (integers and decimals, standard JSON number)
   - `boolean`: true/false
-  - `array`: Lists of items
+  - `array`: Lists of items (default max 24 items)
 - **Type Enforcement & Conversion Process**:
   1. User provides input (always received as string)
   2. PROMPT validates the input format (regex or expression validation)
@@ -640,6 +643,12 @@ Bot Builder Instance 3 ←
   5. If conversion fails, user sees error and must retry (counts toward max attempts)
   6. **Note**: Validation ensures input is in convertible format (e.g., `input.isNumeric()` ensures string can convert to number)
   7. **Output Mappings**: This type enforcement also applies to [`output_mapping`](#menu-node-config) (MENU nodes) and [`response_map`](#api_action-node-config) (API_ACTION nodes). During conversation, when mapping extracted values to variables, the system attempts conversion to the variable's declared type. Conversion failures in mappings result in `null` (don't count toward max validation attempts). See [Type Inference in Output Mappings](#type-inference-in-output-mappings) for details.
+- **Default Value Constraints**:
+  - String defaults: Maximum 256 characters
+  - Array defaults: Maximum 24 items
+  - Number defaults: Standard JSON number format
+  - Boolean defaults: true or false only
+  - **Runtime**: All arrays written to context (from any source) are enforced to 24 items max and truncated if exceeded
 - **Example**:
   ```json
   "variables": {
@@ -660,14 +669,15 @@ Bot Builder Instance 3 ←
     "retry_logic": {
       "max_attempts": 3,
       "counter_text": "(Attempt {{current_attempt}} of {{max_attempts}})",
-      "fail_route": "node_id"
+      "fail_route": "node_id"  // REQUIRED when retry_logic is defined
     }
   }
   ```
+- **Note**: If `retry_logic` is defined, `fail_route` must be specified. `max_attempts` and `counter_text` have defaults.
 - **Fields**:
   - `max_attempts`: Maximum validation retry attempts (default: 3, valid range: 1-10)
-  - `counter_text`: Template for retry counter display
-  - `fail_route`: Node to redirect to after max attempts exceeded (required when retry_logic is defined; must reference existing node ID in the flow, typically MESSAGE or END node; validated during two-pass validation)
+  - `counter_text`: Template for retry counter display (default: "(Attempt {{current_attempt}} of {{max_attempts}})", max 512 characters)
+  - `fail_route`: Node to redirect to after max attempts exceeded (**REQUIRED** - must always be specified when retry_logic is defined; must reference existing node ID in the flow, typically MESSAGE or END node; validated during two-pass validation)
 
 #### `start_node_id` (required)
 
@@ -746,7 +756,7 @@ Every node has this base structure:
   ```json
   [
     {
-      "condition": "string (required)",
+      "condition": "string (required, max 512 characters)",
       "target_node": "string (required)"
     }
   ]
@@ -755,6 +765,7 @@ Every node has this base structure:
   - Routes evaluated in order (first match wins)
   - `target_node` must reference existing node ID
   - END nodes cannot have routes
+  - **Route condition length**: Maximum 512 characters (same as expression limit)
   - **Route conditions must be unique** - Each node can only have one route with a given condition (case-insensitive comparison: 'true' === 'TRUE')
   - **Example**:
   ```json
@@ -778,7 +789,9 @@ Every node has this base structure:
 - **Constraints**:
   - Must have both `x` and `y` properties
   - Both values must be numeric (integer or float)
-- **Example**: `{"x": 250.5, "y": 100}`
+  - Negative values allowed (canvas extends in all directions)
+  - No min/max bounds (infinite canvas)
+- **Example**: `{"x": 250.5, "y": 100}` or `{"x": -150, "y": -200}`
 
 ### Node Configuration by Type
 
@@ -827,7 +840,7 @@ Every node has this base structure:
   "error_message": "string (optional)",
   "output_mapping": [
     {
-      "source_path": "string (required)",
+      "source_path": "string (required, max 256 chars, dot notation only)",
       "target_variable": "string (required)"
     }
   ]
@@ -848,7 +861,9 @@ Every node has this base structure:
 
 When extracting fields from selected menu item, the system uses **type inference** based on the flow's `variables` section:
 
-1. **Extract value** using `source_path` from the selected item
+1. **Extract value** using `source_path` from the selected item (dot notation only, max 256 characters)
+   - ✅ Supported: `data.user.name`, `items.0.price` (array index with dot)
+   - ❌ NOT supported: `items[0].price` (bracket notation)
 2. **Look up** `target_variable` in the flow's `variables` section to determine the declared type
 3. **Attempt type conversion** based on the variable's declared type (string, number, boolean, array)
 4. **On success**: Save converted value to context
@@ -921,12 +936,12 @@ See [Type Inference in Output Mappings](#type-inference-in-output-mappings) sect
   "request": {
     "method": "GET|POST|PUT|DELETE|PATCH (required)",
     "url": "string (required, supports templates for query parameters)",
-    "headers": { "object (optional)" },
+    "headers": { "object (optional, max 10 headers, name max 128 chars, value max 2048 chars)" },
     "body": { "object (optional)" }
   },
   "response_map": [
     {
-      "source_path": "string (required)",
+      "source_path": "string (required, max 256 chars, dot notation only)",
       "target_variable": "string (required)"
     }
   ],
@@ -941,7 +956,9 @@ See [Type Inference in Output Mappings](#type-inference-in-output-mappings) sect
 
 The `response_map` uses **type inference** to convert API response values based on the flow's `variables` section:
 
-1. **Extract value** from response using `source_path` (supports dot notation: `data.user.id`)
+1. **Extract value** from response using `source_path` (dot notation only, max 256 characters)
+   - ✅ Supported: `data.user.id`, `items.0.name` (array index with dot)
+   - ❌ NOT supported: `items[0].name` (bracket notation)
 2. **Look up** `target_variable` in flow's `variables` section to determine declared type
 3. **Attempt type conversion** based on variable's declared type (string, number, boolean, array)
 4. **On success**: Save converted value to context
@@ -1607,32 +1624,49 @@ See the Tujane driver flow in [`flows/tujane_driver_flow_v1.json`](flows/tujane_
 | Flow ID length             | 96 characters                                | Database limits               |
 | Node ID length             | 96 characters                                | Database limits               |
 | Variable name length       | 96 characters                                | Database limits               |
+| Variable default - string  | 256 characters                               | Initialization values         |
+| Variable default - number  | Standard JSON number                         | No special limit              |
+| Variable default - boolean | true/false                                   | No special limit              |
+| Variable default - array   | 24 items max                                 | Matches runtime limit         |
+| **Bot Entity**             |
+| Bot name length            | 96 characters                                | Branding & display            |
+| Bot description length     | 512 characters                               | Optional metadata             |
 | **Content Limits**         |
 | Message text length        | 1024 characters                              | SMS/messaging limits          |
 | Error message length       | 512 characters                               | User experience               |
 | Template length            | 1024 characters                              | Processing limits             |
+| Counter text length        | 512 characters                               | User feedback                 |
+| Interrupt keyword length   | 96 characters                                | Navigation keywords           |
+| **Mappings**               |
+| Source path length         | 256 characters                               | Dot notation paths            |
 | **Menu Options**           |
 | Static options count       | 8                                            | User experience               |
-| Dynamic options count      | 8                                            | User experience               |
+| Dynamic options count      | 24 (first 24 if source exceeds)              | Performance & UX              |
 | Option label length        | 96 characters                                | Display limits                |
 | **Validation**             |
 | Regex pattern length       | 512 characters                               | Processing time               |
 | Expression length          | 512 characters                               | Processing time               |
+| Route condition length     | 512 characters                               | Same as expression limit      |
 | Max retry attempts         | 10 (default: 3)                              | Configurable per flow         |
 | **Context & Session**      |
 | Context size (total)       | 100 KB                                       | Memory management             |
-| Array length in context    | 24 items                                     | Performance                   |
+| Array length in context    | 24 items per array variable (truncated if exceeded) | Performance                   |
 | Max concurrent sessions    | Unlimited                                    | Limited by system memory      |
 | **API Requests**           |
 | Request URL length         | 1024 characters                              | HTTP limits                   |
 | Request body size          | 1 MB                                         | API limits                    |
 | Response body size         | 1 MB                                         | Memory & performance          |
+| Max headers per request    | 10                                           | Complexity management         |
+| Header name length         | 128 characters                               | HTTP standards                |
+| Header value length        | 2048 characters                              | Tokens & long values          |
 
 **Notes**:
 
 - Auto-progression counter resets at PROMPT or MENU nodes (user input required)
 - Session timeout is absolute (30 minutes from creation, not last activity)
 - Limits enforced during flow validation and runtime execution
+- Array length limit (24 items): Enforced whenever an array is written to context (defaults, API responses, MENU mappings). Arrays exceeding 24 items are silently truncated to first 24 items.
+- Source path notation: Only dot notation supported (e.g., `data.items.0.name`). Bracket notation (e.g., `items[0]`) NOT supported in mappings.
 
 ### ⚠️ Design Constraints
 
@@ -1696,6 +1730,7 @@ See the Tujane driver flow in [`flows/tujane_driver_flow_v1.json`](flows/tujane_
 **Interrupt Restrictions**:
 
 - Empty string `""` is NOT allowed as an interrupt keyword (reserved for system empty handling)
+- Maximum length: 96 characters
 - Whitespace in interrupt keywords allowed: `"go back"`, `"cancel order"`
 - Interrupt keywords are trimmed before matching
 - Case-insensitive matching applied
@@ -1808,6 +1843,8 @@ See the Tujane driver flow in [`flows/tujane_driver_flow_v1.json`](flows/tujane_
 - ❌ Selection validation limited to numeric range check only
 - ❌ Dynamic source must be an array in context
 - ❌ Output mapping only works with dynamic options
+- ❌ **Static menus limited to 8 options maximum**
+- ❌ **Dynamic menus limited to 24 options** - if source array exceeds 24, only first 24 items displayed
 
 **Invalid Selection Handling**:
 
@@ -1908,6 +1945,10 @@ When user enters invalid selection (out of range, non-numeric, etc.):
 - ✅ Timeout triggers `error` route condition
 - ❌ No file upload support
 - ⚠️ Response body size limit: 1 MB (system-wide)
+- ⚠️ Request body size limit: 1 MB (system-wide)
+- ⚠️ Headers limit: Maximum 10 headers per request
+- ⚠️ Header name: Maximum 128 characters
+- ⚠️ Header value: Maximum 2048 characters
 - ❌ Must complete before flow continues
 - ❌ Cannot abort mid-request
 - ✅ **JSON-only responses**: Non-JSON responses route to `error` condition
@@ -2771,8 +2812,14 @@ Session expires after 30min or explicit delete
 10:00 AM - User starts flow (session created)
 10:15 AM - User sends message (session still active, 15 min remaining)
 10:30 AM - Session expires (30 min from start)
-10:31 AM - User sends message → Session expired error, must restart
+10:31 AM - User sends message → Message REJECTED, error shown
 ```
+
+**Post-Expiry Behavior**:
+- Messages sent after expiration are **rejected** (not processed)
+- User receives: "Session expired. Please start again."
+- To start new session: User must send a **trigger keyword**
+- No grace period (strict 30-minute cutoff from session creation)
 
 **Session Termination Scenarios**:
 

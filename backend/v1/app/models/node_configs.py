@@ -13,6 +13,7 @@ These models provide:
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Literal, Union, Optional, List, Dict, Any
+import re
 from app.utils.constants import (
     NodeType,
     ValidationType,
@@ -20,7 +21,8 @@ from app.utils.constants import (
     HTTPMethod,
     VariableType,
     SystemConstraints,
-    ReservedKeywords
+    ReservedKeywords,
+    RegexPatterns
 )
 
 
@@ -32,34 +34,57 @@ class VariableDefinition(BaseModel):
     """Flow variable definition with type validation"""
     type: VariableType
     default: Any = None
-    
+
     @model_validator(mode='after')
     def validate_default_matches_type(self):
-        """Ensure default value matches declared type"""
+        """Ensure default value matches declared type and respects length constraints"""
         if self.default is None:
             return self
-        
-        # Type validators
-        if self.type == VariableType.STRING and not isinstance(self.default, str):
-            raise ValueError(f"Default value must be string, got {type(self.default).__name__}")
-        elif self.type == VariableType.NUMBER and not isinstance(self.default, (int, float)):
-            raise ValueError(f"Default value must be number, got {type(self.default).__name__}")
-        elif self.type == VariableType.BOOLEAN and not isinstance(self.default, bool):
-            raise ValueError(f"Default value must be boolean, got {type(self.default).__name__}")
-        elif self.type == VariableType.ARRAY and not isinstance(self.default, list):
-            raise ValueError(f"Default value must be array, got {type(self.default).__name__}")
-        
+
+        # Type validators with length constraints
+        if self.type == VariableType.STRING:
+            if not isinstance(self.default, str):
+                raise ValueError(f"Default value must be string, got {type(self.default).__name__}")
+            if len(self.default) > SystemConstraints.MAX_VARIABLE_DEFAULT_LENGTH:
+                raise ValueError(
+                    f"String default exceeds maximum length of {SystemConstraints.MAX_VARIABLE_DEFAULT_LENGTH} characters "
+                    f"(current: {len(self.default)})"
+                )
+        elif self.type == VariableType.NUMBER:
+            if not isinstance(self.default, (int, float)):
+                raise ValueError(f"Default value must be number, got {type(self.default).__name__}")
+        elif self.type == VariableType.BOOLEAN:
+            if not isinstance(self.default, bool):
+                raise ValueError(f"Default value must be boolean, got {type(self.default).__name__}")
+        elif self.type == VariableType.ARRAY:
+            if not isinstance(self.default, list):
+                raise ValueError(f"Default value must be array, got {type(self.default).__name__}")
+            if len(self.default) > SystemConstraints.MAX_ARRAY_LENGTH:
+                raise ValueError(
+                    f"Array default exceeds maximum length of {SystemConstraints.MAX_ARRAY_LENGTH} items "
+                    f"(current: {len(self.default)})"
+                )
+
         return self
-    
+
     model_config = {"frozen": True}
 
 
 class RetryLogic(BaseModel):
-    """Validation retry configuration"""
+    """
+    Validation retry configuration
+
+    Note: fail_route is REQUIRED when retry_logic is explicitly defined in flow JSON.
+    Validation enforced in FlowValidator._validate_retry_logic()
+    """
     max_attempts: int = Field(default=3, ge=1, le=10)
-    fail_route: Optional[str] = Field(default=None, max_length=96)
-    counter_text: str = Field(default="", max_length=512)
-    
+    fail_route: Optional[str] = Field(default=None, max_length=96, description="Node to route to when max attempts exceeded (REQUIRED when retry_logic defined)")
+    counter_text: str = Field(
+        default="(Attempt {{current_attempt}} of {{max_attempts}})",
+        max_length=512,
+        description="Template for retry counter display"
+    )
+
     model_config = {"frozen": True}
 
 
@@ -159,7 +184,7 @@ class MenuStaticOption(BaseModel):
 class MenuOutputMapping(BaseModel):
     """
     Output mapping for MENU nodes with source_type=DYNAMIC.
-    
+
     Maps properties from selected item to flow variables.
     """
     source_path: str = Field(
@@ -174,7 +199,23 @@ class MenuOutputMapping(BaseModel):
         max_length=SystemConstraints.MAX_VARIABLE_NAME_LENGTH,
         description="Variable name to store extracted value"
     )
-    
+
+    @field_validator('target_variable')
+    @classmethod
+    def validate_variable_name(cls, v: str) -> str:
+        """Ensure variable name follows identifier pattern and is not reserved"""
+        if v in ReservedKeywords.RESERVED:
+            raise ValueError(
+                f"Variable name '{v}' is reserved. Reserved keywords: "
+                f"{', '.join(ReservedKeywords.RESERVED)}"
+            )
+        if not re.match(RegexPatterns.IDENTIFIER, v):
+            raise ValueError(
+                f"Variable name '{v}' must start with a letter or underscore "
+                f"and contain only letters, numbers, and underscores"
+            )
+        return v
+
     model_config = {"frozen": True, "extra": "forbid"}
 
 
@@ -214,20 +255,21 @@ class APIRequestConfig(BaseModel):
     )
     headers: Optional[List[APIHeader]] = Field(
         default=None,
-        description="HTTP headers (each supports template variables in value)"
+        max_length=SystemConstraints.MAX_HEADERS_PER_REQUEST,
+        description=f"HTTP headers (max {SystemConstraints.MAX_HEADERS_PER_REQUEST}, each supports template variables in value)"
     )
     body: Optional[str] = Field(
         default=None,
         description="Request body as JSON string for POST/PUT/PATCH (supports template variables)"
     )
-    
+
     model_config = {"frozen": True, "extra": "forbid"}
 
 
 class APIResponseMapping(BaseModel):
     """
     Response mapping for API_ACTION nodes.
-    
+
     Maps data from API response to flow variables.
     """
     source_path: str = Field(
@@ -242,7 +284,23 @@ class APIResponseMapping(BaseModel):
         max_length=SystemConstraints.MAX_VARIABLE_NAME_LENGTH,
         description="Variable name to store extracted value"
     )
-    
+
+    @field_validator('target_variable')
+    @classmethod
+    def validate_variable_name(cls, v: str) -> str:
+        """Ensure variable name follows identifier pattern and is not reserved"""
+        if v in ReservedKeywords.RESERVED:
+            raise ValueError(
+                f"Variable name '{v}' is reserved. Reserved keywords: "
+                f"{', '.join(ReservedKeywords.RESERVED)}"
+            )
+        if not re.match(RegexPatterns.IDENTIFIER, v):
+            raise ValueError(
+                f"Variable name '{v}' must start with a letter or underscore "
+                f"and contain only letters, numbers, and underscores"
+            )
+        return v
+
     model_config = {"frozen": True, "extra": "forbid"}
 
 
@@ -426,12 +484,17 @@ class PromptNodeConfig(BaseModel):
     
     @field_validator('save_to_variable')
     @classmethod
-    def validate_not_reserved(cls, v: str) -> str:
-        """Ensure variable name is not a reserved keyword"""
+    def validate_variable_name(cls, v: str) -> str:
+        """Ensure variable name follows identifier pattern and is not reserved"""
         if v in ReservedKeywords.RESERVED:
             raise ValueError(
                 f"Variable name '{v}' is reserved. Reserved keywords: "
                 f"{', '.join(ReservedKeywords.RESERVED)}"
+            )
+        if not re.match(RegexPatterns.IDENTIFIER, v):
+            raise ValueError(
+                f"Variable name '{v}' must start with a letter or underscore "
+                f"and contain only letters, numbers, and underscores"
             )
         return v
     
@@ -496,20 +559,21 @@ class MenuNodeConfig(BaseModel):
             # STATIC menu must have static_options
             if not self.static_options:
                 raise ValueError("STATIC menu must have 'static_options'")
-            
+
             # STATIC menu must have 1-8 options
-            if len(self.static_options) < 1 or len(self.static_options) > SystemConstraints.MAX_MENU_OPTIONS:
+            if len(self.static_options) < 1 or len(self.static_options) > SystemConstraints.MAX_STATIC_MENU_OPTIONS:
                 raise ValueError(
-                    f"STATIC menu must have between 1 and {SystemConstraints.MAX_MENU_OPTIONS} options"
+                    f"STATIC menu must have between 1 and {SystemConstraints.MAX_STATIC_MENU_OPTIONS} options"
                 )
-        
+
         elif self.source_type == MenuSourceType.DYNAMIC.value:
             # DYNAMIC menu must have source_variable and item_template
             if not self.source_variable:
                 raise ValueError("DYNAMIC menu must have 'source_variable'")
             if not self.item_template:
                 raise ValueError("DYNAMIC menu must have 'item_template'")
-        
+            # Note: Dynamic menu runtime limit (24 options) enforced in processor by truncating source array
+
         return self
     
     model_config = {"frozen": True, "extra": "forbid"}

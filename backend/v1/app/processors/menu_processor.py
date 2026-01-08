@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, List
 from app.models.node_configs import FlowNode, MenuNodeConfig, MenuStaticOption, MenuOutputMapping
 from app.processors.base_processor import BaseProcessor, ProcessResult
 from app.processors.retry_handler import RetryHandler
-from app.utils.constants import MenuSourceType, ErrorMessages, SpecialVariables
+from app.utils.constants import MenuSourceType, ErrorMessages, SpecialVariables, SystemConstraints
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -63,6 +63,14 @@ class MenuProcessor(BaseProcessor):
             options = config.static_options
         elif config.source_type == MenuSourceType.DYNAMIC.value:
             source_array = context.get(config.source_variable) or []
+            # Truncate to MAX_DYNAMIC_MENU_OPTIONS (per spec: dynamic menus limited to 24 options)
+            if len(source_array) > SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS:
+                source_array = source_array[:SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS]
+                self.logger.debug(
+                    f"Dynamic menu source array truncated to {SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS} items",
+                    original_length=len(context.get(config.source_variable) or []),
+                    truncated_length=SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS
+                )
             options = self._render_dynamic_options(source_array, config.item_template, context)
         else:
             self.logger.error(f"Invalid source_type: {config.source_type}")
@@ -176,8 +184,12 @@ class MenuProcessor(BaseProcessor):
         # Apply output mapping (dynamic menus only)
         if config.source_type == MenuSourceType.DYNAMIC.value:
             source_array = context.get(config.source_variable) or []
+            # Truncate to MAX_DYNAMIC_MENU_OPTIONS (consistent with menu display)
+            if len(source_array) > SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS:
+                source_array = source_array[:SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS]
+
             output_mapping = config.output_mapping or []
-            
+
             if output_mapping and source_array:
                 # Get selected item (0-based index)
                 selected_index = selection - 1
