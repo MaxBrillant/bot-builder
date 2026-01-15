@@ -11,15 +11,15 @@ from uuid import UUID
 
 class BotCreate(BaseModel):
     """Schema for creating a new bot"""
-    name: str = Field(..., min_length=1, max_length=255, description="Bot display name")
-    description: Optional[str] = Field(None, max_length=1024, description="Bot description")
+    name: str = Field(..., min_length=1, max_length=96, description="Bot display name")
+    description: Optional[str] = Field(None, max_length=512, description="Bot description")
 
 
 class BotUpdate(BaseModel):
     """Schema for updating bot details"""
-    name: Optional[str] = Field(None, min_length=1, max_length=255, description="Bot display name")
-    description: Optional[str] = Field(None, max_length=1024, description="Bot description")
-    status: Optional[str] = Field(None, pattern="^(active|inactive)$", description="Bot status")
+    name: Optional[str] = Field(None, min_length=1, max_length=96, description="Bot display name")
+    description: Optional[str] = Field(None, max_length=512, description="Bot description")
+    status: Optional[str] = Field(None, pattern="^(ACTIVE|INACTIVE)$", description="Bot status")
 
 
 class BotResponse(BaseModel):
@@ -35,10 +35,11 @@ class BotResponse(BaseModel):
     updated_at: datetime
     flow_count: Optional[int] = None  # Optional aggregation
 
-    # WhatsApp connection info
-    whatsapp_connected: bool = False  # Computed from evolution_instance_status
-    whatsapp_phone_number: Optional[str] = None
-    whatsapp_status: Optional[str] = None  # disconnected/pending/connected/error
+    # Platform integration info (computed from bot.integrations relationship)
+    # Kept for backward compatibility - populated from BotIntegration records
+    whatsapp_connected: bool = False  # Computed from WhatsApp integration status
+    whatsapp_phone_number: Optional[str] = None  # Extracted from WhatsApp integration config
+    whatsapp_status: Optional[str] = None  # DISCONNECTED/CONNECTING/CONNECTED/ERROR
 
     class Config:
         from_attributes = True

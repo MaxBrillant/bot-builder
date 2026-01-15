@@ -106,8 +106,12 @@ class FlowDefaults(BaseModel):
 class ValidationRule(BaseModel):
     """
     Validation rule for PROMPT nodes.
-    
+
     Supports regex pattern matching or expression-based validation.
+
+    Validation performed at flow creation time (per spec section 6):
+    - REGEX: Checks for unsupported features (lookahead/lookbehind/named groups)
+    - EXPRESSION: Checks for unsupported methods (only isAlpha/isNumeric/isDigit allowed)
     """
     type: Literal["REGEX", "EXPRESSION"] = Field(
         ...,
@@ -124,34 +128,148 @@ class ValidationRule(BaseModel):
         max_length=SystemConstraints.MAX_ERROR_MESSAGE_LENGTH,
         description="Error message shown when validation fails"
     )
-    
+
     @field_validator('rule')
     @classmethod
-    def validate_rule_length(cls, v: str, info) -> str:
-        """Validate rule length based on validation type"""
+    def validate_rule_syntax(cls, v: str, info) -> str:
+        """
+        Validate rule syntax and length based on validation type
+
+        Per spec section 6, validates:
+        - REGEX: No lookahead/lookbehind, no named groups, valid pattern
+        - EXPRESSION: Only supported methods (isAlpha/isNumeric/isDigit), no unsupported functions
+        """
         val_type = info.data.get('type')
-        
+
+        # Check length constraints
         if val_type == ValidationType.REGEX.value:
             if len(v) > SystemConstraints.MAX_REGEX_LENGTH:
                 raise ValueError(
                     f"Regex pattern exceeds maximum length of {SystemConstraints.MAX_REGEX_LENGTH} characters"
                 )
+
+            # Validate regex syntax: check for unsupported features
+            cls._validate_regex_syntax(v)
+
         elif val_type == ValidationType.EXPRESSION.value:
             if len(v) > SystemConstraints.MAX_EXPRESSION_LENGTH:
                 raise ValueError(
                     f"Expression exceeds maximum length of {SystemConstraints.MAX_EXPRESSION_LENGTH} characters"
                 )
-        
+
+            # Validate expression syntax: check for unsupported methods
+            cls._validate_expression_syntax(v)
+
         return v
-    
+
+    @staticmethod
+    def _validate_regex_syntax(pattern: str) -> None:
+        """
+        Validate regex pattern for unsupported features
+
+        Per spec section 6:
+        - ❌ No lookahead/lookbehind assertions
+        - ❌ No named groups
+
+        Raises:
+            ValueError: If pattern contains unsupported features or invalid syntax
+        """
+        # Check for unsupported regex features
+        unsupported_features = [
+            (r'\(\?[=!]', 'lookahead assertions (?= or ?!)', 'Use simple patterns without lookahead'),
+            (r'\(\?<[=!]', 'lookbehind assertions (?<= or ?<!)', 'Use simple patterns without lookbehind'),
+            (r'\(\?P<\w+>', 'named groups (?P<name>...)', 'Use unnamed capturing groups'),
+        ]
+
+        for feature_pattern, feature_name, suggestion in unsupported_features:
+            if re.search(feature_pattern, pattern):
+                raise ValueError(
+                    f"Unsupported regex feature: {feature_name}. "
+                    f"Suggestion: {suggestion}"
+                )
+
+        # Validate that pattern compiles
+        try:
+            re.compile(pattern)
+        except re.error as e:
+            raise ValueError(f"Invalid regex pattern: {str(e)}")
+
+    @staticmethod
+    def _validate_expression_syntax(expr: str) -> None:
+        """
+        Validate expression syntax for unsupported methods
+
+        Per spec section 6, only these are supported:
+        - input.isAlpha(), input.isNumeric(), input.isDigit()
+        - input.length (property)
+        - context.* (variable access)
+        - Comparison operators (==, !=, >, <, >=, <=)
+        - Logical operators (&&, ||)
+
+        Unsupported:
+        - Custom functions (parseInt, toUpperCase, includes, etc.)
+        - String methods beyond isAlpha/isNumeric/isDigit
+        - Array/object methods
+
+        Raises:
+            ValueError: If expression contains unsupported features
+        """
+        # Check for unsupported input methods (method calls with parentheses)
+        input_methods = re.findall(r'input\.(\w+)\s*\(', expr)
+        supported_input_methods = ['isAlpha', 'isNumeric', 'isDigit']
+
+        for method in input_methods:
+            if method not in supported_input_methods:
+                raise ValueError(
+                    f"Unsupported method: input.{method}(). "
+                    f"Supported methods: {', '.join(['input.' + m + '()' for m in supported_input_methods])}. "
+                    f"Methods like toUpperCase(), includes(), toLowerCase() are not supported."
+                )
+
+        # Check for unsupported input properties (beyond 'length')
+        input_properties = re.findall(r'input\.(\w+)(?!\s*\()', expr)
+        supported_properties = ['length']
+
+        for prop in input_properties:
+            if prop not in supported_properties:
+                raise ValueError(
+                    f"Unsupported property: input.{prop}. "
+                    f"Only 'input.length' is supported as a property."
+                )
+
+        # Check for standalone functions (e.g., parseInt, toUpperCase)
+        # Pattern: word followed by parentheses that's NOT input.method() or context.
+        standalone_functions = re.findall(r'\b(\w+)\s*\([^)]*\)', expr)
+
+        # Filter out supported methods and keywords
+        allowed_in_functions = supported_input_methods + ['input', 'context']
+        unsupported_functions = [
+            f for f in standalone_functions
+            if f not in allowed_in_functions
+        ]
+
+        if unsupported_functions:
+            raise ValueError(
+                f"Unsupported functions: {', '.join(unsupported_functions)}. "
+                f"Only input.isAlpha(), input.isNumeric(), and input.isDigit() are supported. "
+                f"Functions like parseInt(), toUpperCase(), includes() are not supported."
+            )
+
     model_config = {"frozen": True, "extra": "forbid"}
 
 
 class Interrupt(BaseModel):
     """
     Interrupt configuration for PROMPT and MENU nodes.
-    
+
     Allows user to exit current flow by entering specific keywords.
+
+    Spec Requirements (line 1732):
+    - Empty string "" is NOT allowed as interrupt keyword
+    - Whitespace-only strings are not allowed
+    - Maximum length: 96 characters
+    - Whitespace in keywords allowed: "go back", "cancel order"
+    - Case-insensitive matching
     """
     input: str = Field(
         ...,
@@ -165,7 +283,23 @@ class Interrupt(BaseModel):
         max_length=SystemConstraints.MAX_NODE_ID_LENGTH,
         description="Node to redirect to when interrupt is triggered"
     )
-    
+
+    @field_validator('input')
+    @classmethod
+    def validate_not_whitespace_only(cls, v: str) -> str:
+        """
+        Ensure interrupt keyword is not empty or whitespace-only (spec line 1732)
+
+        Empty string "" is explicitly not allowed as interrupt keyword.
+        Whitespace-only strings are also rejected.
+        """
+        if not v or not v.strip():
+            raise ValueError(
+                "Interrupt keyword cannot be empty or whitespace-only. "
+                "Empty string '' is not allowed as an interrupt keyword (spec line 1732)."
+            )
+        return v
+
     model_config = {"frozen": True, "extra": "forbid"}
 
 
@@ -199,6 +333,17 @@ class MenuOutputMapping(BaseModel):
         max_length=SystemConstraints.MAX_VARIABLE_NAME_LENGTH,
         description="Variable name to store extracted value"
     )
+
+    @field_validator('source_path')
+    @classmethod
+    def validate_source_path(cls, v: str) -> str:
+        """Ensure source_path uses dot notation only (spec lines 865, 960)"""
+        if '[' in v or ']' in v:
+            raise ValueError(
+                f"Bracket notation not supported in source_path. "
+                f"Use dot notation instead (e.g., 'items.0.name' not 'items[0].name')"
+            )
+        return v
 
     @field_validator('target_variable')
     @classmethod
@@ -285,6 +430,17 @@ class APIResponseMapping(BaseModel):
         description="Variable name to store extracted value"
     )
 
+    @field_validator('source_path')
+    @classmethod
+    def validate_source_path(cls, v: str) -> str:
+        """Ensure source_path uses dot notation only (spec lines 865, 960)"""
+        if '[' in v or ']' in v:
+            raise ValueError(
+                f"Bracket notation not supported in source_path. "
+                f"Use dot notation instead (e.g., 'data.items.0.name' not 'data.items[0].name')"
+            )
+        return v
+
     @field_validator('target_variable')
     @classmethod
     def validate_variable_name(cls, v: str) -> str:
@@ -369,17 +525,33 @@ class APIResponse(BaseModel):
                 constraint="MAX_RESPONSE_BODY_SIZE"
             )
         
-        # Try to parse JSON body, fallback to text
+        # Handle HTTP 204 No Content specially (spec line 1961)
+        # Empty response routes to success if status matches, response_map skipped
+        if response.status_code == 204:
+            return cls(
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                body={},  # Empty body for 204
+                success=True  # 204 is considered success
+            )
+
+        # Parse JSON body - spec requires JSON-only responses (line 1954)
+        # Non-JSON responses should route to error condition
         try:
             body = response.json()
+            # Success depends on HTTP status
+            success = response.is_success
         except Exception:
-            body = response.text
-        
+            # JSON parsing failed - this is an error regardless of status code
+            # Non-JSON responses route to error (spec line 1954)
+            body = {"error": "Response is not valid JSON"}
+            success = False  # Force error route
+
         return cls(
             status_code=response.status_code,
             headers=dict(response.headers),
             body=body,
-            success=response.is_success
+            success=success
         )
     
     def extract_value(self, path: str) -> Any:
@@ -533,8 +705,8 @@ class MenuNodeConfig(BaseModel):
     )
     item_template: Optional[str] = Field(
         default=None,
-        max_length=SystemConstraints.MAX_OPTION_LABEL_LENGTH,
-        description="Template for rendering each item (required when source_type=DYNAMIC)"
+        max_length=SystemConstraints.MAX_TEMPLATE_LENGTH,
+        description="Template for rendering each item (required when source_type=DYNAMIC, max 1024 chars per spec line 1637)"
     )
     output_mapping: Optional[List[MenuOutputMapping]] = Field(
         default=None,
@@ -565,6 +737,10 @@ class MenuNodeConfig(BaseModel):
                 raise ValueError(
                     f"STATIC menu must have between 1 and {SystemConstraints.MAX_STATIC_MENU_OPTIONS} options"
                 )
+
+            # STATIC menu cannot have output_mapping (spec line 858)
+            if self.output_mapping is not None:
+                raise ValueError("output_mapping only works with DYNAMIC source_type. Remove output_mapping from STATIC menu.")
 
         elif self.source_type == MenuSourceType.DYNAMIC.value:
             # DYNAMIC menu must have source_variable and item_template

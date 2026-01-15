@@ -18,8 +18,8 @@ class WebhookMessageRequest(BaseModel):
         ...,
         min_length=1,
         max_length=50,
-        description="Communication channel (e.g., 'whatsapp', 'telegram', 'slack')",
-        examples=["whatsapp", "telegram", "slack"]
+        description="Communication channel (e.g., 'WHATSAPP', 'TELEGRAM', 'SLACK')",
+        examples=["WHATSAPP", "TELEGRAM", "SLACK"]
     )
     channel_user_id: str = Field(
         ...,

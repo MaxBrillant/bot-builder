@@ -68,11 +68,31 @@ class InputValidator:
         Note:
             Full string matching is enforced automatically.
             Anchors (^, $) are implicit but can be added for clarity.
+
+        Unsupported Features (per spec section 6):
+            - Lookahead/lookbehind assertions
+            - Named groups
         """
         if not pattern:
             return True  # No pattern means no validation
 
         try:
+            # Check for unsupported regex features BEFORE compilation
+            unsupported_features = [
+                (r'\(\?[=!]', 'lookahead assertions (?= or ?!)'),
+                (r'\(\?<[=!]', 'lookbehind assertions (?<= or ?<!)'),
+                (r'\(\?P<\w+>', 'named groups (?P<name>...)'),
+            ]
+
+            for feature_pattern, feature_name in unsupported_features:
+                if re.search(feature_pattern, pattern):
+                    logger.error(
+                        f"Unsupported regex feature: {feature_name}",
+                        pattern=pattern,
+                        feature=feature_name
+                    )
+                    return False
+
             # Compile pattern
             regex = re.compile(pattern)
 
@@ -99,11 +119,28 @@ class InputValidator:
 
         Returns:
             True if expression evaluates to true, False otherwise
+
+        Supported Methods (per spec section 6):
+            - input.isAlpha() - Only letters (a-z, A-Z)
+            - input.isNumeric() - Numeric format
+            - input.isDigit() - Only digits (0-9)
+            - input.length - String length property
+            - Context variable access (context.*)
+            - Logical operators (&&, ||)
+
+        Unsupported (will return False):
+            - Custom functions (parseInt, etc.)
+            - String methods beyond isAlpha/isNumeric/isDigit
+            - Array/object methods
+            - Date/time operations
         """
         if not rule:
             return True
 
         try:
+            # Validate expression syntax BEFORE evaluation
+            self._validate_expression_syntax(rule)
+
             # Create evaluation context with input methods
             eval_context = {
                 'input': input_value,
@@ -112,9 +149,74 @@ class InputValidator:
 
             return self._evaluate_expression(rule, eval_context)
 
+        except ValueError as e:
+            # Syntax validation errors
+            logger.error(f"Expression syntax error: {str(e)}", rule=rule)
+            return False
         except Exception as e:
             logger.error(f"Expression validation error: {str(e)}", rule=rule)
             return False
+
+    def _validate_expression_syntax(self, expr: str) -> None:
+        """
+        Validate that expression uses only supported syntax
+
+        Raises:
+            ValueError: If expression contains unsupported features
+
+        Per spec section 6, supported features:
+            - input.isAlpha(), input.isNumeric(), input.isDigit()
+            - input.length
+            - context.* (variable access)
+            - Comparison operators (==, !=, >, <, >=, <=)
+            - Logical operators (&&, ||)
+
+        Unsupported features:
+            - Custom functions (parseInt, toUpperCase, includes, etc.)
+            - String methods beyond isAlpha/isNumeric/isDigit
+            - Array/object methods
+            - Date/time operations
+        """
+        # Check for unsupported input methods (method calls with parentheses)
+        input_methods = re.findall(r'input\.(\w+)\s*\(', expr)
+        supported_input_methods = ['isAlpha', 'isNumeric', 'isDigit']
+
+        for method in input_methods:
+            if method not in supported_input_methods:
+                raise ValueError(
+                    f"Unsupported method: input.{method}(). "
+                    f"Supported methods: {', '.join(['input.' + m + '()' for m in supported_input_methods])}"
+                )
+
+        # Check for unsupported input properties (beyond 'length')
+        input_properties = re.findall(r'input\.(\w+)(?!\s*\()', expr)
+        supported_properties = ['length']
+
+        for prop in input_properties:
+            if prop not in supported_properties:
+                raise ValueError(
+                    f"Unsupported property: input.{prop}. "
+                    f"Only 'input.length' is supported as a property."
+                )
+
+        # Check for standalone functions (e.g., parseInt, toUpperCase called on input)
+        # This catches things like: parseInt(input), input.toUpperCase(), etc.
+        # Pattern: word followed by parentheses that's NOT input.method() or context.
+        standalone_functions = re.findall(r'\b(\w+)\s*\([^)]*\)', expr)
+
+        # Filter out supported methods and keywords
+        allowed_in_functions = supported_input_methods + ['input', 'context']
+        unsupported_functions = [
+            f for f in standalone_functions
+            if f not in allowed_in_functions
+        ]
+
+        if unsupported_functions:
+            raise ValueError(
+                f"Unsupported functions: {', '.join(unsupported_functions)}. "
+                f"Only input.isAlpha(), input.isNumeric(), and input.isDigit() are supported. "
+                f"Functions like parseInt(), toUpperCase(), includes() are not supported."
+            )
 
     def _evaluate_expression(self, expr: str, eval_context: Dict[str, Any]) -> bool:
         """Evaluate custom expression with input context"""
@@ -164,12 +266,30 @@ class InputValidator:
         return expr
 
     def _is_numeric(self, value: str) -> bool:
-        """Check if string is numeric format"""
+        """
+        Check if string is numeric format
+
+        Per spec section 6, accepts:
+            - "123" (integer)
+            - "-45" (negative integer)
+            - "12.34" (decimal)
+            - ".5" (leading decimal point)
+            - "1." (trailing decimal point)
+
+        Rejects:
+            - "1e10" (scientific notation)
+            - "1.2.3" (multiple decimals)
+            - "--5" (multiple minus signs)
+            - "+5" (plus sign not supported)
+        """
         if not value:
             return False
 
-        # Pattern: optional minus, digits, optional decimal point + digits
-        pattern = r'^-?\d*\.?\d+$'
+        # Pattern: optional minus, then either:
+        #   - digits with optional trailing decimal: \d+\.?
+        #   - optional digits with decimal and required trailing digits: \d*\.\d+
+        # This accepts both "1." and ".5" for consistency
+        pattern = r'^-?(\d+\.?|\d*\.\d+)$'
         return bool(re.match(pattern, value))
 
     def _replace_context_variables(self, expr: str, context: Dict[str, Any]) -> str:
@@ -800,7 +920,7 @@ class FlowValidator:
 
     def _check_required_fields(self, flow_data: Dict[str, Any], result: ValidationResult):
         """Validate required top-level fields"""
-        required_fields = ['name', 'start_node_id', 'nodes']
+        required_fields = ['name', 'trigger_keywords', 'start_node_id', 'nodes']
         for field in required_fields:
             if field not in flow_data:
                 result.add_error(
@@ -821,10 +941,10 @@ class FlowValidator:
             result.add_error("invalid_name", "name cannot be empty or whitespace-only", "name")
             return
 
-        if len(flow_name) > SystemConstraints.MAX_FLOW_ID_LENGTH:
+        if len(flow_name) > SystemConstraints.MAX_FLOW_NAME_LENGTH:
             result.add_error(
                 "constraint_violation",
-                f"name exceeds maximum length of {SystemConstraints.MAX_FLOW_ID_LENGTH} characters",
+                f"name exceeds maximum length of {SystemConstraints.MAX_FLOW_NAME_LENGTH} characters",
                 "name"
             )
 
@@ -1209,11 +1329,19 @@ class FlowValidator:
                     f"nodes.{node_id}.routes"
                 )
 
-            # Check for duplicate route conditions
+            # Check for duplicate route conditions and validate condition length
             seen_conditions = {}
             for i, route in enumerate(node.routes):
                 condition = route.condition
                 if condition:
+                    # Validate condition length (spec line 759, 1649)
+                    if len(condition) > SystemConstraints.MAX_ROUTE_CONDITION_LENGTH:
+                        result.add_error(
+                            "constraint_violation",
+                            f"Route condition exceeds maximum length of {SystemConstraints.MAX_ROUTE_CONDITION_LENGTH} characters (current: {len(condition)})",
+                            f"nodes.{node_id}.routes[{i}].condition"
+                        )
+
                     normalized_condition = condition.strip().lower()
                     if normalized_condition in seen_conditions:
                         result.add_error(

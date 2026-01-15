@@ -12,6 +12,7 @@ services:
       - REDIS__ENABLED=true
       # Security config (nested with __)
       - SECURITY__SECRET_KEY=${SECRET_KEY}
+      - SECURITY__ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - SECURITY__ALGORITHM=HS256
       - SECURITY__ACCESS_TOKEN_EXPIRE_MINUTES=30
       # Evolution API config (nested with __)

@@ -19,6 +19,7 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 authlib==1.6.0
 itsdangerous==2.1.2
+cryptography==41.0.7  # For Fernet encryption (PII protection)
 
 # HTTP Client
 httpx==0.25.2

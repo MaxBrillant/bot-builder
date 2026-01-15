@@ -1618,6 +1618,8 @@ See the Tujane driver flow in [`flows/tujane_driver_flow_v1.json`](flows/tujane_
 | Session timeout            | 30 minutes (absolute, from session creation) | Resource management           |
 | API request timeout        | 30 seconds (fixed)                           | Prevent hanging requests      |
 | Max validation attempts    | 3 (configurable via flow defaults)           | Prevent abuse                 |
+| **Input Sanitization**     |
+| User input length          | 4096 characters per message (truncated)      | Prevent DoS attacks           |
 | **Flow Structure**         |
 | Nodes per flow             | 48                                           | Performance & maintainability |
 | Routes per node            | 8                                            | Complexity management         |
@@ -1665,6 +1667,7 @@ See the Tujane driver flow in [`flows/tujane_driver_flow_v1.json`](flows/tujane_
 - Auto-progression counter resets at PROMPT or MENU nodes (user input required)
 - Session timeout is absolute (30 minutes from creation, not last activity)
 - Limits enforced during flow validation and runtime execution
+- Input sanitization (4096 chars): Applied automatically at webhook ingestion. Truncation logged but user not notified. See Section 10.1 for complete sanitization rules.
 - Array length limit (24 items): Enforced whenever an array is written to context (defaults, API responses, MENU mappings). Arrays exceeding 24 items are silently truncated to first 24 items.
 - Source path notation: Only dot notation supported (e.g., `data.items.0.name`). Bracket notation (e.g., `items[0]`) NOT supported in mappings.
 
@@ -3080,35 +3083,135 @@ Security is critical when building conversational flows that handle user data an
 
 #### 1. Input Sanitization
 
-**User Input Handling**:
+**Universal Sanitization Rules (Always Applied)**:
 
-- All user input is treated as untrusted
-- System automatically trims whitespace (leading/trailing)
-- No automatic sanitization for special characters or injection attempts
-- **Developer Responsibility**: Validate and sanitize input appropriately for your use case
+All user input is automatically sanitized by the system. No configuration required.
 
-**Recommendations**:
+---
 
+**Layer 1: Baseline Sanitization**
+
+Applied at webhook ingestion, before any processing:
+
+1. **Null bytes removed** (`\x00`)
+2. **Control characters removed** (except `\n`, `\t`, `\r`)
+3. **Whitespace trimmed** (leading/trailing)
+4. **Length limited** (4096 characters maximum, truncated if exceeded)
+
+---
+
+**Layer 2: Context-Aware Escaping**
+
+Applied automatically when data is used:
+
+1. **HTML escaping** - When rendering in web interfaces
+2. **JSON escaping** - When building API requests (automatic via JSON encoder)
+3. **SQL parameterization** - All database queries use parameterized queries (SQLAlchemy ORM)
+4. **URL encoding** - Query parameters automatically percent-encoded
+
+---
+
+**Layer 3: Pattern Rejection**
+
+Automatically rejects input containing dangerous patterns:
+
+- Script tags: `<script>`, `</script>`
+- JavaScript protocols: `javascript:`
+- Event handlers: `onclick=`, `onerror=`, `onload=`
+- Template injection: `{{`, `}}`, `${`, `}`
+- Command injection: Multiple commands (`;`, `|`, `&&`)
+- Path traversal: `../`, `..\\`
+- SQL comments: `--`, `/*`, `*/`
+
+When detected:
+- Input rejected with error: "Invalid characters detected. Please try again."
+- Counts toward validation retry limit
+- After max attempts, routes to `fail_route` or terminates
+
+---
+
+**Processing Order**:
+
+```
+1. User sends message
+   ↓
+2. Layer 1: Baseline sanitization (always)
+   ↓
+3. Layer 3: Pattern rejection (always)
+   ↓
+4. PROMPT validation (your regex/expression rules)
+   ↓
+5. Layer 2: Context-aware escaping (at point of use)
+   ↓
+6. Data stored/used safely
+```
+
+---
+
+**What This Means for Developers**:
+
+- ✅ No sanitization config needed
+- ✅ No security fields in flows
+- ✅ Protection is automatic
+- ✅ Focus only on business validation (email format, date ranges, etc.)
+
+**Example** - You only write validation rules:
 ```json
-// ✅ GOOD - Strict validation prevents injection
 {
-  "validation": {
-    "type": "REGEX",
-    "rule": "^[A-Za-z0-9_-]+$",
-    "error_message": "Only letters, numbers, hyphens and underscores allowed"
+  "type": "PROMPT",
+  "config": {
+    "text": "Enter your feedback:",
+    "save_to_variable": "feedback",
+    "validation": {
+      "type": "EXPRESSION",
+      "rule": "input.length >= 10 && input.length <= 500",
+      "error_message": "Feedback must be 10-500 characters"
+    }
   }
-}
-
-// ⚠️ CAUTION - Accepting free text
-{
-  "validation": {
-    "type": "EXPRESSION",
-    "rule": "input.length > 0",
-    "error_message": "Required"
-  }
-  // Ensure API backend properly sanitizes this input!
 }
 ```
+
+System automatically:
+- Removes null bytes/control chars
+- Rejects `<script>` tags, injection attempts
+- HTML-escapes when displaying
+- Validates length (your rule)
+
+---
+
+**Security Guarantees**:
+
+The system guarantees:
+- ✅ No null bytes in stored data
+- ✅ No control characters (except newlines/tabs)
+- ✅ No script tags or injection patterns
+- ✅ All database queries parameterized
+- ✅ All HTML output escaped
+- ✅ Maximum input length enforced
+
+**Your Responsibility**:
+- Format validation (email, phone, date formats)
+- Business rules (valid amounts, IDs, ranges)
+- API backend validation
+
+---
+
+**Logging**:
+
+Sanitization events logged for security monitoring:
+
+```json
+{
+  "timestamp": "2024-11-29T10:30:45Z",
+  "event": "input_rejected",
+  "channel_user_id": "+254XXXXXX456",
+  "bot_id": "550e8400-...",
+  "reason": "suspicious_pattern_detected",
+  "pattern_type": "script_tag"
+}
+```
+
+Actual input content is NEVER logged (PII protection).
 
 #### 2. API Credential Management
 
@@ -3351,12 +3454,14 @@ Before deploying a flow to production, verify:
 
 - [ ] No API keys or secrets in flow JSON
 - [ ] All API endpoints use HTTPS
-- [ ] Input validation appropriate for data type
+- [ ] Input validation appropriate for data type (format, length, business rules)
 - [ ] PII collected only when necessary
 - [ ] Error messages don't expose system internals
 - [ ] Rate limiting configured at infrastructure level
 - [ ] Audit logging enabled
 - [ ] Security review completed
+
+**Note**: Input sanitization (null bytes, control chars, dangerous patterns) is automatic and requires no action from developers.
 
 ### Incident Response
 

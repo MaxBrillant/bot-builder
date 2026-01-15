@@ -138,13 +138,14 @@ class RetryHandler:
         final_error_message = error_message
 
         # Render counter text if defined
+        # Use render_counter() method which allows {{current_attempt}} and {{max_attempts}}
         if counter_text:
             counter_context = {
                 **context,
                 'current_attempt': new_attempt_count,
                 'max_attempts': max_attempts
             }
-            rendered_counter = self.template_engine.render(counter_text, counter_context)
+            rendered_counter = self.template_engine.render_counter(counter_text, counter_context)
             final_error_message = f"{error_message}\n{rendered_counter}"
 
         return RetryResult(

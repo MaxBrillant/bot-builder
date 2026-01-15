@@ -18,10 +18,10 @@ from app.api import (
     auth_router,
     bots_router,
     flows_router,
-    webhooks_router,
+    core_webhook_router,
     oauth_router,
     whatsapp_router,
-    evolution_webhooks_router
+    whatsapp_webhook_router
 )
 from app.api.middleware import register_exception_handlers
 from app.utils.logger import get_logger
@@ -208,9 +208,9 @@ app.include_router(auth_router)
 app.include_router(oauth_router)
 app.include_router(bots_router)
 app.include_router(flows_router)  # Nested under /bots/{bot_id}/flows
-app.include_router(webhooks_router)
-app.include_router(whatsapp_router)  # WhatsApp/Evolution API integration
-app.include_router(evolution_webhooks_router)  # Evolution API webhook receiver
+app.include_router(core_webhook_router)  # Core platform-agnostic webhook
+app.include_router(whatsapp_router)  # WhatsApp/Evolution API management
+app.include_router(whatsapp_webhook_router)  # WhatsApp webhooks (messages + system events)
 
 
 # Health check endpoint

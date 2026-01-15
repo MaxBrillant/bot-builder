@@ -117,9 +117,18 @@ class MenuProcessor(BaseProcessor):
         
         # Handle validation failure with retry logic
         if validation_failed:
-            error_msg = ErrorMessages.INVALID_SELECTION
-            # Render template if it contains variables
-            error_msg = self.template_engine.render(error_msg, context)
+            # Use configurable error message if provided, otherwise use default (spec line 1840)
+            error_msg = config.error_message or ErrorMessages.INVALID_SELECTION
+            # Render template if it contains variables (with error handling)
+            try:
+                error_msg = self.template_engine.render(error_msg, context)
+            except Exception as e:
+                self.logger.error(
+                    f"Template rendering error for menu error message: {str(e)}",
+                    error=str(e)
+                )
+                # Use unrendered message as fallback
+                pass
 
             if session and db:
                 # Initialize retry handler with session manager
@@ -241,8 +250,15 @@ class MenuProcessor(BaseProcessor):
                 rendered = self.template_engine.render(template, template_context)
                 options.append(rendered)
             except Exception as e:
-                self.logger.error(f"Error rendering option {index}: {str(e)}")
-                options.append(f"{index}. [Error rendering option]")
+                self.logger.error(
+                    f"Error rendering dynamic menu option {index}: {str(e)}",
+                    option_index=index,
+                    error=str(e),
+                    template=template[:100]
+                )
+                # Include exception details in fallback message for better debugging
+                error_preview = str(e)[:50]
+                options.append(f"{index}. [Error: {error_preview}]")
         
         return options
     
@@ -254,15 +270,15 @@ class MenuProcessor(BaseProcessor):
     ) -> str:
         """
         Format menu with header text and numbered options
-        
+
         Args:
             text: Menu header text (supports templates)
             options: List of options (strings or dicts with 'label')
             context: Session context
-        
+
         Returns:
             Formatted menu text
-        
+
         Example:
             text = "Select an option:"
             options = ["Option A", "Option B"]
@@ -271,23 +287,40 @@ class MenuProcessor(BaseProcessor):
             1. Option A
             2. Option B"
         """
-        # Render header text
-        header = self.template_engine.render(text, context)
+        # Render header text (with error handling)
+        try:
+            header = self.template_engine.render(text, context)
+        except Exception as e:
+            self.logger.error(
+                f"Template rendering error for menu header: {str(e)}",
+                error=str(e)
+            )
+            # Fallback to unrendered text
+            header = f"Menu: {text[:100]}..."
         
         # Build option list
         option_lines = []
         for i, option in enumerate(options, start=1):
             # Handle option format (MenuStaticOption or rendered string)
-            if isinstance(option, dict):
-                label = option.get('label', str(option))
-                # Render template in label
-                label = self.template_engine.render(label, context)
-            elif hasattr(option, 'label'):
-                # MenuStaticOption instance
-                label = self.template_engine.render(option.label, context)
-            else:
-                label = str(option)
-            
+            try:
+                if isinstance(option, dict):
+                    label = option.get('label', str(option))
+                    # Render template in label
+                    label = self.template_engine.render(label, context)
+                elif hasattr(option, 'label'):
+                    # MenuStaticOption instance
+                    label = self.template_engine.render(option.label, context)
+                else:
+                    label = str(option)
+            except Exception as e:
+                self.logger.error(
+                    f"Template rendering error for menu option {i}: {str(e)}",
+                    option_index=i,
+                    error=str(e)
+                )
+                # Fallback to string representation
+                label = f"[Option {i}]"
+
             option_lines.append(f"{i}. {label}")
         
         # Combine header and options

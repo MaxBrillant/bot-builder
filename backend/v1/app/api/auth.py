@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 
 from app.database import get_db
 from app.models.user import User
+from app.models.audit_log import AuditResult
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.schemas.auth_schema import (
     UserCreate,
     UserResponse,
@@ -283,3 +285,101 @@ async def logout(
         "message": "Successfully logged out",
         "user_id": str(current_user.user_id)
     }
+
+
+@router.delete("/me/data", status_code=status.HTTP_200_OK)
+async def delete_user_data(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete all user data (GDPR "Right to be Forgotten")
+
+    This endpoint permanently deletes:
+    - User account
+    - All bots owned by the user
+    - All flows in those bots
+    - All sessions associated with those bots
+    - All bot integrations
+
+    Args:
+        credentials: JWT token from Authorization header
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Confirmation message
+
+    Warning:
+        This action is IRREVERSIBLE. All data will be permanently deleted.
+
+    Security:
+        - Requires authentication
+        - Audit logs the deletion event (with masked PII)
+        - Token is blacklisted after deletion
+    """
+    user_id = str(current_user.user_id)
+    user_email = current_user.email
+
+    # Audit log: data deletion request (before deletion)
+    audit_log = AuditLogRepository(db)
+    await audit_log.log_security_event(
+        action="user_data_deletion_requested",
+        user_id=logger.mask_pii(user_email, "email"),
+        result=AuditResult.SUCCESS,
+        metadata={
+            "user_id_hash": user_id[:8] + "...",  # Partial ID for audit trail
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    )
+
+    try:
+        # Delete user (cascades to bots, flows, sessions, integrations)
+        await db.delete(current_user)
+        await db.commit()
+
+        logger.info(
+            f"User data deleted (GDPR request)",
+            user_id_partial=user_id[:8] + "..."
+        )
+
+        # Blacklist the current token if Redis is enabled
+        if settings.redis.enabled and redis_manager.is_connected():
+            try:
+                token = credentials.credentials
+                payload = decode_access_token(token)
+                jti = payload.get("jti")
+                exp_timestamp = payload.get("exp")
+
+                if jti and exp_timestamp:
+                    exp_datetime = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
+                    ttl_seconds = int((exp_datetime - datetime.now(timezone.utc)).total_seconds())
+
+                    if ttl_seconds > 0:
+                        await redis_manager.blacklist_token(jti, ttl_seconds)
+            except Exception as e:
+                # Don't fail deletion if token blacklist fails
+                logger.warning(f"Failed to blacklist token after deletion: {e}")
+
+        return {
+            "message": "All user data has been permanently deleted",
+            "deleted_at": datetime.now(timezone.utc).isoformat()
+        }
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to delete user data: {str(e)}", user_id_partial=user_id[:8])
+
+        # Audit log: deletion failure
+        await audit_log.log_security_event(
+            action="user_data_deletion_failed",
+            user_id=logger.mask_pii(user_email, "email"),
+            result=AuditResult.FAILED,
+            metadata={"error": str(e)[:100]}  # Truncate error for audit
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user data. Please try again or contact support."
+        )

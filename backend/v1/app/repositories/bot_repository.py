@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.base import BaseRepository
 from app.models.bot import Bot
+from app.utils.constants import BotStatus
 
 
 class BotRepository(BaseRepository[Bot]):
@@ -36,36 +37,36 @@ class BotRepository(BaseRepository[Bot]):
 
     async def get_by_id_with_flows(self, bot_id: UUID) -> Optional[Bot]:
         """
-        Get bot with eager-loaded flows (solves N+1 query problem)
+        Get bot with eager-loaded flows and integrations (solves N+1 query problem)
 
         Args:
             bot_id: Bot UUID
 
         Returns:
-            Bot with flows loaded or None
+            Bot with flows and integrations loaded or None
         """
         stmt = (
             select(Bot)
             .where(Bot.bot_id == bot_id)
-            .options(selectinload(Bot.flows))
+            .options(selectinload(Bot.flows), selectinload(Bot.integrations))
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_user_bots(self, user_id: UUID) -> List[Bot]:
         """
-        Get all bots owned by user with eager-loaded flows (solves N+1)
+        Get all bots owned by user with eager-loaded flows and integrations (solves N+1)
 
         Args:
             user_id: Owner user ID
 
         Returns:
-            List of bots with flows loaded
+            List of bots with flows and integrations loaded
         """
         stmt = (
             select(Bot)
             .where(Bot.owner_user_id == user_id)
-            .options(selectinload(Bot.flows))
+            .options(selectinload(Bot.flows), selectinload(Bot.integrations))
             .order_by(Bot.created_at.desc())
         )
         result = await self.session.execute(stmt)
@@ -117,21 +118,21 @@ class BotRepository(BaseRepository[Bot]):
 
     async def get_active_bots(self, user_id: UUID) -> List[Bot]:
         """
-        Get active bots for user
+        Get active bots for user with eager-loaded flows and integrations
 
         Args:
             user_id: Owner user ID
 
         Returns:
-            List of active bots
+            List of active bots with flows and integrations loaded
         """
         stmt = (
             select(Bot)
             .where(
                 Bot.owner_user_id == user_id,
-                Bot.status == 'active'
+                Bot.status == BotStatus.ACTIVE.value
             )
-            .options(selectinload(Bot.flows))
+            .options(selectinload(Bot.flows), selectinload(Bot.integrations))
             .order_by(Bot.created_at.desc())
         )
         result = await self.session.execute(stmt)

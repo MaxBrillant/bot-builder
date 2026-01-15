@@ -43,6 +43,7 @@ class CacheConfig(BaseSettings):
 class SecurityConfig(BaseSettings):
     """Security and authentication configuration"""
     secret_key: str = Field(..., min_length=32, description="JWT secret key (min 32 chars)")
+    encryption_key: str = Field(..., min_length=44, description="Fernet encryption key for PII (44 chars base64)")
     algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(120, ge=1, le=43200, description="JWT token expiration (max 30 days)")
     bcrypt_rounds: int = Field(12, ge=10, le=16, description="Password hashing rounds (10-16 recommended)")
@@ -57,6 +58,34 @@ class SecurityConfig(BaseSettings):
             )
         return v
 
+    @field_validator('encryption_key')
+    @classmethod
+    def validate_encryption_key(cls, v: str) -> str:
+        """
+        Validate Fernet encryption key format
+
+        Fernet keys must be 32 URL-safe base64-encoded bytes (44 characters).
+        Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+        """
+        from cryptography.fernet import Fernet
+
+        if v in ["change-this-encryption-key-in-production", "CHANGEME", "changeme"]:
+            raise ValueError(
+                "ENCRYPTION_KEY cannot use placeholder value. "
+                "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+            )
+
+        # Validate format by attempting to create Fernet cipher
+        try:
+            Fernet(v.encode('utf-8'))
+        except Exception as e:
+            raise ValueError(
+                f"ENCRYPTION_KEY is not a valid Fernet key: {e}. "
+                f"Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+            )
+
+        return v
+
 
 class GoogleOAuthConfig(BaseSettings):
     """Google OAuth2 configuration"""
@@ -69,16 +98,38 @@ class GoogleOAuthConfig(BaseSettings):
 
 class HTTPClientConfig(BaseSettings):
     """HTTP client configuration for external API calls"""
-    timeout: float = Field(30.0, ge=1.0, le=300.0, description="Request timeout in seconds")
+    timeout: float = Field(30.0, description="Request timeout in seconds (FIXED at 30s per specification)")
     max_connections: int = Field(100, ge=10, le=1000, description="Maximum concurrent connections")
     max_keepalive: int = Field(20, ge=5, le=100, description="Maximum keepalive connections")
+
+    @field_validator('timeout')
+    @classmethod
+    def validate_timeout(cls, v: float) -> float:
+        """Enforce fixed 30-second timeout as per BOT_BUILDER_SPECIFICATIONS.md"""
+        if v != 30.0:
+            raise ValueError(
+                "API request timeout must be exactly 30 seconds (not configurable per specification). "
+                "See BOT_BUILDER_SPECIFICATIONS.md line 1619-1621, 1943-1944."
+            )
+        return v
 
 
 class FlowConstraintsConfig(BaseSettings):
     """Flow execution constraints and limits"""
     max_flow_size: int = Field(1048576, ge=1024, description="Maximum flow definition size in bytes (1 MB)")
     max_auto_progression: int = Field(10, ge=1, le=50, description="Maximum consecutive nodes without user input")
-    session_timeout_minutes: int = Field(30, ge=1, le=1440, description="Session absolute timeout (max 24 hours)")
+    session_timeout_minutes: int = Field(30, description="Session absolute timeout (FIXED at 30 minutes per specification)")
+
+    @field_validator('session_timeout_minutes')
+    @classmethod
+    def validate_session_timeout(cls, v: int) -> int:
+        """Enforce fixed 30-minute session timeout as per BOT_BUILDER_SPECIFICATIONS.md"""
+        if v != 30:
+            raise ValueError(
+                "Session timeout must be exactly 30 minutes (not configurable per specification). "
+                "See BOT_BUILDER_SPECIFICATIONS.md line 1618, 2803-2807."
+            )
+        return v
 
 
 class RateLimitConfig(BaseSettings):

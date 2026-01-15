@@ -10,12 +10,14 @@ Three focused classes:
 
 from typing import Optional, Dict, Any
 from uuid import UUID
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 import httpx
 
 from app.config import settings
 from app.repositories.flow_repository import FlowRepository
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.core.template_engine import TemplateEngine
 from app.core.conditions import ConditionEvaluator, sort_routes
 from app.core.validators import InputValidator as ValidationSystem
@@ -23,6 +25,7 @@ from app.core.session_manager import SessionManager
 from app.models.flow import Flow
 from app.models.session import Session
 from app.models.node_configs import FlowNode
+from app.models.audit_log import AuditResult
 from app.processors.base_processor import ProcessResult, BaseProcessor
 from app.processors.factory import ProcessorFactory
 from app.utils.logger import get_logger
@@ -61,12 +64,13 @@ async def get_http_client() -> httpx.AsyncClient:
             _http_client = httpx.AsyncClient(
                 timeout=settings.http_client.timeout,
                 follow_redirects=True,
+                verify=True,  # Explicitly enable SSL/TLS certificate verification (security requirement)
                 limits=httpx.Limits(
                     max_connections=settings.http_client.max_connections,
                     max_keepalive_connections=settings.http_client.max_keepalive
                 )
             )
-            logger.info("HTTP client lazy initialized")
+            logger.info("HTTP client lazy initialized with SSL verification enabled")
 
         return _http_client
 
@@ -129,14 +133,12 @@ class KeywordMatcher:
             - Bot-scoped search (only searches within specified bot)
             - Case-insensitive matching
             - Whitespace trimmed
-            - Trailing punctuation ignored
+            - Punctuation NOT allowed (spec line 279: "START!" should NOT match "START")
             - Standalone messages only
             - Wildcard "*" acts as fallback if no specific keyword matches
         """
         # Normalize keyword - convert to uppercase to match stored format
         normalized = keyword.strip().upper()
-        # Remove trailing punctuation
-        normalized = normalized.rstrip('!.?')
 
         # Step 1: Try specific keyword match using repository
         flow = await self.flow_repo.get_by_trigger_keyword(bot_id, normalized)
@@ -205,6 +207,7 @@ class FlowExecutor:
         self.validation_system = validation_system
         self.session_manager = session_manager
         self.logger = get_logger(__name__)
+        self.audit_log = AuditLogRepository(db)
 
         # Initialize processor factory with dependency injection
         self.processor_factory = ProcessorFactory(
@@ -237,6 +240,22 @@ class FlowExecutor:
         messages = []
         auto_progression_count = 0
 
+        # Track user input in message history (if provided)
+        if user_input is not None:
+            if not session.message_history:
+                session.message_history = []
+
+            session.message_history.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "sender": "user",
+                "message": user_input,
+                "node_id": session.current_node_id
+            })
+
+            # Limit history size to last 50 messages
+            if len(session.message_history) > 50:
+                session.message_history = session.message_history[-50:]
+
         while True:
             # Check max auto-progression
             if auto_progression_count >= SystemConstraints.MAX_AUTO_PROGRESSION:
@@ -266,6 +285,8 @@ class FlowExecutor:
                 )
 
             # Sort routes by priority before parsing node
+            # Note: This ensures all processors receive pre-sorted routes
+            # Processors should not re-sort routes (already handled here)
             if 'routes' in current_node_dict and current_node_dict['routes']:
                 node_type_for_sorting = current_node_dict.get('type')
                 sorted_routes = sort_routes(current_node_dict['routes'], node_type_for_sorting)
@@ -302,13 +323,34 @@ class FlowExecutor:
                 has_input=user_input is not None
             )
 
-            try:
-                # Inject user context for template rendering
-                # Processors can access {{user.channel_id}} and {{user.channel}}
-                enhanced_context = {
-                    **session.context,
-                    "user": user_context
+            # Audit log: flow node execution
+            await self.audit_log.log_flow_execution(
+                action="node_executed",
+                flow_id=str(session.flow_id),
+                node_id=session.current_node_id,
+                bot_id=str(session.bot_id),
+                result=AuditResult.SUCCESS,
+                metadata={
+                    "node_type": node_type.value if hasattr(node_type, 'value') else str(node_type),
+                    "session_id": str(session.session_id),
+                    "has_user_input": user_input is not None
                 }
+            )
+
+            try:
+                # Inject user context ONLY for API_ACTION nodes (per specification)
+                # Per BOT_BUILDER_SPECIFICATIONS.md Section 5, Template Contexts by Node:
+                # - API_ACTION nodes can access {{user.channel_id}} and {{user.channel}}
+                # - Other node types (PROMPT, MENU, MESSAGE, LOGIC_EXPRESSION, END) must NOT have access
+                # Note: Both user.channel_id and user.channel are restricted together as they're
+                # part of the same user context object
+                if node_type == NodeType.API_ACTION:
+                    enhanced_context = {
+                        **session.context,
+                        "user": user_context
+                    }
+                else:
+                    enhanced_context = session.context
 
                 result: ProcessResult = await processor.process(
                     current_node,
@@ -338,6 +380,22 @@ class FlowExecutor:
             if result.message:
                 messages.append(result.message)
 
+                # Track bot message in message history
+                if not session.message_history:
+                    session.message_history = []
+
+                session.message_history.append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "sender": "bot",
+                    "message": result.message,
+                    "node_id": session.current_node_id,
+                    "node_type": node_type.value if hasattr(node_type, 'value') else str(node_type)
+                })
+
+                # Limit history size to last 50 messages
+                if len(session.message_history) > 50:
+                    session.message_history = session.message_history[-50:]
+
             # Update session context
             session.context = result.context
 
@@ -346,6 +404,11 @@ class FlowExecutor:
                 # Update in-memory session object
                 session.context = result.context
                 session.auto_progression_count = 0
+
+                # Commit session changes (message_history, context, node_id) to database
+                # NOTE: Session object is tracked by SQLAlchemy, but autoflush=False
+                # and autocommit=False, so we must explicitly commit
+                await self.db.commit()
 
                 return {
                     "messages": messages,
@@ -382,6 +445,23 @@ class FlowExecutor:
                 )
 
                 messages.append(ErrorMessages.NO_ROUTE_MATCH)
+
+                # Track error message in message history
+                if not session.message_history:
+                    session.message_history = []
+
+                session.message_history.append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "sender": "system",
+                    "message": ErrorMessages.NO_ROUTE_MATCH,
+                    "node_id": session.current_node_id,
+                    "error_type": "no_route_match"
+                })
+
+                # Limit history size
+                if len(session.message_history) > 50:
+                    session.message_history = session.message_history[-50:]
+
                 return {
                     "messages": messages,
                     "session_active": False,

@@ -16,6 +16,7 @@ from app.repositories.user_repository import UserRepository
 from app.utils.security import create_access_token
 from app.config import settings
 from app.utils.logger import get_logger
+from app.utils.constants import OAuthProvider
 
 logger = get_logger(__name__)
 
@@ -165,7 +166,7 @@ async def google_callback(
             # User exists - update OAuth fields if not set
             if not user.oauth_provider:
                 logger.info(f"Linking existing user to Google OAuth", email=email)
-                user.oauth_provider = 'google'
+                user.oauth_provider = OAuthProvider.GOOGLE.value
                 user.oauth_id = google_user_id
                 await db.commit()
                 await db.refresh(user)
@@ -177,7 +178,7 @@ async def google_callback(
             user = User(
                 email=email,
                 password_hash=None,  # OAuth users don't have passwords
-                oauth_provider='google',
+                oauth_provider=OAuthProvider.GOOGLE.value,
                 oauth_id=google_user_id,
                 is_active=True
             )

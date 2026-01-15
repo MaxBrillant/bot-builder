@@ -24,6 +24,26 @@ class SessionStatus(str, Enum):
     ERROR = "ERROR"
 
 
+# Bot Status
+class BotStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+
+
+# Integration Status
+class IntegrationStatus(str, Enum):
+    CONNECTED = "CONNECTED"
+    DISCONNECTED = "DISCONNECTED"
+    CONNECTING = "CONNECTING"
+    ERROR = "ERROR"
+
+
+# OAuth Provider
+class OAuthProvider(str, Enum):
+    GOOGLE = "GOOGLE"
+    # Future providers: GITHUB, MICROSOFT, FACEBOOK, etc.
+
+
 # Validation Types
 class ValidationType(str, Enum):
     REGEX = "REGEX"
@@ -45,20 +65,33 @@ class HTTPMethod(str, Enum):
     PATCH = "PATCH"
 
 
+# Integration Platforms
+class IntegrationPlatform(str, Enum):
+    """Supported messaging platform integrations"""
+    WHATSAPP = "WHATSAPP"
+    TELEGRAM = "TELEGRAM"
+    SLACK = "SLACK"
+
+    @classmethod
+    def values(cls):
+        """Get list of all platform values"""
+        return [member.value for member in cls]
+
+
 # Variable Types
 class VariableType(str, Enum):
-    STRING = "string"
-    NUMBER = "number"
-    BOOLEAN = "boolean"
-    ARRAY = "array"
+    STRING = "STRING"
+    NUMBER = "NUMBER"
+    BOOLEAN = "BOOLEAN"
+    ARRAY = "ARRAY"
 
 
 # Route Condition Keywords
 class RouteCondition(str, Enum):
-    SUCCESS = "success"
-    ERROR = "error"
-    TRUE = "true"
-    FALSE = "false"
+    SUCCESS = "SUCCESS"
+    ERROR = "ERROR"
+    TRUE = "TRUE"
+    FALSE = "FALSE"
 
 
 # System Constraints
@@ -150,16 +183,18 @@ class ErrorMessages:
 # Regular Expressions
 class RegexPatterns:
     """Common regex patterns"""
-    
+
     # Template variable pattern: {{variable}}
     TEMPLATE_VARIABLE = r'\{\{([^}]+)\}\}'
-    
-    # Alphanumeric with underscores
-    IDENTIFIER = r'^[A-Za-z0-9_]+$'
-    
+
+    # Identifier pattern: must start with letter or underscore, then alphanumeric/underscore
+    # Valid: user_name, _temp, age, UserName
+    # Invalid: 1invalid, 99bottles, -name
+    IDENTIFIER = r'^[A-Za-z_][A-Za-z0-9_]*$'
+
     # Email validation
     EMAIL = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    
+
     # Phone number (with optional +)
     PHONE = r'^\+?[0-9]{10,15}$'
 

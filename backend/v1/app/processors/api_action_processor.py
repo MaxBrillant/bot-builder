@@ -16,6 +16,8 @@ from app.models.node_configs import (
     APIResponseMapping,
     APIResponse
 )
+from app.models.audit_log import AuditResult
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.processors.base_processor import BaseProcessor, ProcessResult
 from app.utils.logger import get_logger
 from app.config import settings
@@ -86,34 +88,63 @@ class APIActionProcessor(BaseProcessor):
         is_success = self._check_success(api_response, config.success_check)
         
         if is_success:
-            # Apply response mapping
-            if config.response_map:
+            # Skip response mapping for HTTP 204 No Content (spec line 1961)
+            if api_response.status_code == 204:
+                context[SpecialVariables.API_RESULT] = 'success'
+                self.logger.info(
+                    f"API call successful (204 No Content, response_map skipped)",
+                    status_code=api_response.status_code
+                )
+            # Apply response mapping for other success responses
+            elif config.response_map:
                 mapping_success = self._apply_response_mapping(api_response, config.response_map, context)
                 if not mapping_success:
                     self.logger.error("Response mapping failed due to conversion errors")
                     context[SpecialVariables.API_RESULT] = 'error'
                 else:
                     context[SpecialVariables.API_RESULT] = 'success'
-                    
+
                     self.logger.info(
                         f"API call successful",
                         status_code=api_response.status_code
                     )
             else:
                 context[SpecialVariables.API_RESULT] = 'success'
-                
+
                 self.logger.info(
                     f"API call successful",
                     status_code=api_response.status_code
                 )
         else:
             context[SpecialVariables.API_RESULT] = 'error'
-            
+
             self.logger.warning(
                 f"API call failed success check",
                 status_code=api_response.status_code
             )
-        
+
+        # Audit log: API call (without sensitive data)
+        if db and session:
+            audit_log = AuditLogRepository(db)
+            # Get rendered URL for logging (strip query params for security)
+            rendered_url = self.template_engine.render_url(config.request.url, context)
+            # Extract base URL (without query string) for audit log
+            base_url = rendered_url.split('?')[0] if '?' in rendered_url else rendered_url
+
+            await audit_log.log_api_call(
+                method=config.request.method.upper(),
+                url=base_url,
+                status_code=api_response.status_code,
+                user_id=logger.mask_pii(session.channel_user_id, "user_id") if hasattr(session, 'channel_user_id') else None,
+                result=AuditResult.SUCCESS if is_success else AuditResult.FAILED,
+                metadata={
+                    "session_id": str(session.session_id) if hasattr(session, 'session_id') else None,
+                    "bot_id": str(session.bot_id) if hasattr(session, 'bot_id') else None,
+                    "node_id": node.id,
+                    "api_result": context.get(SpecialVariables.API_RESULT)
+                }
+            )
+
         # Evaluate routes based on success/error
         next_node = self.evaluate_routes(node.routes, context, node.type)
         
@@ -128,9 +159,23 @@ class APIActionProcessor(BaseProcessor):
         context: Dict[str, Any]
     ) -> APIResponse:
         """Execute API request and return validated response"""
-        
+
         # Render URL with context variables and URL encoding
         rendered_url = self.template_engine.render_url(config.request.url, context)
+
+        # SECURITY: Enforce HTTPS for all API calls (Spec Section 10.6)
+        # "Always use HTTPS for API endpoints" - BOT_BUILDER_SPECIFICATIONS.md
+        if not rendered_url.startswith("https://"):
+            self.logger.error(
+                "API endpoint must use HTTPS",
+                url=rendered_url,
+                security_requirement="HTTPS_REQUIRED"
+            )
+            return APIResponse(
+                status_code=400,
+                body={"error": "API endpoints must use HTTPS. Insecure HTTP connections are not allowed."},
+                success=False
+            )
         
         # Get HTTP method
         method = config.request.method.upper()
@@ -339,22 +384,22 @@ class APIActionProcessor(BaseProcessor):
     ) -> bool:
         """
         Apply response mapping to extract data into context with type inference
-        
+
         Args:
             api_response: Validated APIResponse object
             mappings: List of typed APIResponseMapping instances
             context: Session context (updated in place)
-        
+
         Returns:
-            bool: Always returns True (all mappings execute independently)
-        
+            bool: True if at least one mapping succeeded, False if all failed or body invalid
+
         Example:
             api_response.body = {"user": {"id": "123", "name": "Alice"}}
             mappings = [
                 APIResponseMapping(source_path="user.id", target_variable="user_id"),
                 APIResponseMapping(source_path="user.name", target_variable="user_name")
             ]
-            
+
             With flow variables:
                 {"user_id": {"type": "number"}, "user_name": {"type": "string"}}
 
@@ -363,24 +408,30 @@ class APIActionProcessor(BaseProcessor):
         if not isinstance(api_response.body, dict):
             self.logger.warning(f"API response body is not a dict, cannot map: {type(api_response.body)}")
             return False
-        
+
+        # Track successful mappings
+        successful_mappings = 0
+        total_mappings = 0
+
         # Get variable definitions from flow for type inference
         variables = context.get("_flow_variables", {})
-        
+
         for mapping in mappings:
             source_path = mapping.source_path
             target_var = mapping.target_variable
-            
+
             if not target_var:
                 continue
-            
+
+            total_mappings += 1
+
             # Look up the target variable's declared type
             var_definition = variables.get(target_var, {})
             var_type = var_definition.get("type", "string")  # Default to string if not defined
-            
+
             # Use safe extraction method
             value = api_response.extract_value(source_path)
-            
+
             # Handle null values or missing paths - set to null
             if value is None:
                 context[target_var] = None
@@ -391,7 +442,7 @@ class APIActionProcessor(BaseProcessor):
                     inferred_type=var_type
                 )
                 continue
-            
+
             # Attempt type conversion based on variable's declared type
             # Pass value directly without stringification - convert_type handles all types
             try:
@@ -407,6 +458,7 @@ class APIActionProcessor(BaseProcessor):
                 )
 
                 context[target_var] = converted_value
+                successful_mappings += 1
             except Exception as e:
                 # On conversion failure, set to null and continue with other mappings
                 context[target_var] = None
@@ -417,7 +469,11 @@ class APIActionProcessor(BaseProcessor):
                     inferred_type=var_type,
                     value=value
                 )
-        
-        # All mappings execute independently - always return success
-        return True
+
+        # Return True if at least one mapping succeeded, or if there were no mappings to process
+        # (empty mappings list is considered success)
+        if total_mappings == 0:
+            return True
+
+        return successful_mappings > 0
     

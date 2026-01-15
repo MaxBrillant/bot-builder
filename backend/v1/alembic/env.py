@@ -17,6 +17,7 @@ from app.database import Base
 # Import all models so Alembic can detect them
 from app.models.user import User
 from app.models.bot import Bot
+from app.models.bot_integration import BotIntegration
 from app.models.flow import Flow
 from app.models.session import Session
 

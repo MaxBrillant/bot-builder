@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.bot import Bot
 from app.repositories.bot_repository import BotRepository
 from app.utils.exceptions import BotNotFoundError, UnauthorizedError
+from app.utils.constants import BotStatus
 
 
 class BotService:
@@ -52,7 +53,7 @@ class BotService:
             owner_user_id=owner_user_id,
             name=name,
             webhook_secret=self.generate_webhook_secret(),
-            status='active'
+            status=BotStatus.ACTIVE.value
         )
         
         if description:
@@ -114,13 +115,13 @@ class BotService:
 
         Args:
             owner_user_id: User ID
-            status: Optional filter by status ('active' or 'inactive')
+            status: Optional filter by status ('ACTIVE' or 'INACTIVE')
 
         Returns:
             List of Bot objects with flows eager-loaded (solves N+1 queries)
         """
         if status:
-            return await self.bot_repo.get_active_bots(owner_user_id) if status == 'active' else []
+            return await self.bot_repo.get_active_bots(owner_user_id) if status == BotStatus.ACTIVE.value else []
 
         return await self.bot_repo.get_user_bots(owner_user_id)
     
@@ -134,17 +135,17 @@ class BotService:
     ) -> Bot:
         """
         Update bot details
-        
+
         Args:
             bot_id: Bot identifier
             owner_user_id: User ID (for ownership check)
             name: New bot name
             description: New description
-            status: New status ('active' or 'inactive')
-            
+            status: New status ('ACTIVE' or 'INACTIVE')
+
         Returns:
             Updated Bot object
-            
+
         Raises:
             NotFoundError: Bot not found
             UnauthorizedError: User doesn't own this bot
@@ -249,15 +250,15 @@ class BotService:
     ) -> Bot:
         """
         Activate or deactivate a bot
-        
+
         Args:
             bot_id: Bot identifier
             owner_user_id: User ID (for ownership check)
-            status: 'active' or 'inactive'
-            
+            status: 'ACTIVE' or 'INACTIVE'
+
         Returns:
             Updated Bot object
-            
+
         Raises:
             NotFoundError: Bot not found
             UnauthorizedError: User doesn't own this bot

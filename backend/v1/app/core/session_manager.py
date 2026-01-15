@@ -12,6 +12,8 @@ from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.session import Session
+from app.models.audit_log import AuditResult
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.utils.logger import get_logger
 from app.utils.exceptions import (
     SessionExpiredError,
@@ -21,6 +23,7 @@ from app.utils.exceptions import (
     ConstraintViolationError
 )
 from app.utils.constants import SessionStatus, SystemConstraints
+from app.utils.encryption import get_encryption_service
 from app.config import settings
 
 logger = get_logger(__name__)
@@ -44,6 +47,7 @@ class SessionManager:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.logger = get_logger(__name__)
+        self.audit_log = AuditLogRepository(db)
     
     async def create_session(
         self,
@@ -106,15 +110,31 @@ class SessionManager:
             await self.db.commit()
             await self.db.refresh(session)
             
+            # Mask user ID for logging
+            masked_user_id = self.logger.mask_pii(channel_user_id, "user_id")
+
             self.logger.log_session_event(
                 str(session.session_id),
                 "created",
                 channel=channel,
-                channel_user_id=channel_user_id,
+                channel_user_id=masked_user_id,
                 bot_id=str(bot_id),
                 flow_id=str(flow_id)
             )
-            
+
+            # Audit log: session created
+            await self.audit_log.log_session_event(
+                action="session_created",
+                session_id=str(session.session_id),
+                user_id=masked_user_id,
+                bot_id=str(bot_id),
+                result=AuditResult.SUCCESS,
+                metadata={
+                    "channel": channel,
+                    "flow_id": str(flow_id)
+                }
+            )
+
             return session
             
         except Exception as e:
@@ -124,13 +144,16 @@ class SessionManager:
     
     async def _terminate_existing_session(self, channel: str, channel_user_id: str, bot_id: UUID):
         """
-        Silently terminate existing active session with row locking
-        
+        Silently delete existing active session with row locking
+
+        Per specification (Section 8, line 2828):
+        "New flow triggered → Old session deleted silently, new ACTIVE session created"
+
         Args:
             channel: Communication channel
             channel_user_id: User identifier in channel
             bot_id: Bot ID
-            
+
         Note:
             Uses SELECT FOR UPDATE to prevent race conditions when creating new sessions.
             Commits immediately to release lock before creating new session.
@@ -146,15 +169,36 @@ class SessionManager:
             )
             .with_for_update()  # Database-level row lock
         )
-        
+
         result = await self.db.execute(stmt)
         existing_session = result.scalar_one_or_none()
-        
+
         if existing_session:
-            existing_session.status = SessionStatus.COMPLETED.value
-            existing_session.completed_at = datetime.now(timezone.utc)
+            old_session_id = str(existing_session.session_id)
+            masked_user_id = self.logger.mask_pii(channel_user_id, "user_id")
+
+            # Delete the session per specification (not mark as COMPLETED)
+            await self.db.delete(existing_session)
             # Commit immediately to release lock before creating new session
             await self.db.commit()
+
+            self.logger.log_session_event(
+                old_session_id,
+                "deleted_on_new_flow",
+                channel=channel,
+                channel_user_id=masked_user_id,
+                bot_id=str(bot_id)
+            )
+
+            # Audit log: session terminated (on new flow start)
+            await self.audit_log.log_session_event(
+                action="session_terminated_on_new_flow",
+                session_id=old_session_id,
+                user_id=masked_user_id,
+                bot_id=str(bot_id),
+                result=AuditResult.SUCCESS,
+                metadata={"channel": channel}
+            )
     
     async def get_active_session(
         self,
@@ -234,16 +278,20 @@ class SessionManager:
                 f"({SystemConstraints.MAX_CONTEXT_SIZE} bytes)"
             )
 
+        # Encrypt context before storing (raw UPDATE bypasses hybrid property)
+        encryption = get_encryption_service()
+        encrypted_context = encryption.encrypt_json(context)
+
         # Only update if all validations passed
         stmt = (
             update(Session)
             .where(Session.session_id == session_id)
-            .values(context=context)
+            .values(_context_encrypted=encrypted_context)
         )
 
         await self.db.execute(stmt)
         # No commit - let outer transaction handle it
-    
+
     async def update_node(self, session_id: UUID, node_id: str):
         """
         Move session to new node
@@ -375,7 +423,7 @@ class SessionManager:
     async def complete_session(self, session_id: UUID):
         """
         Mark session as COMPLETED
-        
+
         Args:
             session_id: Session UUID
         """
@@ -387,16 +435,23 @@ class SessionManager:
                 completed_at=datetime.now(timezone.utc)
             )
         )
-        
+
         await self.db.execute(stmt)
         await self.db.commit()
-        
+
         self.logger.log_session_event(str(session_id), "completed")
+
+        # Audit log: session completed
+        await self.audit_log.log_session_event(
+            action="session_completed",
+            session_id=str(session_id),
+            result=AuditResult.SUCCESS
+        )
     
     async def expire_session(self, session_id: UUID):
         """
         Mark session as EXPIRED
-        
+
         Args:
             session_id: Session UUID
         """
@@ -408,16 +463,24 @@ class SessionManager:
                 completed_at=datetime.now(timezone.utc)
             )
         )
-        
+
         await self.db.execute(stmt)
         await self.db.commit()
-        
+
         self.logger.log_session_event(str(session_id), "expired")
+
+        # Audit log: session expired
+        await self.audit_log.log_session_event(
+            action="session_expired",
+            session_id=str(session_id),
+            result=AuditResult.SUCCESS,
+            metadata={"reason": "timeout"}
+        )
     
     async def error_session(self, session_id: UUID):
         """
         Mark session as ERROR
-        
+
         Args:
             session_id: Session UUID
         """
@@ -429,11 +492,18 @@ class SessionManager:
                 completed_at=datetime.now(timezone.utc)
             )
         )
-        
+
         await self.db.execute(stmt)
         await self.db.commit()
-        
+
         self.logger.log_session_event(str(session_id), "error")
+
+        # Audit log: session error
+        await self.audit_log.log_session_event(
+            action="session_error",
+            session_id=str(session_id),
+            result=AuditResult.FAILED
+        )
     
     def _truncate_arrays(self, context: Dict[str, Any]):
         """
@@ -557,7 +627,9 @@ class SessionManager:
                     f"({SystemConstraints.MAX_CONTEXT_SIZE} bytes)"
                 )
 
-            values['context'] = context
+            # Encrypt context before storing (raw UPDATE bypasses hybrid property)
+            encryption = get_encryption_service()
+            values['_context_encrypted'] = encryption.encrypt_json(context)
 
         # Only update if all validations passed
         if values:
@@ -569,7 +641,7 @@ class SessionManager:
 
             await self.db.execute(stmt)
             # No commit - let outer transaction handle it
-    
+
     def _initialize_context(self, flow_snapshot: Dict[str, Any]) -> Dict[str, Any]:
         """
         Initialize session context with flow variables and metadata

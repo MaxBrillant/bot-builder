@@ -73,9 +73,3 @@ class QRCodeStorageData(BaseModel):
     bot_id: Optional[str] = Field(None, description="Associated bot ID")
 
 
-class QRCodeResponse(BaseModel):
-    """Response for GET /whatsapp/qr-code endpoint"""
-    qr_code: str = Field(..., description="Base64-encoded QR code image")
-    instance_name: str = Field(..., description="Evolution API instance name")
-    timestamp: str = Field(..., description="ISO 8601 timestamp")
-    message: Optional[str] = Field(None, description="Optional message for frontend")

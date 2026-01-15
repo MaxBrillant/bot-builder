@@ -21,6 +21,7 @@ from app.schemas.bot_schema import (
 )
 from app.utils.exceptions import NotFoundError, UnauthorizedError
 from app.config import settings
+from app.utils.constants import IntegrationPlatform, BotStatus, IntegrationStatus
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -35,9 +36,17 @@ def bot_to_response(bot, include_secret: bool = False) -> BotResponse:
         # Fallback if flows somehow aren't loaded
         flow_count = 0
 
-    # Compute WhatsApp connection status
-    whatsapp_connected = bot.evolution_instance_status == 'connected'
-    whatsapp_status = bot.evolution_instance_status or 'disconnected'
+    # Compute WhatsApp connection status from integrations relationship
+    whatsapp_integration = bot.get_integration(IntegrationPlatform.WHATSAPP)
+
+    if whatsapp_integration:
+        whatsapp_connected = whatsapp_integration.status == IntegrationStatus.CONNECTED.value
+        whatsapp_status = whatsapp_integration.status
+        whatsapp_phone_number = whatsapp_integration.config.get('phone_number')
+    else:
+        whatsapp_connected = False
+        whatsapp_status = IntegrationStatus.DISCONNECTED.value
+        whatsapp_phone_number = None
 
     return BotResponse(
         bot_id=bot.bot_id,
@@ -50,9 +59,9 @@ def bot_to_response(bot, include_secret: bool = False) -> BotResponse:
         created_at=bot.created_at,
         updated_at=bot.updated_at,
         flow_count=flow_count,
-        # WhatsApp connection info
+        # WhatsApp connection info (from integrations)
         whatsapp_connected=whatsapp_connected,
-        whatsapp_phone_number=bot.whatsapp_phone_number,
+        whatsapp_phone_number=whatsapp_phone_number,
         whatsapp_status=whatsapp_status
     )
 
@@ -91,8 +100,8 @@ async def list_bots(
 ):
     """
     List all bots owned by the current user (includes webhook_secret for authenticated owner)
-    
-    - **status**: Optional filter by status ('active' or 'inactive')
+
+    - **status**: Optional filter by status ('ACTIVE' or 'INACTIVE')
     """
     bot_service = BotService(db)
     
@@ -140,10 +149,10 @@ async def update_bot(
 ):
     """
     Update bot details
-    
+
     - **name**: New bot name (optional)
     - **description**: New description (optional)
-    - **status**: New status - 'active' or 'inactive' (optional)
+    - **status**: New status - 'ACTIVE' or 'INACTIVE' (optional)
     """
     bot_service = BotService(db)
     
@@ -224,14 +233,14 @@ async def activate_bot(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Activate a bot (sets status to 'active')"""
+    """Activate a bot (sets status to 'ACTIVE')"""
     bot_service = BotService(db)
     
     try:
         bot = await bot_service.set_bot_status(
             bot_id=bot_id,
             owner_user_id=current_user.user_id,
-            status='active'
+            status=BotStatus.ACTIVE.value
         )
         # Include secret since user owns the bot and needs it for webhook configuration
         return bot_to_response(bot, include_secret=True)
@@ -247,14 +256,14 @@ async def deactivate_bot(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Deactivate a bot (sets status to 'inactive')"""
+    """Deactivate a bot (sets status to 'INACTIVE')"""
     bot_service = BotService(db)
     
     try:
         bot = await bot_service.set_bot_status(
             bot_id=bot_id,
             owner_user_id=current_user.user_id,
-            status='inactive'
+            status=BotStatus.INACTIVE.value
         )
         # Include secret since user owns the bot and needs it for webhook configuration
         return bot_to_response(bot, include_secret=True)

@@ -58,10 +58,19 @@ class MessageProcessor(BaseProcessor):
         """
         # Type narrow config for IDE support
         config: MessageNodeConfig = node.config
-        
-        # Render message with context variables
-        message = self.template_engine.render(config.text, context)
-        
+
+        # Render message with context variables (with error handling)
+        try:
+            message = self.template_engine.render(config.text, context)
+        except Exception as e:
+            self.logger.error(
+                f"Template rendering error in MESSAGE node '{node.id}': {str(e)}",
+                node_id=node.id,
+                error=str(e)
+            )
+            # Fallback to unrendered text to avoid flow crash
+            message = f"Error rendering message: {config.text[:100]}..."
+
         self.logger.debug(
             f"MESSAGE node displaying",
             node_id=node.id,

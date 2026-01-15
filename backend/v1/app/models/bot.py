@@ -3,14 +3,20 @@ Bot Model
 Stores bot definitions with ownership and webhook configuration
 """
 
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, UniqueConstraint, Index, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
+from typing import Optional, TYPE_CHECKING
 import uuid
 
 from app.database import Base
+from app.utils.constants import BotStatus, IntegrationStatus
+
+if TYPE_CHECKING:
+    from app.models.bot_integration import BotIntegration
+    from app.utils.constants import IntegrationPlatform
 
 
 class Bot(Base):
@@ -42,20 +48,15 @@ class Bot(Base):
     
     bot_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
-    name = Column(String(255), nullable=False)
-    description = Column(String(1024), nullable=True)
+    name = Column(String(96), nullable=False)  # Spec line 85: Bot name max 96 characters
+    description = Column(String(512), nullable=True)  # Spec line 86: Bot description max 512 characters
     webhook_secret = Column(String(255), nullable=False)
-    status = Column(String(20), nullable=False, default='active', index=True)
+    status = Column(String(20), nullable=False, default=BotStatus.ACTIVE.value, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False, index=True)
 
-    # WhatsApp/Evolution API integration fields
-    evolution_instance_name = Column(String(255), nullable=True, unique=True, index=True)
-    evolution_instance_status = Column(String(20), nullable=True, default='disconnected')
-    whatsapp_phone_number = Column(String(50), nullable=True)
-    whatsapp_connected_at = Column(DateTime(timezone=True), nullable=True)
-
     __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE', 'INACTIVE')", name='check_bot_status'),
         UniqueConstraint('name', 'owner_user_id', name='unique_bot_name_per_user'),
     )
 
@@ -73,6 +74,12 @@ class Bot(Base):
         lazy="noload",  # Don't load by default (too many)
         cascade="all, delete-orphan"
     )
+    integrations = relationship(
+        "BotIntegration",
+        back_populates="bot",
+        lazy="selectin",  # Eager load integrations
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<Bot(bot_id='{self.bot_id}', name='{self.name}', owner='{self.owner_user_id}')>"
@@ -81,14 +88,37 @@ class Bot(Base):
     def webhook_url(self) -> str:
         """Auto-generated webhook URL per spec line 97"""
         return f"/webhook/{self.bot_id}"
-    
-    def to_dict(self, include_webhook_secret: bool = False):
+
+    def get_integration(self, platform: 'IntegrationPlatform') -> Optional['BotIntegration']:
+        """
+        Get integration by platform enum
+
+        Args:
+            platform: Platform enum value
+
+        Returns:
+            BotIntegration or None
+        """
+        platform_value = platform.value if hasattr(platform, 'value') else platform
+        return next((i for i in self.integrations if i.platform == platform_value), None)
+
+    def has_integration(self, platform: 'IntegrationPlatform') -> bool:
+        """Check if bot has integration for platform"""
+        return self.get_integration(platform) is not None
+
+    @property
+    def active_integrations(self) -> list['BotIntegration']:
+        """Get list of connected integrations"""
+        return [i for i in self.integrations if i.status == IntegrationStatus.CONNECTED.value]
+
+    def to_dict(self, include_webhook_secret: bool = False, include_integrations: bool = False):
         """
         Convert model to dictionary (UUIDs as strings for JSON serialization)
-        
+
         Args:
             include_webhook_secret: Whether to include webhook secret
-        
+            include_integrations: Whether to include integration details
+
         Returns:
             Dictionary representation
         """
@@ -102,20 +132,23 @@ class Bot(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
-        
+
         if include_webhook_secret:
             result["webhook_secret"] = self.webhook_secret
+
+        if include_integrations:
+            result["integrations"] = [i.to_dict() for i in self.integrations]
 
         return result
 
     def is_active(self) -> bool:
         """Check if bot is active"""
-        return self.status == 'active'
-    
+        return self.status == BotStatus.ACTIVE.value
+
     def activate(self):
         """Activate bot"""
-        self.status = 'active'
-    
+        self.status = BotStatus.ACTIVE.value
+
     def deactivate(self):
         """Deactivate bot"""
-        self.status = 'inactive'
+        self.status = BotStatus.INACTIVE.value

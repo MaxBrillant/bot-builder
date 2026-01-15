@@ -1,14 +1,16 @@
 """
 Session Model
-Stores active and historical conversation sessions
+Stores active and historical conversation sessions with encrypted PII
 """
 
-from sqlalchemy import Column, String, Integer, DateTime, CheckConstraint, Index, ForeignKey, text
+from sqlalchemy import Column, String, Integer, DateTime, CheckConstraint, Index, ForeignKey, text, LargeBinary
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy.ext.hybrid import hybrid_property
 from datetime import datetime, timezone
 import uuid
+import json
 
 from app.database import Base
 from app.utils.constants import SessionStatus
@@ -17,12 +19,12 @@ from app.utils.constants import SessionStatus
 class Session(Base):
     """
     Conversation session model
-    
+
     Table: sessions
-    
+
     Fields:
         session_id: Unique session identifier (PK, UUID)
-        channel: Communication channel (e.g., 'whatsapp', 'telegram')
+        channel: Communication channel (e.g., 'WHATSAPP', 'TELEGRAM')
         channel_user_id: Platform-specific user identifier (replaces phone_number)
         bot_id: Bot executing this session (FK to bots)
         flow_id: Reference to flow being executed
@@ -35,14 +37,15 @@ class Session(Base):
         completed_at: Session completion timestamp
         auto_progression_count: Tracks consecutive nodes without user input
         validation_attempts: Tracks validation retry attempts
-    
+        message_history: Conversation message log with timestamps (JSONB array)
+
     Indexes:
         - channel_user_id (for session lookup)
         - bot_id (for bot-specific sessions)
         - status (for filtering active sessions)
         - expires_at (for timeout checks on active sessions)
         - flow_id (for flow usage tracking)
-    
+
     Constraints:
         - Unique (channel, channel_user_id, bot_id) WHERE status = 'ACTIVE'
           Ensures only one active session per user+channel+bot combination
@@ -51,15 +54,27 @@ class Session(Base):
     """
     
     __tablename__ = "sessions"
-    
+
     session_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     channel = Column(String(50), nullable=False)
+
+    # channel_user_id: Plaintext for query support (used in WHERE clauses, unique indexes)
+    # PII protection via masking in logs, not encryption (encryption breaks lookups)
     channel_user_id = Column(String(255), nullable=False, index=True)
+
     bot_id = Column(UUID(as_uuid=True), ForeignKey("bots.bot_id", ondelete="CASCADE"), nullable=False, index=True)
     flow_id = Column(UUID(as_uuid=True), ForeignKey("flows.id", ondelete="CASCADE"), nullable=False, index=True)
-    flow_snapshot = Column(JSONB, nullable=False)
+
+    # ENCRYPTED FIELD: flow_snapshot (contains flow definition, may have sensitive data)
+    # Stored as encrypted bytes, accessed via hybrid property
+    _flow_snapshot_encrypted = Column("flow_snapshot", LargeBinary, nullable=False)
+
     current_node_id = Column(String(96), nullable=False)
-    context = Column(JSONB, default=dict, nullable=False)
+
+    # ENCRYPTED FIELD: context (contains user inputs - PII)
+    # Stored as encrypted bytes, accessed via hybrid property
+    _context_encrypted = Column("context", LargeBinary, nullable=False)
+
     status = Column(
         String(20),
         nullable=False,
@@ -71,7 +86,8 @@ class Session(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     auto_progression_count = Column(Integer, default=0, nullable=False)
     validation_attempts = Column(Integer, default=0, nullable=False)
-    
+    message_history = Column(JSONB, default=lambda: [], nullable=False, server_default='[]')
+
     __table_args__ = (
         CheckConstraint(
             "status IN ('ACTIVE', 'COMPLETED', 'EXPIRED', 'ERROR')",
@@ -96,11 +112,43 @@ class Session(Base):
     bot = relationship("Bot", back_populates="sessions")
     flow = relationship("Flow", back_populates="sessions")
 
+    # Hybrid properties for transparent encryption/decryption of sensitive fields
+    # Note: channel_user_id is NOT encrypted (needed for queries/indexes)
+
+    @hybrid_property
+    def flow_snapshot(self) -> dict:
+        """Decrypt and return flow_snapshot"""
+        from app.utils.encryption import get_encryption_service
+        encryption = get_encryption_service()
+        return encryption.decrypt_json(self._flow_snapshot_encrypted)
+
+    @flow_snapshot.setter
+    def flow_snapshot(self, value: dict):
+        """Encrypt and store flow_snapshot (immutability checked in __setattr__)"""
+        from app.utils.encryption import get_encryption_service
+        encryption = get_encryption_service()
+        self._flow_snapshot_encrypted = encryption.encrypt_json(value)
+
+    @hybrid_property
+    def context(self) -> dict:
+        """Decrypt and return context"""
+        from app.utils.encryption import get_encryption_service
+        encryption = get_encryption_service()
+        decrypted = encryption.decrypt_json(self._context_encrypted)
+        return decrypted if decrypted is not None else {}
+
+    @context.setter
+    def context(self, value: dict):
+        """Encrypt and store context"""
+        from app.utils.encryption import get_encryption_service
+        encryption = get_encryption_service()
+        self._context_encrypted = encryption.encrypt_json(value)
+
     def __setattr__(self, name, value):
         """Prevent modification of flow_snapshot after session creation"""
         if (name == 'flow_snapshot' and
-            hasattr(self, 'flow_snapshot') and
-            self.flow_snapshot is not None and
+            hasattr(self, '_flow_snapshot_encrypted') and
+            self._flow_snapshot_encrypted is not None and
             value != self.flow_snapshot):
             # flow_snapshot already set with different value, prevent modification
             raise ValueError("flow_snapshot is immutable and cannot be modified after session creation")
@@ -108,7 +156,23 @@ class Session(Base):
     
     def __repr__(self):
         return f"<Session(session_id='{self.session_id}', channel='{self.channel}', user='{self.channel_user_id}', bot='{self.bot_id}', status='{self.status}')>"
-    
+
+    @property
+    def session_key(self) -> str:
+        """
+        Generate composite session key string per spec line 2780
+
+        Format: "channel:channel_user_id:bot_id"
+
+        This property provides convenient access to the session key format
+        documented in the specification, though internally the session uses
+        normalized database columns with a unique constraint.
+
+        Returns:
+            Composite session key string
+        """
+        return f"{self.channel}:{self.channel_user_id}:{self.bot_id}"
+
     def to_dict(self, include_snapshot: bool = False):
         """
         Convert model to dictionary

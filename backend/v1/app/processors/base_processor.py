@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Any
 
 from app.models.node_configs import FlowNode, Route, Interrupt
 from app.core.template_engine import TemplateEngine
-from app.core.conditions import ConditionEvaluator, sort_routes
+from app.core.conditions import ConditionEvaluator
 from app.core.validators import InputValidator as ValidationSystem
 from app.utils.logger import get_logger
 
@@ -109,31 +109,30 @@ class BaseProcessor(ABC):
     ) -> Optional[str]:
         """
         Evaluate routes in order, return first match
-        
+
         Args:
-            routes: List of typed Route instances
+            routes: List of typed Route instances (pre-sorted by engine)
             context: Current context for condition evaluation
-            node_type: Type of node (for route sorting). If None, routes are not sorted.
-        
+            node_type: Type of node (unused, kept for backward compatibility)
+
         Returns:
             target_node ID of first matching route, or None if no match
-        
+
         Note:
-            Routes are sorted by priority before evaluation if node_type is provided.
+            Routes are already sorted by priority in the engine before reaching this method.
             Specific conditions are evaluated first, catch-all "true" last.
             First matching condition wins.
             If no route matches, returns None (which typically causes error).
         """
         if not routes:
             return None
-        
-        # Convert to dict format for route_sorter (which expects dicts)
+
+        # Convert Route objects to dict format for iteration
         routes_as_dicts = [{'condition': r.condition, 'target_node': r.target_node} for r in routes]
-        
-        # Sort routes by priority if node_type is provided
-        if node_type:
-            routes_as_dicts = sort_routes(routes_as_dicts, node_type)
-        
+
+        # Note: Routes are already sorted by the engine (see engine.py lines 266-270)
+        # No need to sort again here
+
         for route_dict in routes_as_dicts:
             condition = route_dict['condition']
             target_node = route_dict['target_node']

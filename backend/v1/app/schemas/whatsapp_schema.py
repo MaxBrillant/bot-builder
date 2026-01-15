@@ -16,8 +16,8 @@ class WhatsAppStatusResponse(BaseModel):
     """
     status: str = Field(
         ...,
-        description="Connection status: disconnected, connecting, connected, or error",
-        pattern="^(disconnected|connecting|connected|error)$"
+        description="Connection status: DISCONNECTED, CONNECTING, CONNECTED, or ERROR",
+        pattern="^(DISCONNECTED|CONNECTING|CONNECTED|ERROR)$"
     )
     instance_name: Optional[str] = Field(
         None,
@@ -25,7 +25,7 @@ class WhatsAppStatusResponse(BaseModel):
     )
     phone_number: Optional[str] = Field(
         None,
-        description="Connected WhatsApp phone number (when status=connected)"
+        description="Connected WhatsApp phone number (when status=CONNECTED)"
     )
     connected_at: Optional[datetime] = Field(
         None,
@@ -33,7 +33,7 @@ class WhatsAppStatusResponse(BaseModel):
     )
     qr_code: Optional[str] = Field(
         None,
-        description="Base64-encoded QR code image (only when status=connecting)"
+        description="Base64-encoded QR code image (only when status=CONNECTING)"
     )
     message: Optional[str] = Field(
         None,

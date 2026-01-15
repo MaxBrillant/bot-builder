@@ -5,6 +5,8 @@ Collects and validates user input, saves to context variables
 
 from typing import Optional, Dict, Any
 from app.models.node_configs import FlowNode, PromptNodeConfig, ValidationRule
+from app.models.audit_log import AuditResult
+from app.repositories.audit_log_repository import AuditLogRepository
 from app.processors.base_processor import BaseProcessor, ProcessResult
 from app.processors.retry_handler import RetryHandler
 from app.utils.constants import ValidationType, ErrorMessages
@@ -73,7 +75,16 @@ class PromptProcessor(BaseProcessor):
         
         # First call: display message and wait for input
         if user_input is None:
-            text = self.template_engine.render(config.text, context)
+            try:
+                text = self.template_engine.render(config.text, context)
+            except Exception as e:
+                self.logger.error(
+                    f"Template rendering error in PROMPT node '{node.id}': {str(e)}",
+                    node_id=node.id,
+                    error=str(e)
+                )
+                # Fallback to unrendered text to avoid flow crash
+                text = f"Error rendering prompt: {config.text[:100]}..."
             return ProcessResult(
                 message=text,
                 needs_input=True,
@@ -112,8 +123,16 @@ class PromptProcessor(BaseProcessor):
                 if not is_valid:
                     validation_failed = True
                     error_msg = validation.error_message
-                    # Render template if it contains variables
-                    error_msg = self.template_engine.render(error_msg, context)
+                    # Render template if it contains variables (with error handling)
+                    try:
+                        error_msg = self.template_engine.render(error_msg, context)
+                    except Exception as e:
+                        self.logger.error(
+                            f"Template rendering error for validation error message: {str(e)}",
+                            node_id=node.id
+                        )
+                        # Use unrendered message as fallback
+                        pass
             else:
                 # No validation defined, empty input rejected by default
                 validation_failed = True
@@ -125,8 +144,16 @@ class PromptProcessor(BaseProcessor):
                 if not is_valid:
                     validation_failed = True
                     error_msg = validation.error_message
-                    # Render template if it contains variables
-                    error_msg = self.template_engine.render(error_msg, context)
+                    # Render template if it contains variables (with error handling)
+                    try:
+                        error_msg = self.template_engine.render(error_msg, context)
+                    except Exception as e:
+                        self.logger.error(
+                            f"Template rendering error for validation error message: {str(e)}",
+                            node_id=node.id
+                        )
+                        # Use unrendered message as fallback
+                        pass
         
         # Handle validation failure with retry logic
         if validation_failed:
@@ -135,6 +162,19 @@ class PromptProcessor(BaseProcessor):
                 from app.core.session_manager import SessionManager
                 session_mgr = SessionManager(db)
                 retry_handler = RetryHandler(session_mgr, self.template_engine)
+
+                # Audit log: validation failure
+                audit_log = AuditLogRepository(db)
+                await audit_log.log_validation_failure(
+                    node_id=node.id,
+                    attempt=session.validation_attempts + 1,
+                    user_id=logger.mask_pii(session.channel_user_id, "user_id"),
+                    metadata={
+                        "session_id": str(session.session_id),
+                        "bot_id": str(session.bot_id),
+                        "validation_type": validation.type if validation else "default_required"
+                    }
+                )
 
                 # Handle validation failure
                 retry_result = await retry_handler.handle_validation_failure(
@@ -171,33 +211,85 @@ class PromptProcessor(BaseProcessor):
                 needs_input=True,
                 context=context
             )
-        
-        # Validation passed - reset validation attempts
-        if session and db:
-            from app.core.session_manager import SessionManager
-            session_mgr = SessionManager(db)
-            retry_handler = RetryHandler(session_mgr, self.template_engine)
-            await retry_handler.reset_attempts(session)
-        
+
         # Save to variable
         if config.save_to_variable:
             # Get variable type from flow variables definition
             var_type = self._get_variable_type(config.save_to_variable, context)
-            
+
             # Convert input to appropriate type
             try:
                 converted_value = self.validation_system.convert_type(user_input, var_type)
                 context[config.save_to_variable] = converted_value
-                
+
                 self.logger.info(
                     f"Saved input to variable '{config.save_to_variable}'",
                     variable=config.save_to_variable,
                     type=var_type
                 )
+
+                # Validation and type conversion both passed - reset validation attempts
+                if session and db:
+                    from app.core.session_manager import SessionManager
+                    session_mgr = SessionManager(db)
+                    retry_handler = RetryHandler(session_mgr, self.template_engine)
+                    await retry_handler.reset_attempts(session)
             except Exception as e:
                 self.logger.error(f"Type conversion failed: {str(e)}")
                 # If type conversion fails, treat as validation error
                 error_msg = validation.error_message if validation else "Invalid input format"
+
+                # Handle type conversion failure with retry logic (counts toward max attempts)
+                if session and db:
+                    from app.core.session_manager import SessionManager
+                    session_mgr = SessionManager(db)
+                    retry_handler = RetryHandler(session_mgr, self.template_engine)
+
+                    # Audit log: type conversion failure (counted as validation failure)
+                    audit_log = AuditLogRepository(db)
+                    await audit_log.log_validation_failure(
+                        node_id=node.id,
+                        attempt=session.validation_attempts + 1,
+                        user_id=logger.mask_pii(session.channel_user_id, "user_id"),
+                        metadata={
+                            "session_id": str(session.session_id),
+                            "bot_id": str(session.bot_id),
+                            "validation_type": "type_conversion",
+                            "target_type": var_type,
+                            "error": str(e)
+                        }
+                    )
+
+                    # Handle type conversion failure through retry handler
+                    retry_result = await retry_handler.handle_validation_failure(
+                        session,
+                        context,
+                        error_msg
+                    )
+
+                    # Check if should continue with retry
+                    if retry_result.should_continue:
+                        return ProcessResult(
+                            message=retry_result.error_message,
+                            needs_input=True,
+                            context=context
+                        )
+
+                    # Max attempts reached - route or terminate
+                    if retry_result.terminal:
+                        return ProcessResult(
+                            message=retry_result.error_message,
+                            terminal=True,
+                            context=context
+                        )
+
+                    # Route to fail_route
+                    return ProcessResult(
+                        next_node=retry_result.next_node,
+                        context=context
+                    )
+
+                # No session/db - just return error
                 return ProcessResult(
                     message=error_msg,
                     needs_input=True,

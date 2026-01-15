@@ -157,6 +157,51 @@ class StructuredLogger:
             **kwargs
         )
 
+    def log_security_event(self, event: str, user_id: Optional[str] = None, **kwargs):
+        """
+        Log security-related event
+
+        Args:
+            event: Security event description
+            user_id: Optional user identifier (will be masked)
+            **kwargs: Additional context
+        """
+        log_data = {
+            "event": event,
+            "security_event": True,
+            **kwargs
+        }
+
+        if user_id:
+            log_data["user_id"] = self.mask_pii(user_id, "user_id")
+
+        self.warning(f"Security event: {event}", **log_data)
+
+    def log_authentication_event(self, action: str, user_id: Optional[str] = None, result: str = "success", **kwargs):
+        """
+        Log authentication event
+
+        Args:
+            action: Auth action (login, logout, token_refresh, etc.)
+            user_id: Optional user identifier (will be masked)
+            result: Result of action (success, failed, blocked)
+            **kwargs: Additional context
+        """
+        log_data = {
+            "action": action,
+            "result": result,
+            "auth_event": True,
+            **kwargs
+        }
+
+        if user_id:
+            log_data["user_id"] = self.mask_pii(user_id, "user_id")
+
+        if result == "success":
+            self.info(f"Authentication: {action}", **log_data)
+        else:
+            self.warning(f"Authentication failed: {action}", **log_data)
+
 
 def get_logger(name: str) -> StructuredLogger:
     """Get or create a logger instance"""
