@@ -119,8 +119,12 @@ class Session(Base):
     def flow_snapshot(self) -> dict:
         """Decrypt and return flow_snapshot"""
         from app.utils.encryption import get_encryption_service
+        # Access via __dict__ to avoid SQLAlchemy's InstrumentedAttribute for uninitialized columns
+        encrypted = self.__dict__.get('_flow_snapshot_encrypted')
+        if not isinstance(encrypted, (bytes, str)):
+            return None  # Not yet initialized
         encryption = get_encryption_service()
-        return encryption.decrypt_json(self._flow_snapshot_encrypted)
+        return encryption.decrypt_json(encrypted)
 
     @flow_snapshot.setter
     def flow_snapshot(self, value: dict):
@@ -133,8 +137,12 @@ class Session(Base):
     def context(self) -> dict:
         """Decrypt and return context"""
         from app.utils.encryption import get_encryption_service
+        # Access via __dict__ to avoid SQLAlchemy's InstrumentedAttribute for uninitialized columns
+        encrypted = self.__dict__.get('_context_encrypted')
+        if not isinstance(encrypted, (bytes, str)):
+            return {}  # Not yet initialized
         encryption = get_encryption_service()
-        decrypted = encryption.decrypt_json(self._context_encrypted)
+        decrypted = encryption.decrypt_json(encrypted)
         return decrypted if decrypted is not None else {}
 
     @context.setter
@@ -146,12 +154,15 @@ class Session(Base):
 
     def __setattr__(self, name, value):
         """Prevent modification of flow_snapshot after session creation"""
-        if (name == 'flow_snapshot' and
-            hasattr(self, '_flow_snapshot_encrypted') and
-            self._flow_snapshot_encrypted is not None and
-            value != self.flow_snapshot):
-            # flow_snapshot already set with different value, prevent modification
-            raise ValueError("flow_snapshot is immutable and cannot be modified after session creation")
+        # Check instance __dict__ directly to avoid SQLAlchemy's InstrumentedAttribute descriptor
+        # During object construction, _flow_snapshot_encrypted won't be in __dict__ yet
+        if name == 'flow_snapshot':
+            encrypted = self.__dict__.get('_flow_snapshot_encrypted')
+            if isinstance(encrypted, (bytes, str)):
+                # flow_snapshot is already set - check if trying to modify
+                current = self.flow_snapshot
+                if current is not None and value != current:
+                    raise ValueError("flow_snapshot is immutable and cannot be modified after session creation")
         super().__setattr__(name, value)
     
     def __repr__(self):

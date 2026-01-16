@@ -129,7 +129,7 @@ class SessionManager:
                 user_id=masked_user_id,
                 bot_id=str(bot_id),
                 result=AuditResult.SUCCESS,
-                metadata={
+                event_metadata={
                     "channel": channel,
                     "flow_id": str(flow_id)
                 }
@@ -197,7 +197,7 @@ class SessionManager:
                 user_id=masked_user_id,
                 bot_id=str(bot_id),
                 result=AuditResult.SUCCESS,
-                metadata={"channel": channel}
+                event_metadata={"channel": channel}
             )
     
     async def get_active_session(
@@ -474,7 +474,7 @@ class SessionManager:
             action="session_expired",
             session_id=str(session_id),
             result=AuditResult.SUCCESS,
-            metadata={"reason": "timeout"}
+            event_metadata={"reason": "timeout"}
         )
     
     async def error_session(self, session_id: UUID):

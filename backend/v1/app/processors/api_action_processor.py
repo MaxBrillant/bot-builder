@@ -137,7 +137,7 @@ class APIActionProcessor(BaseProcessor):
                 status_code=api_response.status_code,
                 user_id=logger.mask_pii(session.channel_user_id, "user_id") if hasattr(session, 'channel_user_id') else None,
                 result=AuditResult.SUCCESS if is_success else AuditResult.FAILED,
-                metadata={
+                event_metadata={
                     "session_id": str(session.session_id) if hasattr(session, 'session_id') else None,
                     "bot_id": str(session.bot_id) if hasattr(session, 'bot_id') else None,
                     "node_id": node.id,

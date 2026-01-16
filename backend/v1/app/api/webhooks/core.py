@@ -139,7 +139,7 @@ async def process_bot_message(
                 action="rate_limit_exceeded",
                 user_id=masked_user,
                 result=AuditResult.BLOCKED,
-                metadata={
+                event_metadata={
                     "bot_id": str(bot_id),
                     "channel": message_data.channel
                 }
@@ -179,7 +179,7 @@ async def process_bot_message(
             action="input_sanitized",
             user_id=masked_user_id,
             result=AuditResult.SUCCESS,
-            metadata={
+            event_metadata={
                 "bot_id": str(bot_id),
                 "channel": message_data.channel,
                 "null_bytes_removed": sanitization_metadata['null_bytes_removed'],
@@ -204,7 +204,7 @@ async def process_bot_message(
             action="pattern_rejected",
             user_id=masked_user_id,
             result=AuditResult.BLOCKED,
-            metadata={
+            event_metadata={
                 "bot_id": str(bot_id),
                 "channel": message_data.channel,
                 "pattern_type": pattern_type,

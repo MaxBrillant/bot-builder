@@ -339,8 +339,11 @@ class RedisManager:
 
         try:
             # Validate structure before caching
+            # flow_data is a wrapper with: id, name, bot_id, flow_definition, trigger_keywords, etc.
+            # The actual flow structure (start_node_id, nodes) is inside flow_definition
+            flow_definition = flow_data.get('flow_definition', {})
             required_keys = {'name', 'start_node_id', 'nodes'}
-            if not all(key in flow_data for key in required_keys):
+            if not all(key in flow_definition for key in required_keys):
                 logger.error(f"Invalid flow structure for caching: {flow_id}")
                 return
             

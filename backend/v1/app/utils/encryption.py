@@ -88,16 +88,26 @@ class EncryptionService:
             data: Encrypted bytes
 
         Returns:
-            Decrypted string, or empty string if data is empty
+            Decrypted string, or empty string if data is empty/None
 
         Raises:
+            TypeError: If data is not bytes or str
             InvalidToken: If decryption fails (invalid key, corrupted data)
 
         Note:
             Decryption failures are logged for security monitoring.
         """
-        if not data:
+        if data is None or (isinstance(data, (bytes, str)) and not data):
             return ''
+
+        # Validate input type before attempting decryption
+        if not isinstance(data, (bytes, str)):
+            logger.error(
+                "Decryption failed - invalid input type",
+                error=f"Expected bytes or str, got {type(data).__name__}",
+                security_event="DECRYPTION_TYPE_ERROR"
+            )
+            raise TypeError(f"decrypt() expects bytes or str, got {type(data).__name__}")
 
         try:
             decrypted = self.cipher.decrypt(data).decode('utf-8')
@@ -145,14 +155,24 @@ class EncryptionService:
             data: Encrypted bytes containing JSON
 
         Returns:
-            Parsed JSON object, or None if data is empty
+            Parsed JSON object, or None if data is empty/None
 
         Raises:
+            TypeError: If data is not bytes or str
             InvalidToken: If decryption fails
             json.JSONDecodeError: If decrypted data is not valid JSON
         """
-        if not data:
+        if data is None or (isinstance(data, (bytes, str)) and not data):
             return None
+
+        # Validate input type before attempting decryption
+        if not isinstance(data, (bytes, str)):
+            logger.error(
+                "Decryption failed - invalid input type",
+                error=f"Expected bytes or str, got {type(data).__name__}",
+                security_event="DECRYPTION_TYPE_ERROR"
+            )
+            raise TypeError(f"decrypt_json() expects bytes or str, got {type(data).__name__}")
 
         try:
             decrypted_string = self.decrypt(data)

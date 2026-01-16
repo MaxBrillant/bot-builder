@@ -330,7 +330,7 @@ class FlowExecutor:
                 node_id=session.current_node_id,
                 bot_id=str(session.bot_id),
                 result=AuditResult.SUCCESS,
-                metadata={
+                event_metadata={
                     "node_type": node_type.value if hasattr(node_type, 'value') else str(node_type),
                     "session_id": str(session.session_id),
                     "has_user_input": user_input is not None

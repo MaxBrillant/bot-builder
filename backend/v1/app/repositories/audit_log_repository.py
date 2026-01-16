@@ -28,7 +28,7 @@ class AuditLogRepository:
         user_id: Optional[str] = None,
         resource_type: Optional[str] = None,
         resource_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        event_metadata: Optional[Dict[str, Any]] = None
     ) -> AuditLog:
         """
         Create a new audit log entry
@@ -40,14 +40,14 @@ class AuditLogRepository:
             user_id: Masked user identifier (optional)
             resource_type: Type of resource affected (optional)
             resource_id: ID of resource affected (optional)
-            metadata: Additional context (optional)
+            event_metadata: Additional context (optional)
 
         Returns:
             Created AuditLog instance
 
         Note:
             - user_id should already be masked before calling this method
-            - metadata should not contain sensitive data
+            - event_metadata should not contain sensitive data
         """
         audit_log = AuditLog(
             event_type=event_type,
@@ -56,7 +56,7 @@ class AuditLogRepository:
             user_id=user_id,
             resource_type=resource_type,
             resource_id=resource_id,
-            metadata=metadata or {}
+            event_metadata=event_metadata or {}
         )
 
         self.db.add(audit_log)
@@ -70,7 +70,7 @@ class AuditLogRepository:
         action: str,
         user_id: str,
         result: str = AuditResult.SUCCESS,
-        metadata: Optional[Dict[str, Any]] = None
+        event_metadata: Optional[Dict[str, Any]] = None
     ) -> AuditLog:
         """
         Log user action
@@ -79,7 +79,7 @@ class AuditLogRepository:
             action: Action description (e.g., "message_received", "input_validated")
             user_id: Masked user identifier
             result: Action result
-            metadata: Additional context
+            event_metadata: Additional context
 
         Returns:
             Created audit log entry
@@ -89,7 +89,7 @@ class AuditLogRepository:
             action=action,
             result=result,
             user_id=user_id,
-            metadata=metadata
+            event_metadata=event_metadata
         )
 
     async def log_session_event(
@@ -99,7 +99,7 @@ class AuditLogRepository:
         user_id: Optional[str] = None,
         bot_id: Optional[str] = None,
         result: str = AuditResult.SUCCESS,
-        metadata: Optional[Dict[str, Any]] = None
+        event_metadata: Optional[Dict[str, Any]] = None
     ) -> AuditLog:
         """
         Log session lifecycle event
@@ -110,12 +110,12 @@ class AuditLogRepository:
             user_id: Masked user identifier (optional)
             bot_id: Bot identifier (optional)
             result: Event result
-            metadata: Additional context
+            event_metadata: Additional context
 
         Returns:
             Created audit log entry
         """
-        audit_metadata = metadata or {}
+        audit_metadata = event_metadata or {}
         audit_metadata["session_id"] = session_id
         if bot_id:
             audit_metadata["bot_id"] = bot_id
@@ -127,7 +127,7 @@ class AuditLogRepository:
             user_id=user_id,
             resource_type="session",
             resource_id=session_id,
-            metadata=audit_metadata
+            event_metadata=audit_metadata
         )
 
     async def log_api_call(
@@ -137,7 +137,7 @@ class AuditLogRepository:
         status_code: Optional[int] = None,
         user_id: Optional[str] = None,
         result: str = AuditResult.SUCCESS,
-        metadata: Optional[Dict[str, Any]] = None
+        event_metadata: Optional[Dict[str, Any]] = None
     ) -> AuditLog:
         """
         Log external API call
@@ -148,16 +148,16 @@ class AuditLogRepository:
             status_code: Response status code (optional)
             user_id: Masked user identifier (optional)
             result: Call result
-            metadata: Additional context (NO sensitive headers/body)
+            event_metadata: Additional context (NO sensitive headers/body)
 
         Returns:
             Created audit log entry
 
         Note:
             - URL should not contain sensitive query params
-            - metadata should not contain auth headers or tokens
+            - event_metadata should not contain auth headers or tokens
         """
-        audit_metadata = metadata or {}
+        audit_metadata = event_metadata or {}
         audit_metadata["method"] = method
         audit_metadata["url"] = url
         if status_code:
@@ -168,7 +168,7 @@ class AuditLogRepository:
             action=f"api_call_{method.lower()}",
             result=result,
             user_id=user_id,
-            metadata=audit_metadata
+            event_metadata=audit_metadata
         )
 
     async def log_validation_failure(
@@ -176,7 +176,7 @@ class AuditLogRepository:
         node_id: str,
         attempt: int,
         user_id: str,
-        metadata: Optional[Dict[str, Any]] = None
+        event_metadata: Optional[Dict[str, Any]] = None
     ) -> AuditLog:
         """
         Log input validation failure
@@ -185,12 +185,12 @@ class AuditLogRepository:
             node_id: Node identifier where validation failed
             attempt: Attempt number
             user_id: Masked user identifier
-            metadata: Additional context
+            event_metadata: Additional context
 
         Returns:
             Created audit log entry
         """
-        audit_metadata = metadata or {}
+        audit_metadata = event_metadata or {}
         audit_metadata["node_id"] = node_id
         audit_metadata["attempt"] = attempt
 
@@ -199,7 +199,7 @@ class AuditLogRepository:
             action="input_validation_failed",
             result=AuditResult.FAILED,
             user_id=user_id,
-            metadata=audit_metadata
+            event_metadata=audit_metadata
         )
 
     async def log_authentication(
@@ -207,7 +207,7 @@ class AuditLogRepository:
         action: str,
         user_id: Optional[str] = None,
         result: str = AuditResult.SUCCESS,
-        metadata: Optional[Dict[str, Any]] = None
+        event_metadata: Optional[Dict[str, Any]] = None
     ) -> AuditLog:
         """
         Log authentication event
@@ -216,7 +216,7 @@ class AuditLogRepository:
             action: Auth action (e.g., "login", "logout", "token_refresh")
             user_id: Masked user identifier (optional)
             result: Auth result
-            metadata: Additional context
+            event_metadata: Additional context
 
         Returns:
             Created audit log entry
@@ -226,7 +226,7 @@ class AuditLogRepository:
             action=action,
             result=result,
             user_id=user_id,
-            metadata=metadata
+            event_metadata=event_metadata
         )
 
     async def log_security_event(
@@ -234,7 +234,7 @@ class AuditLogRepository:
         action: str,
         user_id: Optional[str] = None,
         result: str = AuditResult.BLOCKED,
-        metadata: Optional[Dict[str, Any]] = None
+        event_metadata: Optional[Dict[str, Any]] = None
     ) -> AuditLog:
         """
         Log security event (sanitization, pattern rejection, rate limiting)
@@ -243,7 +243,7 @@ class AuditLogRepository:
             action: Security action (e.g., "input_sanitized", "pattern_rejected", "rate_limited")
             user_id: Masked user identifier (optional)
             result: Event result
-            metadata: Additional context
+            event_metadata: Additional context
 
         Returns:
             Created audit log entry
@@ -253,7 +253,7 @@ class AuditLogRepository:
             action=action,
             result=result,
             user_id=user_id,
-            metadata=metadata
+            event_metadata=event_metadata
         )
 
     async def log_flow_execution(
@@ -264,7 +264,7 @@ class AuditLogRepository:
         user_id: Optional[str] = None,
         bot_id: Optional[str] = None,
         result: str = AuditResult.SUCCESS,
-        metadata: Optional[Dict[str, Any]] = None
+        event_metadata: Optional[Dict[str, Any]] = None
     ) -> AuditLog:
         """
         Log flow execution step
@@ -276,12 +276,12 @@ class AuditLogRepository:
             user_id: Masked user identifier (optional)
             bot_id: Bot identifier (optional)
             result: Execution result
-            metadata: Additional context
+            event_metadata: Additional context
 
         Returns:
             Created audit log entry
         """
-        audit_metadata = metadata or {}
+        audit_metadata = event_metadata or {}
         audit_metadata["flow_id"] = flow_id
         audit_metadata["node_id"] = node_id
         if bot_id:
@@ -294,7 +294,7 @@ class AuditLogRepository:
             user_id=user_id,
             resource_type="flow",
             resource_id=flow_id,
-            metadata=audit_metadata
+            event_metadata=audit_metadata
         )
 
     async def get_recent_logs(

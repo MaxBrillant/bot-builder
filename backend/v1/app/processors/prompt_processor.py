@@ -169,7 +169,7 @@ class PromptProcessor(BaseProcessor):
                     node_id=node.id,
                     attempt=session.validation_attempts + 1,
                     user_id=logger.mask_pii(session.channel_user_id, "user_id"),
-                    metadata={
+                    event_metadata={
                         "session_id": str(session.session_id),
                         "bot_id": str(session.bot_id),
                         "validation_type": validation.type if validation else "default_required"
@@ -251,7 +251,7 @@ class PromptProcessor(BaseProcessor):
                         node_id=node.id,
                         attempt=session.validation_attempts + 1,
                         user_id=logger.mask_pii(session.channel_user_id, "user_id"),
-                        metadata={
+                        event_metadata={
                             "session_id": str(session.session_id),
                             "bot_id": str(session.bot_id),
                             "validation_type": "type_conversion",

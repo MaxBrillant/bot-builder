@@ -27,7 +27,7 @@ class AuditLog(Base):
         resource_id: ID of the resource (bot_id, flow_id, session_id, etc.)
         action: Specific action taken (indexed)
         result: Outcome of the action (success, error, blocked)
-        metadata: Additional context as JSON (optional)
+        event_metadata: Additional context as JSON (optional)
 
     Event Types:
         - user_action: User interactions (message received, input validation)
@@ -66,7 +66,7 @@ class AuditLog(Base):
     resource_id = Column(String(255), nullable=True)
     action = Column(String(128), nullable=False, index=True)
     result = Column(String(32), nullable=False)  # success, error, blocked, etc.
-    metadata = Column(JSONB, nullable=True)
+    event_metadata = Column(JSONB, nullable=True)
 
     __table_args__ = (
         # Compound index for efficient event_type + timestamp queries
@@ -90,7 +90,7 @@ class AuditLog(Base):
             "resource_id": self.resource_id,
             "action": self.action,
             "result": self.result,
-            "metadata": self.metadata
+            "event_metadata": self.event_metadata
         }
 
 

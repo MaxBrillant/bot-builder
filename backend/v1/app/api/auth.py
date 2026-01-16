@@ -328,7 +328,7 @@ async def delete_user_data(
         action="user_data_deletion_requested",
         user_id=logger.mask_pii(user_email, "email"),
         result=AuditResult.SUCCESS,
-        metadata={
+        event_metadata={
             "user_id_hash": user_id[:8] + "...",  # Partial ID for audit trail
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
@@ -376,7 +376,7 @@ async def delete_user_data(
             action="user_data_deletion_failed",
             user_id=logger.mask_pii(user_email, "email"),
             result=AuditResult.FAILED,
-            metadata={"error": str(e)[:100]}  # Truncate error for audit
+            event_metadata={"error": str(e)[:100]}  # Truncate error for audit
         )
 
         raise HTTPException(

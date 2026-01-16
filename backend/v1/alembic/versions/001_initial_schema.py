@@ -146,7 +146,7 @@ def upgrade() -> None:
         sa.Column('resource_id', sa.String(length=255), nullable=True),
         sa.Column('action', sa.String(length=128), nullable=False),
         sa.Column('result', sa.String(length=32), nullable=False),
-        sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('event_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_audit_logs_timestamp'), 'audit_logs', ['timestamp'], unique=False)
