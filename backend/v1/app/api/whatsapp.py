@@ -4,6 +4,7 @@ Endpoints for connecting and managing WhatsApp integrations via Evolution API v2
 """
 
 import asyncio
+from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -187,16 +188,82 @@ async def get_whatsapp_status(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get WhatsApp connection status from database (updated by webhooks)."""
+    """
+    Get WhatsApp connection status with real-time verification.
+
+    Always queries Evolution API for current status to ensure accuracy,
+    especially after server restarts when webhooks might be missed.
+    """
     await verify_bot_ownership(db, bot_id, current_user.user_id)
     integration = await get_or_create_whatsapp_integration(db, bot_id)
 
-    return WhatsAppStatusResponse(
-        status=integration.status or IntegrationStatus.DISCONNECTED.value,
-        instance_name=integration.config.get('instance_name'),
-        phone_number=integration.config.get('phone_number'),
-        connected_at=integration.connected_at
-    )
+    instance_name = integration.config.get('instance_name')
+
+    # If no instance configured, return disconnected
+    if not instance_name:
+        return WhatsAppStatusResponse(
+            status=IntegrationStatus.DISCONNECTED.value,
+            instance_name=None,
+            phone_number=None,
+            connected_at=None
+        )
+
+    # Query Evolution API for real-time status
+    try:
+        http_client = await get_http_client()
+        evolution_service = EvolutionAPIService(http_client)
+
+        # Get connection state from Evolution API
+        state_response = await evolution_service.get_connection_state(instance_name)
+
+        # Extract state from response: {"instance": {"state": "open"}}
+        connection_state = state_response.get("instance", {}).get("state", "close")
+
+        # Map Evolution API status to our status enum
+        if connection_state == "open":
+            real_time_status = IntegrationStatus.CONNECTED.value
+        elif connection_state == "connecting":
+            real_time_status = IntegrationStatus.CONNECTING.value
+        else:
+            real_time_status = IntegrationStatus.DISCONNECTED.value
+
+        # Sync database if status differs (fix stale data)
+        if integration.status != real_time_status:
+            logger.info(
+                f"Syncing WhatsApp status for bot {bot_id}: "
+                f"DB={integration.status} -> Evolution={real_time_status}"
+            )
+            integration.status = real_time_status
+
+            # Update connected_at timestamp
+            if real_time_status == IntegrationStatus.CONNECTED.value and not integration.connected_at:
+                integration.connected_at = datetime.now(timezone.utc)
+            elif real_time_status != IntegrationStatus.CONNECTED.value:
+                integration.connected_at = None
+
+            await db.commit()
+
+        return WhatsAppStatusResponse(
+            status=real_time_status,
+            instance_name=instance_name,
+            phone_number=integration.config.get('phone_number'),
+            connected_at=integration.connected_at
+        )
+
+    except EvolutionAPIError as e:
+        # Evolution API unreachable or instance not found
+        # Fall back to database status but log the issue
+        logger.warning(
+            f"Failed to query Evolution API for bot {bot_id}: {e}. "
+            f"Returning database status: {integration.status}"
+        )
+
+        return WhatsAppStatusResponse(
+            status=integration.status or IntegrationStatus.DISCONNECTED.value,
+            instance_name=instance_name,
+            phone_number=integration.config.get('phone_number'),
+            connected_at=integration.connected_at
+        )
 
 
 @router.post("/{bot_id}/whatsapp/disconnect", response_model=WhatsAppStatusResponse)

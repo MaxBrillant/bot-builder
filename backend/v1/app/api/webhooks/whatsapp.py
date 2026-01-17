@@ -214,7 +214,7 @@ async def receive_evolution_system_event(
         elif event_type == "CONNECTION_UPDATE":
             await handle_connection_update(event_data)
         elif event_type == "MESSAGES_UPSERT":
-            logger.warning("MESSAGES_UPSERT at system webhook - should use /webhooks/whatsapp/{bot_id}")
+            await handle_messages_upsert(event_data)
         else:
             logger.debug(f"Unhandled event type: {event_type}")
     except Exception as e:
@@ -327,3 +327,35 @@ async def handle_connection_update(event_data: Dict[str, Any]):
 
     except Exception as e:
         logger.error(f"Failed to update connection status: {e}", exc_info=True)
+
+
+async def handle_messages_upsert(event_data: Dict[str, Any]):
+    """
+    Handle incoming WhatsApp messages from Evolution API webhook.
+
+    Extracts bot_id from instance_name and delegates to existing
+    receive_whatsapp_message handler to avoid code duplication.
+    """
+    instance_name = event_data.get("instance")
+
+    logger.info(f"Processing MESSAGES_UPSERT for {instance_name}")
+    # Log entire data structure to debug @lid issue
+    import json
+    data = event_data.get("data", {})
+    logger.info(f"Full webhook data: {json.dumps(data, indent=2)}")
+
+    try:
+        bot_id = extract_bot_id_from_instance_name(instance_name)
+    except (ValueError, TypeError) as e:
+        logger.error(f"Failed to extract bot_id from {instance_name}: {e}")
+        return
+
+    # Delegate to existing WhatsApp message handler
+    # This reuses all security controls, PII masking, and audit logging
+    async for db in get_db():
+        try:
+            await receive_whatsapp_message(bot_id, event_data, db)
+        except Exception as e:
+            logger.error(f"Error processing MESSAGES_UPSERT: {e}", bot_id=str(bot_id), exc_info=True)
+        finally:
+            break

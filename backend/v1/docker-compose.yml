@@ -6,7 +6,7 @@ services:
       - "8000:8000"
     environment:
       # Database config (nested with __)
-      - DATABASE__URL=postgresql+asyncpg://botbuilder:${DB_PASSWORD:-password}@db:5432/botbuilder
+      - DATABASE__URL=postgresql+asyncpg://botbuilder:${DB_PASSWORD}@db:5432/botbuilder
       # Redis config (nested with __)
       - REDIS__URL=redis://redis:6379/0
       - REDIS__ENABLED=true
@@ -17,7 +17,7 @@ services:
       - SECURITY__ACCESS_TOKEN_EXPIRE_MINUTES=30
       # Evolution API config (nested with __)
       - EVOLUTION_API__URL=http://evolution-api:8080
-      - EVOLUTION_API__API_KEY=${EVOLUTION_API_KEY:-B6D711FCDE4D4FD5936544120E713976}
+      - EVOLUTION_API__API_KEY=${EVOLUTION_API_KEY}
       - EVOLUTION_API__ENABLED=true
       - EVOLUTION_API__WEBHOOK_BASE_URL=http://api:8000
       # App config (lowercase)
@@ -40,7 +40,7 @@ services:
     environment:
       - POSTGRES_DB=botbuilder
       - POSTGRES_USER=botbuilder
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-password}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -65,9 +65,11 @@ services:
     networks:
       - botbuilder-network
 
-  # Evolution API for WhatsApp Integration (v2.2.3)
+  # Evolution API for WhatsApp Integration (v2.3.7 - built from source)
   evolution-api:
-    image: atendai/evolution-api:v2.2.3
+    build:
+      context: .
+      dockerfile: Dockerfile.evolution
     ports:
       - "8080:8080"
     environment:
@@ -80,7 +82,7 @@ services:
       - CORS_CREDENTIALS=true
 
       # Authentication
-      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-B6D711FCDE4D4FD5936544120E713976}
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
       - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
 
       # Instance Management
@@ -90,7 +92,7 @@ services:
       # Database Configuration (PostgreSQL via Prisma)
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
-      - DATABASE_CONNECTION_URI=postgresql://botbuilder:${DB_PASSWORD:-password}@db:5432/evolution?schema=public
+      - DATABASE_CONNECTION_URI=postgresql://botbuilder:${DB_PASSWORD}@db:5432/evolution?schema=public
       - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
       - DATABASE_SAVE_DATA_INSTANCE=true
       - DATABASE_SAVE_DATA_NEW_MESSAGE=true
@@ -126,6 +128,14 @@ services:
       - WEBHOOK_GLOBAL_URL=
       - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false
 
+      # Webhook Events (enable specific events to be fired)
+      - WEBHOOK_EVENTS_QRCODE_UPDATED=true
+      - WEBHOOK_EVENTS_CONNECTION_UPDATE=true
+      - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
+      - WEBHOOK_EVENTS_MESSAGES_UPDATE=false
+      - WEBHOOK_EVENTS_MESSAGES_DELETE=false
+      - WEBHOOK_EVENTS_SEND_MESSAGE=false
+
       # Language
       - LANGUAGE=en
     volumes:
@@ -140,7 +150,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1",
+          "wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1",
         ]
       interval: 10s
       timeout: 5s
