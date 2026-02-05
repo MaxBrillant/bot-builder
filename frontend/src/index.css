@@ -1,60 +1,202 @@
 @import "tailwindcss";
 
+:root {
+  --radius: 0.5rem;
+
+  /* Layout Colors */
+  --background: oklch(1 0 0); /* White */
+  --foreground: oklch(0.145 0 0); /* Near black */
+  --card: oklch(1 0 0); /* White */
+  --card-foreground: oklch(0.145 0 0); /* Near black */
+  --popover: oklch(1 0 0); /* White */
+  --popover-foreground: oklch(0.145 0 0); /* Near black */
+
+  /* Primary (near-black buttons) */
+  --primary: oklch(0.205 0 0); /* Near black */
+  --primary-foreground: oklch(0.985 0 0); /* Off white */
+
+  /* Secondary/Muted */
+  --secondary: oklch(0.964 0 0); /* Light gray */
+  --secondary-foreground: oklch(0.205 0 0); /* Near black */
+  --muted: oklch(0.964 0 0); /* Light gray */
+  --muted-foreground: oklch(0.506 0 0); /* Medium gray */
+  --accent: oklch(0.964 0 0); /* Light gray */
+  --accent-foreground: oklch(0.205 0 0); /* Near black */
+
+  /* Semantic Colors */
+  --destructive: oklch(0.577 0.245 27.325); /* Red */
+  --destructive-foreground: oklch(0.985 0 0); /* Off white */
+  --success: oklch(0.657 0.191 145.469); /* Green */
+  --success-foreground: oklch(0.985 0 0); /* Off white */
+
+  /* Borders */
+  --border: oklch(0.922 0 0); /* Light gray */
+  --input: oklch(0.922 0 0); /* Light gray */
+  --ring: oklch(0.205 0 0); /* Near black */
+
+  /* Node Type Colors */
+  --node-prompt: oklch(0.627 0.216 255.365); /* Blue */
+  --node-menu: oklch(0.626 0.249 301.799); /* Purple */
+  --node-api: oklch(0.657 0.191 145.469); /* Green */
+  --node-logic: oklch(0.675 0.241 43.068); /* Orange */
+  --node-message: oklch(0.685 0.161 210.514); /* Cyan */
+  --node-end: oklch(0.577 0.245 27.325); /* Red */
+}
+
+.dark {
+  --radius: 0.5rem;
+
+  /* Layout Colors */
+  --background: oklch(0.15 0 0); /* Dark gray */
+  --foreground: oklch(0.985 0 0); /* Off white */
+  --card: oklch(0.18 0 0); /* Slightly lighter dark */
+  --card-foreground: oklch(0.985 0 0); /* Off white */
+  --popover: oklch(0.18 0 0); /* Slightly lighter dark */
+  --popover-foreground: oklch(0.985 0 0); /* Off white */
+
+  /* Primary (light buttons on dark) */
+  --primary: oklch(0.985 0 0); /* Off white */
+  --primary-foreground: oklch(0.145 0 0); /* Near black */
+
+  /* Secondary/Muted */
+  --secondary: oklch(0.25 0 0); /* Dark gray */
+  --secondary-foreground: oklch(0.985 0 0); /* Off white */
+  --muted: oklch(0.25 0 0); /* Dark gray */
+  --muted-foreground: oklch(0.6 0 0); /* Light gray */
+  --accent: oklch(0.25 0 0); /* Dark gray */
+  --accent-foreground: oklch(0.985 0 0); /* Off white */
+
+  /* Semantic Colors */
+  --destructive: oklch(0.577 0.245 27.325); /* Red */
+  --destructive-foreground: oklch(0.985 0 0); /* Off white */
+  --success: oklch(0.657 0.191 145.469); /* Green */
+  --success-foreground: oklch(0.985 0 0); /* Off white */
+
+  /* Borders */
+  --border: oklch(0.3 0 0); /* Dark gray border */
+  --input: oklch(0.3 0 0); /* Dark gray border */
+  --ring: oklch(0.985 0 0); /* Off white */
+
+  /* Node Type Colors - same as light mode */
+  --node-prompt: oklch(0.627 0.216 255.365); /* Blue */
+  --node-menu: oklch(0.626 0.249 301.799); /* Purple */
+  --node-api: oklch(0.657 0.191 145.469); /* Green */
+  --node-logic: oklch(0.675 0.241 43.068); /* Orange */
+  --node-message: oklch(0.685 0.161 210.514); /* Cyan */
+  --node-end: oklch(0.577 0.245 27.325); /* Red */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-node-prompt: var(--node-prompt);
+  --color-node-menu: var(--node-menu);
+  --color-node-api: var(--node-api);
+  --color-node-logic: var(--node-logic);
+  --color-node-message: var(--node-message);
+  --color-node-end: var(--node-end);
+}
+
 @layer base {
-  :root {
-    /* Layout Colors - shadcn standard */
-    --background: 0 0% 100%;           /* White */
-    --foreground: 240 10% 3.9%;        /* Near black */
+  * {
+    @apply border-border;
+  }
 
-    /* Card System */
-    --card: 0 0% 100%;                 /* White */
-    --card-foreground: 240 10% 3.9%;   /* Near black */
+  body {
+    @apply bg-background text-foreground;
+  }
 
-    /* Popover/Dropdown */
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
+  /* React Flow Background - More subtle */
+  .react-flow__background {
+    opacity: 0.75;
+  }
 
-    /* Primary Action - shadcn standard near-black */
-    --primary: 240 5.9% 10%;           /* Near black */
-    --primary-foreground: 0 0% 98%;    /* Off white */
+  .dark .react-flow__background {
+    opacity: 0.2;
+  }
 
-    /* Secondary Action */
-    --secondary: 240 4.8% 95.9%;       /* Light gray */
-    --secondary-foreground: 240 5.9% 10%;
+  /* React Flow Controls - Better contrast */
+  .react-flow__controls {
+    background: var(--background) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 0.5rem !important;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1) !important;
+  }
 
-    /* Muted (backgrounds, disabled states) */
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
+  .react-flow__controls button {
+    background: var(--background) !important;
+    border-bottom: 1px solid var(--border) !important;
+    color: var(--foreground) !important;
+  }
 
-    /* Accent (hover states, active items) */
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
+  .react-flow__controls button:hover {
+    background: var(--accent) !important;
+  }
 
-    /* Destructive (delete, errors) */
-    --destructive: 0 84.2% 60.2%;      /* Red */
-    --destructive-foreground: 0 0% 98%;
+  .react-flow__controls button:last-child {
+    border-bottom: none !important;
+  }
 
-    /* Border System */
-    --border: 240 5.9% 90%;            /* Light gray */
-    --input: 240 5.9% 90%;             /* Input borders */
+  .react-flow__controls button svg {
+    fill: var(--foreground) !important;
+  }
 
-    /* Ring (focus states) */
-    --ring: 240 5.9% 10%;
+  /* React Flow Edge Labels - Theme aware */
+  .react-flow__edge-text {
+    fill: var(--foreground) !important;
+  }
 
-    /* Chart/Node Type Colors (functional) - shadcn chart pattern */
-    --chart-1: 221.2 83.2% 53.3%;     /* Blue - Prompt */
-    --chart-2: 262.1 83.3% 57.8%;     /* Purple - Menu */
-    --chart-3: 142.1 76.2% 36.3%;     /* Green - API_ACTION */
-    --chart-4: 24.6 95% 53.1%;        /* Orange - Logic */
-    --chart-5: 188.7 85.9% 45.9%;     /* Cyan - Message */
-    --chart-6: 0 84.2% 60.2%;         /* Red - End */
+  .react-flow__edge-textbg {
+    fill: var(--background) !important;
+  }
 
-    /* Radius */
-    --radius: 0.5rem;
+  /* React Flow Edges - Subtle in dark mode */
+  .react-flow__edge-path {
+    stroke: var(--muted-foreground) !important;
+  }
+
+  .react-flow__edge .react-flow__edge-path {
+    stroke-width: 2;
+  }
+
+  /* React Flow Edge Markers (arrows) */
+  .react-flow__arrowhead path,
+  .react-flow__edge-marker path {
+    fill: var(--muted-foreground) !important;
+    stroke: none !important;
+    opacity: 1 !important;
+  }
+
+  marker path {
+    fill: var(--muted-foreground) !important;
+  }
+
+  /* React Flow MiniMap - Subtle viewport indicator */
+  .react-flow__minimap-mask {
+    fill: var(--muted);
+    fill-opacity: 0.7 !important;
   }
 }
 
-/* Tailwind v4 button cursor fix - official workaround */
 @layer utilities {
   button:not(:disabled) {
     cursor: pointer;

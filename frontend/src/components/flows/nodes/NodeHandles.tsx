@@ -1,0 +1,90 @@
+import { Handle } from "reactflow";
+import type { FlowNode } from "@/lib/types";
+import { HANDLE_POSITIONS, getActiveOutputHandles, hasIncomingConnections } from "@/lib/handlePositioning";
+
+// Type aliases for reactflow (v11 export issues)
+const Position = {
+  Left: "left" as const,
+  Right: "right" as const,
+  Top: "top" as const,
+  Bottom: "bottom" as const,
+};
+
+interface NodeHandlesProps {
+  node: FlowNode;
+  allNodes: Record<string, FlowNode>;
+  isEndNode?: boolean;
+  outputHandleIds?: string[]; // Exact handle IDs assigned to edges
+}
+
+/**
+ * Renders visible handles for a node based on the new handle system:
+ * - Single LEFT input handle (only if node has incoming connections)
+ * - Output handles on RIGHT/TOP/BOTTOM (renders the exact handles assigned to edges)
+ *
+ * Both regular and stub edges use the same handle positioning system
+ */
+export default function NodeHandles({ node, allNodes, isEndNode = false, outputHandleIds }: NodeHandlesProps) {
+  // Render the exact handles that were assigned to edges
+  const outputHandles = isEndNode || !outputHandleIds ? [] : getActiveOutputHandles(outputHandleIds);
+  const showInputHandle = hasIncomingConnections(node.id, allNodes);
+
+  return (
+    <>
+      {/* INPUT HANDLE - Only visible if node has incoming connections - SQUARE to differentiate */}
+      {showInputHandle && (
+        <Handle
+          id="left"
+          type="target"
+          position={Position.Left}
+          className="!w-3 !h-3 !border-0 !bg-muted-foreground hover:!bg-foreground transition-colors !rounded-none"
+          style={{
+            top: `${HANDLE_POSITIONS.INPUT.position * 100}%`,
+            left: "-6px",
+          }}
+        />
+      )}
+
+      {/* OUTPUT HANDLES - Only render for active routes - CIRCULAR */}
+      {outputHandles.map((handle) => {
+        let position: typeof Position.Right | typeof Position.Top | typeof Position.Bottom;
+        let style: React.CSSProperties = {};
+
+        switch (handle.side) {
+          case "right":
+            position = Position.Right;
+            style = {
+              top: `${handle.position * 100}%`,
+              right: "-6px",
+            };
+            break;
+          case "top":
+            position = Position.Top;
+            style = {
+              left: `${handle.position * 100}%`,
+              top: "-6px",
+            };
+            break;
+          case "bottom":
+            position = Position.Bottom;
+            style = {
+              left: `${handle.position * 100}%`,
+              bottom: "-6px",
+            };
+            break;
+        }
+
+        return (
+          <Handle
+            key={handle.handleId}
+            id={handle.handleId}
+            type="source"
+            position={position}
+            className="!w-3 !h-3 !border-0 !bg-muted-foreground hover:!bg-foreground transition-colors !rounded-full"
+            style={style}
+          />
+        );
+      })}
+    </>
+  );
+}
