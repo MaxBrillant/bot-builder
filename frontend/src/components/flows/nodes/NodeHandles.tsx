@@ -2,14 +2,6 @@ import { Handle } from "reactflow";
 import type { FlowNode } from "@/lib/types";
 import { HANDLE_POSITIONS, getActiveOutputHandles, hasIncomingConnections } from "@/lib/handlePositioning";
 
-// Type aliases for reactflow (v11 export issues)
-const Position = {
-  Left: "left" as const,
-  Right: "right" as const,
-  Top: "top" as const,
-  Bottom: "bottom" as const,
-};
-
 interface NodeHandlesProps {
   node: FlowNode;
   allNodes: Record<string, FlowNode>;
@@ -36,7 +28,7 @@ export default function NodeHandles({ node, allNodes, isEndNode = false, outputH
         <Handle
           id="left"
           type="target"
-          position={Position.Left}
+          position={"left" as any}
           className="!w-3 !h-3 !border-0 !bg-muted-foreground hover:!bg-foreground transition-colors !rounded-none"
           style={{
             top: `${HANDLE_POSITIONS.INPUT.position * 100}%`,
@@ -47,33 +39,28 @@ export default function NodeHandles({ node, allNodes, isEndNode = false, outputH
 
       {/* OUTPUT HANDLES - Only render for active routes - CIRCULAR */}
       {outputHandles.map((handle) => {
-        let position: typeof Position.Right | typeof Position.Top | typeof Position.Bottom;
         let style: React.CSSProperties = {};
 
         switch (handle.side) {
           case "right":
-            position = Position.Right;
             style = {
               top: `${handle.position * 100}%`,
               right: "-6px",
             };
             break;
           case "top":
-            position = Position.Top;
             style = {
               left: `${handle.position * 100}%`,
               top: "-6px",
             };
             break;
           case "bottom":
-            position = Position.Bottom;
             style = {
               left: `${handle.position * 100}%`,
               bottom: "-6px",
             };
             break;
           default:
-            position = Position.Right;
             style = {
               top: `${handle.position * 100}%`,
               right: "-6px",
@@ -85,7 +72,7 @@ export default function NodeHandles({ node, allNodes, isEndNode = false, outputH
             key={handle.handleId}
             id={handle.handleId}
             type="source"
-            position={position}
+            position={(handle.side || "right") as any}
             className="!w-3 !h-3 !border-0 !bg-muted-foreground hover:!bg-foreground transition-colors !rounded-full"
             style={style}
           />
