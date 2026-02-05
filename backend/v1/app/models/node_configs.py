@@ -227,7 +227,9 @@ class ValidationRule(BaseModel):
                 )
 
         # Check for unsupported input properties (beyond 'length')
-        input_properties = re.findall(r'input\.(\w+)(?!\s*\()', expr)
+        # Find all input.xxx references, then exclude methods to get only properties
+        all_input_refs = re.findall(r'input\.(\w+)', expr)
+        input_properties = [ref for ref in all_input_refs if ref not in input_methods]
         supported_properties = ['length']
 
         for prop in input_properties:
@@ -416,12 +418,17 @@ class APIResponseMapping(BaseModel):
     Response mapping for API_ACTION nodes.
 
     Maps data from API response to flow variables.
+
+    Supports dict, array, and primitive root responses:
+    - Dict root: Use "field", "data.nested"
+    - Array root: Use "*" (entire array), "*.0" (first item), "*.0.field"
+    - Primitive root: Use "*"
     """
     source_path: str = Field(
         ...,
         min_length=1,
         max_length=SystemConstraints.MAX_SOURCE_PATH_LENGTH,
-        description="JSON path to extract from response (e.g., 'data.user.id')"
+        description="JSON path to extract from response (e.g., 'data.user.id', '*', '*.0.id')"
     )
     target_variable: str = Field(
         ...,
@@ -433,11 +440,19 @@ class APIResponseMapping(BaseModel):
     @field_validator('source_path')
     @classmethod
     def validate_source_path(cls, v: str) -> str:
-        """Ensure source_path uses dot notation only (spec lines 865, 960)"""
+        """
+        Ensure source_path uses dot notation only (spec lines 865, 960)
+
+        Supports:
+        - Dict root: "field", "data.nested"
+        - Array root: "*", "*.0", "*.0.field"
+        - Primitive root: "*"
+        """
         if '[' in v or ']' in v:
             raise ValueError(
                 f"Bracket notation not supported in source_path. "
-                f"Use dot notation instead (e.g., 'data.items.0.name' not 'data.items[0].name')"
+                f"Use dot notation instead (e.g., 'data.items.0.name' not 'data.items[0].name'). "
+                f"For root arrays, use '*' prefix (e.g., '*.0.id')."
             )
         return v
 
@@ -557,27 +572,61 @@ class APIResponse(BaseModel):
     def extract_value(self, path: str) -> Any:
         """
         Safely extract value from body using dot notation
-        
+
         Args:
-            path: Dot-separated path like "data.user.name" or "items[0].id"
-            
+            path: Dot-separated path like "data.user.name", "items.0.id", or "*" for root
+
         Returns:
             Extracted value or None if path not found
+
+        Path Syntax:
+            - "*" - return entire root (any type)
+            - "field" - dict field access (requires dict root)
+            - "*.0" - array index access (requires array root)
+            - "*.0.field" - nested access in root array
+            - "data.items.0.id" - nested dict/array traversal
         """
-        if not isinstance(self.body, dict):
-            return None
-        
+        # Special case: "*" returns entire body
+        if path == "*":
+            return self.body
+
+        # Check if path starts with "*." (root array/primitive access)
+        if path.startswith("*."):
+            # Root must be array or list for "*." prefix
+            if not isinstance(self.body, (list, tuple)):
+                return None  # Invalid: * prefix on non-array root
+
+            # Remove "*." prefix and continue with array as current
+            path = path[2:]  # "*.0.id" becomes "0.id"
+            current = self.body
+        else:
+            # Normal path - starts with field name
+            # Root should be dict for field access
+            if not isinstance(self.body, dict):
+                return None  # Invalid: field access on non-dict root
+
+            current = self.body
+
+        # Traverse path parts
         keys = path.split('.')
-        current = self.body
-        
         for key in keys:
+            if current is None:
+                return None
+
             if isinstance(current, dict):
                 current = current.get(key)
-                if current is None:
-                    return None
+            elif isinstance(current, (list, tuple)):
+                try:
+                    index = int(key)
+                    if 0 <= index < len(current):
+                        current = current[index]
+                    else:
+                        return None  # Index out of bounds
+                except ValueError:
+                    return None  # Non-numeric index on array
             else:
-                return None
-        
+                return None  # Cannot traverse further
+
         return current
     
     model_config = {"frozen": True, "arbitrary_types_allowed": True}

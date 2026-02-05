@@ -13,6 +13,9 @@ from app.models.bot import Bot
 from app.repositories.bot_repository import BotRepository
 from app.utils.exceptions import BotNotFoundError, UnauthorizedError
 from app.utils.constants import BotStatus
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class BotService:
@@ -62,7 +65,9 @@ class BotService:
         self.db.add(bot)
         await self.db.commit()
         await self.db.refresh(bot)
-        
+
+        logger.info(f"Bot created: {bot.bot_id} (name: {bot.name})", owner_user_id=str(owner_user_id))
+
         return bot
     
     async def get_bot(
@@ -161,9 +166,11 @@ class BotService:
         
         await self.db.commit()
         await self.db.refresh(bot)
-        
+
+        logger.info(f"Bot updated: {bot.bot_id} (name: {bot.name})", owner_user_id=str(owner_user_id))
+
         return bot
-    
+
     async def delete_bot(
         self,
         bot_id: UUID,
@@ -184,6 +191,8 @@ class BotService:
 
         await self.bot_repo.delete(bot)
         await self.db.commit()
+
+        logger.info(f"Bot deleted: {bot_id} (name: {bot.name})", owner_user_id=str(owner_user_id))
     
     async def regenerate_webhook_secret(
         self,
@@ -210,7 +219,9 @@ class BotService:
         
         await self.db.commit()
         await self.db.refresh(bot)
-        
+
+        logger.info(f"Webhook secret regenerated for bot: {bot.bot_id}", owner_user_id=str(owner_user_id))
+
         return bot
     
     async def verify_webhook_secret(
@@ -264,3 +275,77 @@ class BotService:
             UnauthorizedError: User doesn't own this bot
         """
         return await self.update_bot(bot_id, owner_user_id, status=status)
+
+    async def create_example_bot_for_user(self, user_id) -> None:
+        """
+        Create a "Getting Started" bot with example flows for a new user
+
+        This is called automatically after user registration to provide
+        ready-to-use examples demonstrating all bot capabilities.
+
+        Args:
+            user_id: UUID of the newly registered user
+
+        Returns:
+            None (errors are silently caught to avoid blocking registration)
+        """
+        try:
+            # Import here to avoid circular dependency
+            from app.services.flow_service import FlowService
+            from app.utils.example_flows import get_all_example_flows
+
+            # Create the example bot
+            bot = await self.create_bot(
+                name="Getting Started",
+                owner_user_id=user_id,
+                description="Example flows demonstrating bot capabilities"
+            )
+
+            logger.info(
+                f"Created example bot for new user",
+                user_id=str(user_id),
+                bot_id=str(bot.bot_id)
+            )
+
+            # Create all example flows
+            flow_service = FlowService(self.db)
+            example_flows = get_all_example_flows()
+
+            for flow_definition in example_flows:
+                try:
+                    await flow_service.create_flow(
+                        flow_data=flow_definition,
+                        bot_id=bot.bot_id
+                    )
+                except Exception as e:
+                    # Continue creating other flows even if one fails
+                    error_details = str(e)
+                    validation_errors = None
+
+                    # Extract validation errors from metadata (FlowValidationError stores errors there)
+                    if hasattr(e, 'metadata') and isinstance(e.metadata, dict):
+                        validation_errors = e.metadata.get('errors')
+
+                    logger.error(
+                        f"Failed to create example flow: {flow_definition.get('name', 'Unknown')}",
+                        error=error_details,
+                        error_type=type(e).__name__,
+                        validation_errors=validation_errors,
+                        user_id=str(user_id)
+                    )
+                    continue
+
+            logger.info(
+                f"Successfully created example bot with flows",
+                user_id=str(user_id),
+                bot_id=str(bot.bot_id),
+                flow_count=len(example_flows)
+            )
+
+        except Exception as e:
+            # Don't raise - we don't want registration to fail if example bot creation fails
+            logger.error(
+                f"Failed to create example bot for user",
+                user_id=str(user_id),
+                error=str(e)
+            )

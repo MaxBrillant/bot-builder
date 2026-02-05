@@ -538,7 +538,7 @@ This allows nodes to reference other nodes that appear later in the JSON (order-
 - **Only start node has no parent** - only the start_node_id should have no parent (not be referenced in any route). All other nodes must have at least one parent (be referenced as target_node in at least one route). Orphan nodes are invalid.
 - **Route conditions unique per node** - no duplicate conditions within a single node's routes array (case-insensitive)
 - No circular references - ALL loops are invalid (strict interpretation: any path that returns to a previously visited node is rejected, even if there's an exit path)
-- Variable types valid (string, number, boolean, array)
+- Variable types valid (STRING, NUMBER, BOOLEAN, ARRAY)
 - fail_route is required when retry_logic is defined, and must reference existing node
 - Constraints respected:
   - Max 48 nodes per flow
@@ -625,16 +625,18 @@ Bot Builder Instance 3 ←
   ```json
   {
     "variable_name": {
-      "type": "string|number|boolean|array",
+      "type": "STRING|NUMBER|BOOLEAN|ARRAY",
       "default": null | value
     }
   }
   ```
 - **Supported Types**:
-  - `string`: Text values (default max 256 characters)
-  - `number`: Numeric values (integers and decimals, standard JSON number)
-  - `boolean`: true/false
-  - `array`: Lists of items (default max 24 items)
+  - `STRING`: Text values (default max 256 characters)
+  - `NUMBER`: Numeric values (integers and decimals, standard JSON number)
+  - `BOOLEAN`: true/false
+  - `ARRAY`: Lists of items (default max 24 items)
+
+  **Important**: Type names are UPPERCASE as they are defined as enum values in the backend.
 - **Type Enforcement & Conversion Process**:
   1. User provides input (always received as string)
   2. PROMPT validates the input format (regex or expression validation)
@@ -652,10 +654,10 @@ Bot Builder Instance 3 ←
 - **Example**:
   ```json
   "variables": {
-    "user_name": { "type": "string", "default": null },
-    "age": { "type": "number", "default": 0 },
-    "is_verified": { "type": "boolean", "default": false },
-    "items": { "type": "array", "default": [] }
+    "user_name": { "type": "STRING", "default": null },
+    "age": { "type": "NUMBER", "default": 0 },
+    "is_verified": { "type": "BOOLEAN", "default": false },
+    "items": { "type": "ARRAY", "default": [] }
   }
   ```
 
@@ -799,6 +801,7 @@ Every node has this base structure:
 
 ```json
 {
+  "type": "PROMPT",
   "text": "string (required)",
   "save_to_variable": "string (required)",
   "validation": {
@@ -815,13 +818,16 @@ Every node has this base structure:
 }
 ```
 
-**Required**: `text`, `save_to_variable`
+**Required**: `type`, `text`, `save_to_variable`
 **Optional**: `validation`, `interrupts`
+
+**Note**: The `type` field in the config must match the node's `type` field. The backend automatically injects this during validation if omitted, but it's recommended to include it explicitly.
 
 #### MENU Node Config
 
 ```json
 {
+  "type": "MENU",
   "text": "string (required)",
   "source_type": "STATIC|DYNAMIC (required)",
   "source_variable": "string (required if DYNAMIC)",
@@ -847,7 +853,7 @@ Every node has this base structure:
 }
 ```
 
-**Required**: `text`, `source_type`
+**Required**: `type`, `text`, `source_type`
 **Conditionally Required**:
 
 - `source_variable` and `item_template` if `source_type` is `DYNAMIC`
@@ -862,13 +868,33 @@ Every node has this base structure:
 When extracting fields from selected menu item, the system uses **type inference** based on the flow's `variables` section:
 
 1. **Extract value** using `source_path` from the selected item (dot notation only, max 256 characters)
-   - ✅ Supported: `data.user.name`, `items.0.price` (array index with dot)
+   - ✅ Supported: `id`, `data.user.name`, `items.0.price` (array index with dot)
    - ❌ NOT supported: `items[0].price` (bracket notation)
 2. **Look up** `target_variable` in the flow's `variables` section to determine the declared type
-3. **Attempt type conversion** based on the variable's declared type (string, number, boolean, array)
+3. **Attempt type conversion** based on the variable's declared type (STRING, NUMBER, BOOLEAN, ARRAY)
 4. **On success**: Save converted value to context
 5. **On failure** (missing path OR conversion error): Set variable to `null`
 6. **All mappings execute independently** - one failure doesn't affect others
+
+**Source Path Syntax**:
+
+The `source_path` uses **dot notation** to traverse the selected menu item's structure:
+
+**Dictionary (Object) Access**:
+- Direct field: `id`, `name`, `status`
+- Nested fields: `user.name`, `driver.profile.rating`
+- Deep nesting: `data.nested.deep.field` (unlimited depth)
+
+**Array Access**:
+- Array element: `items.0`, `tags.2` (zero-based index with dot)
+- Element field: `items.0.id`, `drivers.1.name`
+- Nested arrays: `data.trips.0.stops.1.location`
+
+**NOT Supported**:
+- Bracket notation: `items[0]` ❌ (use `items.0` instead)
+- Array length: `items.length` ❌
+- Leading/trailing dots: `.field`, `field.` ❌
+- Empty path: `""` ❌
 
 **Type Inference Behavior**:
 
@@ -883,10 +909,10 @@ When extracting fields from selected menu item, the system uses **type inference
 ```json
 // Flow variables declaration:
 "variables": {
-  "trip_id": { "type": "string", "default": null },
-  "driver": { "type": "string", "default": null },
-  "seats_available": { "type": "number", "default": 0 },
-  "is_verified": { "type": "boolean", "default": false }
+  "trip_id": { "type": "STRING", "default": null },
+  "driver": { "type": "STRING", "default": null },
+  "seats_available": { "type": "NUMBER", "default": 0 },
+  "is_verified": { "type": "BOOLEAN", "default": false }
 }
 
 // Selected item (user chose option 2):
@@ -933,15 +959,21 @@ See [Type Inference in Output Mappings](#type-inference-in-output-mappings) sect
 
 ```json
 {
+  "type": "API_ACTION",
   "request": {
     "method": "GET|POST|PUT|DELETE|PATCH (required)",
     "url": "string (required, supports templates for query parameters)",
-    "headers": { "object (optional, max 10 headers, name max 128 chars, value max 2048 chars)" },
-    "body": { "object (optional)" }
+    "headers": [
+      {
+        "name": "string (required, max 128 chars)",
+        "value": "string (required, max 2048 chars, supports templates)"
+      }
+    ],
+    "body": "string (optional, JSON string with template support)"
   },
   "response_map": [
     {
-      "source_path": "string (required, max 256 chars, dot notation only)",
+      "source_path": "string (required, max 256 chars, supports dot notation and * for root)",
       "target_variable": "string (required)"
     }
   ],
@@ -952,18 +984,79 @@ See [Type Inference in Output Mappings](#type-inference-in-output-mappings) sect
 }
 ```
 
+**Important Notes**:
+- **headers**: Array of objects (max 10 headers), each with `name` and `value` properties. Both fields support template variables.
+- **body**: JSON string (not object). Template variables are rendered before sending. For POST/PUT/PATCH requests only.
+
 **response_map Behavior**:
 
 The `response_map` uses **type inference** to convert API response values based on the flow's `variables` section:
 
 1. **Extract value** from response using `source_path` (dot notation only, max 256 characters)
-   - ✅ Supported: `data.user.id`, `items.0.name` (array index with dot)
+   - ✅ Supported: `data.user.id`, `items.0.name` (array index with dot), `*` (root reference)
    - ❌ NOT supported: `items[0].name` (bracket notation)
 2. **Look up** `target_variable` in flow's `variables` section to determine declared type
-3. **Attempt type conversion** based on variable's declared type (string, number, boolean, array)
+3. **Attempt type conversion** based on variable's declared type (STRING, NUMBER, BOOLEAN, ARRAY)
 4. **On success**: Save converted value to context
 5. **On failure** (missing path OR conversion error): Set variable to `null`
 6. **All mappings execute independently** - conversion failures don't affect other mappings
+
+**Source Path Syntax**:
+
+The `source_path` uses **dot notation** to traverse the API response structure. The syntax adapts based on the **root response type**:
+
+**Dictionary (Object) Root Response**:
+- Direct field: `status`, `data`, `user_id`
+  - Example response: `{"status": "ok", "data": {...}}`
+  - Path: `status` → `"ok"`
+- Nested fields: `data.user.name`, `result.profile.email`
+  - Example response: `{"data": {"user": {"name": "Alice"}}}`
+  - Path: `data.user.name` → `"Alice"`
+- Array within dict: `items`, `items.0`, `items.0.id`
+  - Example response: `{"items": [{"id": "123"}]}`
+  - Path: `items.0.id` → `"123"`
+
+**Array Root Response** (requires `*` prefix):
+- Entire array: `*`
+  - Example response: `[{"id": "aaa"}, {"id": "bbb"}]`
+  - Path: `*` → `[{"id": "aaa"}, {"id": "bbb"}]`
+- Array element: `*.0`, `*.1`, `*.5`
+  - Example response: `[{"id": "aaa"}, {"id": "bbb"}]`
+  - Path: `*.0` → `{"id": "aaa"}`
+- Element field: `*.0.id`, `*.1.name`
+  - Example response: `[{"id": "aaa", "name": "Alice"}]`
+  - Path: `*.0.id` → `"aaa"`
+- Nested access: `*.0.profile.email`
+  - Example response: `[{"profile": {"email": "a@example.com"}}]`
+  - Path: `*.0.profile.email` → `"a@example.com"`
+
+**Primitive Root Response** (requires `*`):
+- Entire value: `*`
+  - Example response: `"token_abc123"`
+  - Path: `*` → `"token_abc123"`
+  - Example response: `12345`
+  - Path: `*` → `12345`
+
+**Path Syntax Rules**:
+
+- ✅ Root dict field: `field`, `data.nested`
+- ✅ Root array: `*`, `*.0`, `*.0.field`
+- ✅ Root primitive: `*`
+- ✅ Nested arrays in dict: `data.items.0.id`
+- ❌ Bracket notation: `items[0]` (use `items.0`)
+- ❌ `*` on dict root: `*.field` (use `field` directly)
+- ❌ `*` for nested arrays: `data.items.*.0` (use `data.items.0`)
+- ❌ Bare index on root array: `0` (use `*.0`)
+- ❌ Array length: `items.length`
+- ❌ Empty path: `""`
+
+**Why `*` is Required for Root Arrays**:
+
+When the API returns an array at root level, the `*` prefix explicitly signals "I'm working with the root as a collection." This prevents ambiguity:
+- `"0"` on its own looks like accessing a field named "0" (which doesn't exist)
+- `"*.0"` clearly indicates "access index 0 of the root array"
+
+For dictionary roots, field names are unambiguous, so no prefix is needed.
 
 **Type Inference Details**:
 
@@ -973,15 +1066,15 @@ The `response_map` uses **type inference** to convert API response values based 
 - Invalid conversions → variable set to `null` (no errors thrown)
 - Conversion failures in mappings **do not** count toward validation retry attempts
 
-**Example**:
+**Example 1: Dictionary Root Response**
 
 ```json
 // Flow variables declaration:
 "variables": {
-  "user_id": { "type": "string", "default": null },
-  "age": { "type": "number", "default": 0 },
-  "is_verified": { "type": "boolean", "default": false },
-  "tags": { "type": "array", "default": [] }
+  "user_id": { "type": "STRING", "default": null },
+  "age": { "type": "NUMBER", "default": 0 },
+  "is_verified": { "type": "BOOLEAN", "default": false },
+  "tags": { "type": "ARRAY", "default": [] }
 }
 
 // API Response:
@@ -999,6 +1092,98 @@ The `response_map` uses **type inference** to convert API response values based 
 // age = 25  (converted from "25" string to number)
 // is_verified = true  (converted from "true" string to boolean)
 // tags = ["active", "premium"]  (array, as declared)
+```
+
+**Example 2: Array Root Response (Entire Array)**
+
+```json
+// Flow variables declaration:
+"variables": {
+  "all_rides": { "type": "ARRAY", "default": [] }
+}
+
+// API Response:
+// [{"id": "aaa", "where_from": "Gitega", "price": 10000}, {"id": "bbb", "where_from": "Bujumbura", "price": 15000}]
+
+"response_map": [
+  {"source_path": "*", "target_variable": "all_rides"}
+]
+
+// Result in context:
+// all_rides = [{"id": "aaa", "where_from": "Gitega", "price": 10000}, {"id": "bbb", "where_from": "Bujumbura", "price": 15000}]
+// Note: If array exceeds 24 items, it will be truncated to first 24
+```
+
+**Example 3: Array Root Response (Extract Fields from First Item)**
+
+```json
+// Flow variables declaration:
+"variables": {
+  "ride_id": { "type": "STRING", "default": null },
+  "origin": { "type": "STRING", "default": null },
+  "destination": { "type": "STRING", "default": null },
+  "price": { "type": "NUMBER", "default": 0 }
+}
+
+// API Response:
+// [{"id": "aafa1564", "where_from": "Gitega", "where_to": "Bujumbura", "price_per_seat": 10000}]
+
+"response_map": [
+  {"source_path": "*.0.id", "target_variable": "ride_id"},
+  {"source_path": "*.0.where_from", "target_variable": "origin"},
+  {"source_path": "*.0.where_to", "target_variable": "destination"},
+  {"source_path": "*.0.price_per_seat", "target_variable": "price"}
+]
+
+// Result in context:
+// ride_id = "aafa1564"  (string)
+// origin = "Gitega"  (string)
+// destination = "Bujumbura"  (string)
+// price = 10000  (number)
+```
+
+**Example 4: Array Root Response (Mixed Extraction)**
+
+```json
+// Flow variables declaration:
+"variables": {
+  "all_users": { "type": "ARRAY", "default": [] },
+  "first_user_id": { "type": "STRING", "default": null },
+  "first_user_name": { "type": "STRING", "default": null }
+}
+
+// API Response:
+// [{"id": "aaa", "name": "Alice"}, {"id": "bbb", "name": "Bob"}]
+
+"response_map": [
+  {"source_path": "*", "target_variable": "all_users"},
+  {"source_path": "*.0.id", "target_variable": "first_user_id"},
+  {"source_path": "*.0.name", "target_variable": "first_user_name"}
+]
+
+// Result in context:
+// all_users = [{"id": "aaa", "name": "Alice"}, {"id": "bbb", "name": "Bob"}]
+// first_user_id = "aaa"
+// first_user_name = "Alice"
+```
+
+**Example 5: Primitive Root Response**
+
+```json
+// Flow variables declaration:
+"variables": {
+  "auth_token": { "type": "STRING", "default": null }
+}
+
+// API Response (raw string):
+// "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+"response_map": [
+  {"source_path": "*", "target_variable": "auth_token"}
+]
+
+// Result in context:
+// auth_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
 **Handling Missing/Invalid Data**:
@@ -1028,9 +1213,29 @@ The `response_map` uses **type inference** to convert API response values based 
 // Result: count = null  (conversion failed)
 ```
 
+**Empty Array Response**:
+
+```json
+// API Response: []
+
+"response_map": [
+  {"source_path": "*", "target_variable": "results"}
+]
+
+// Result:
+// results = []  (empty array)
+```
+
 See [Type Inference in Output Mappings](#type-inference-in-output-mappings) section for comprehensive details.
 
-**Success Check Expression**: The optional `expression` field checks response body content for additional success validation.
+**Success Check Behavior**:
+
+The `success_check` determines whether an API call succeeded. Both `status_codes` and `expression` are evaluated on **equal footing with AND logic**:
+
+- **No success_check provided**: Default behavior checks if status code is in 200-299 range
+- **Only `status_codes` provided**: Status code must be in the specified list
+- **Only `expression` provided**: Expression must evaluate to `true`
+- **Both provided**: **BOTH conditions must pass** (AND logic)
 
 **Available variables in expression**:
 
@@ -1046,6 +1251,12 @@ See [Type Inference in Output Mappings](#type-inference-in-output-mappings) sect
   "expression": "response.body.id != null && response.body.success == true"
 }
 ```
+
+In this example, the API call is considered successful **only if**:
+1. Status code is 200 or 201, **AND**
+2. Response body has `id != null` and `success == true`
+
+If status is 200 but `success == false`, the call routes to the `error` condition.
 
 **Required**: `request` with `method` and `url`
 **Optional**: `response_map`, `success_check`, `headers`, `body`
@@ -1071,10 +1282,10 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 
 | Declared Type | Conversion Behavior               | Examples                                                                              |
 | ------------- | --------------------------------- | ------------------------------------------------------------------------------------- |
-| `string`      | No conversion, value stored as-is | `"123"` → `"123"`, `123` → `"123"`                                                    |
-| `number`      | Parse to numeric value            | `"42"` → `42`, `"3.14"` → `3.14`, `"abc"` → `null`                                    |
-| `boolean`     | Parse to true/false               | `"true"` → `true`, `"false"` → `false`, `1` → `true`, `0` → `false`, `"yes"` → `null` |
-| `array`       | Expect array value                | `["a","b"]` → `["a","b"]`, `"abc"` → `null`                                           |
+| `STRING`      | No conversion, value stored as-is | `"123"` → `"123"`, `123` → `"123"`                                                    |
+| `NUMBER`      | Parse to numeric value            | `"42"` → `42`, `"3.14"` → `3.14`, `"abc"` → `null`                                    |
+| `BOOLEAN`     | Parse to true/false               | `"true"` → `true`, `"false"` → `false`, `1` → `true`, `0` → `false`, `"yes"` → `null` |
+| `ARRAY`       | Expect array value                | `["a","b"]` → `["a","b"]`, `"abc"` → `null`                                           |
 
 #### Benefits of Type Inference
 
@@ -1120,11 +1331,11 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 ```json
 {
   "variables": {
-    "trip_id": { "type": "string", "default": null },
-    "departure_time": { "type": "string", "default": null },
-    "available_seats": { "type": "number", "default": 0 },
-    "price": { "type": "number", "default": 0 },
-    "is_express": { "type": "boolean", "default": false }
+    "trip_id": { "type": "STRING", "default": null },
+    "departure_time": { "type": "STRING", "default": null },
+    "available_seats": { "type": "NUMBER", "default": 0 },
+    "price": { "type": "NUMBER", "default": 0 },
+    "is_express": { "type": "BOOLEAN", "default": false }
   },
   "nodes": {
     "node_select_trip": {
@@ -1173,10 +1384,10 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 ```json
 {
   "variables": {
-    "booking_id": { "type": "string", "default": null },
-    "total_amount": { "type": "number", "default": 0 },
-    "is_confirmed": { "type": "boolean", "default": false },
-    "payment_methods": { "type": "array", "default": [] }
+    "booking_id": { "type": "STRING", "default": null },
+    "total_amount": { "type": "NUMBER", "default": 0 },
+    "is_confirmed": { "type": "BOOLEAN", "default": false },
+    "payment_methods": { "type": "ARRAY", "default": [] }
   },
   "nodes": {
     "node_create_booking": {
@@ -1186,7 +1397,7 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
           "method": "POST",
           "url": "https://api.example.com/bookings",
           "body": {
-            "trip_id": "{{context.trip_id}}",
+            "trip_id": "{{trip_id}}",
             "user_id": "{{user.channel_id}}"
           }
         },
@@ -1303,10 +1514,12 @@ This design allows flows to continue gracefully when external data is malformed,
 #### LOGIC_EXPRESSION Node Config
 
 ```json
-{}
+{
+  "type": "LOGIC_EXPRESSION"
+}
 ```
 
-No configuration needed (empty object).
+**Required**: `type`
 
 **Note**: LOGIC_EXPRESSION nodes perform internal conditional routing based on the `routes` array. All logic is defined in the route conditions, not in the node config.
 
@@ -1314,19 +1527,22 @@ No configuration needed (empty object).
 
 ```json
 {
+  "type": "MESSAGE",
   "text": "string (required)"
 }
 ```
 
-**Required**: `text`
+**Required**: `type`, `text`
 
 #### END Node Config
 
 ```json
-{}
+{
+  "type": "END"
+}
 ```
 
-No configuration needed (empty object).
+**Required**: `type`
 
 ### Flow Structure Rules
 
@@ -1669,7 +1885,7 @@ See the Tujane driver flow in [`flows/tujane_driver_flow_v1.json`](flows/tujane_
 - Limits enforced during flow validation and runtime execution
 - Input sanitization (4096 chars): Applied automatically at webhook ingestion. Truncation logged but user not notified. See Section 10.1 for complete sanitization rules.
 - Array length limit (24 items): Enforced whenever an array is written to context (defaults, API responses, MENU mappings). Arrays exceeding 24 items are silently truncated to first 24 items.
-- Source path notation: Only dot notation supported (e.g., `data.items.0.name`). Bracket notation (e.g., `items[0]`) NOT supported in mappings.
+- Source path notation: Only dot notation supported (e.g., `data.items.0.name`). Bracket notation (e.g., `items[0]`) NOT supported. Root array/primitive access requires `*` prefix (e.g., `*`, `*.0`, `*.0.field`).
 
 ### ⚠️ Design Constraints
 
@@ -1910,7 +2126,7 @@ When user enters invalid selection (out of range, non-numeric, etc.):
       { "input": "0", "target_node": "node_cancel" }, // ✅ Outside range
       { "input": "back", "target_node": "node_previous" } // ✅ Text keyword
     ],
-    "error_message": "Invalid selection. Please enter a number between 1 and {{context.trips.length}}."
+    "error_message": "Invalid selection. Please enter a valid number from the list above."
   }
 }
 ```
@@ -1939,7 +2155,7 @@ When user enters invalid selection (out of range, non-numeric, etc.):
 - ✅ Custom headers
 - ✅ Response data extraction with path notation
 - ✅ Success/failure routing
-- ✅ Type conversion (string, number, boolean, array)
+- ✅ Type conversion (STRING, NUMBER, BOOLEAN, ARRAY)
 
 **Constraints**:
 
@@ -1955,6 +2171,78 @@ When user enters invalid selection (out of range, non-numeric, etc.):
 - ❌ Must complete before flow continues
 - ❌ Cannot abort mid-request
 - ✅ **JSON-only responses**: Non-JSON responses route to `error` condition
+- ✅ **Request body type preservation**: Template variables in request body preserve their native JSON types. Numbers, booleans, and arrays are rendered with proper JSON types (not converted to strings). Type is determined by the variable's declared type in flow definition, or inferred from the actual value if no type is declared.
+
+**Request Body Type Preservation**:
+
+When rendering template variables in JSON request bodies, the system preserves native JSON types:
+
+**Type Resolution Order**:
+
+1. **Check flow variable type definition** (if variable declared in flow)
+2. **Infer from actual value type** (if no type declared)
+3. **Preserve as-is** for arrays
+
+**Type Preservation Examples**:
+
+```json
+// Flow variables definition
+"variables": {
+  "fee_amount": { "type": "NUMBER", "default": 0 },
+  "is_premium": { "type": "BOOLEAN", "default": false },
+  "user_name": { "type": "STRING", "default": "" }
+}
+
+// Request body template
+"body": {
+  "amount": "{{fee_amount}}",
+  "premium": "{{is_premium}}",
+  "name": "{{user_name}}"
+}
+
+// Context values: fee_amount = 500, is_premium = true, user_name = "Alice"
+// Rendered JSON sent to API:
+{
+  "amount": 500,           // ✅ Number (not "500")
+  "premium": true,         // ✅ Boolean (not "true")
+  "name": "Alice"          // ✅ String
+}
+```
+
+**Type Inference Without Declaration**:
+
+```json
+// No variable declarations, values set dynamically from API response
+// Context: {price: 99.99, active: false, items: ["a", "b"]}
+
+"body": {
+  "price": "{{price}}",      // → 99.99 (number inferred)
+  "active": "{{active}}",    // → false (boolean inferred)
+  "items": "{{items}}"       // → ["a", "b"] (array preserved)
+}
+```
+
+**String Values Remain Strings**:
+
+```json
+// Even if a string contains only digits, it remains a string
+// Context: {user_id: "12345", count: 12345}
+
+"body": {
+  "user_id": "{{user_id}}",  // → "12345" (string)
+  "count": "{{count}}"       // → 12345 (number)
+}
+```
+
+**Best Practice**: Always declare variable types in flow definition for predictable behavior:
+
+```json
+"variables": {
+  "amount": { "type": "number" },     // ✅ Explicit type
+  "enabled": { "type": "boolean" },   // ✅ Explicit type
+  "name": { "type": "string" }        // ✅ Explicit type
+}
+```
 
 **Response Format Requirements**:
 
@@ -2015,7 +2303,7 @@ Query parameters can be added using template syntax in the URL:
 ```json
 "request": {
   "method": "GET",
-  "url": "https://api.example.com/users?page={{context.page}}&limit=10&sort=name"
+  "url": "https://api.example.com/users?page={{page}}&limit=10&sort=name"
 }
 ```
 
@@ -2179,16 +2467,83 @@ Query parameters can be added using template syntax in the URL:
 
 ### Supported Patterns
 
-| Pattern          | Example                  | Result                                                 |
-| ---------------- | ------------------------ | ------------------------------------------------------ |
-| Context variable | `{{context.name}}`       | "John"                                                 |
-| Nested object    | `{{context.user.email}}` | "john@example.com"                                     |
-| Array index      | `{{context.items.0}}`    | First item (literal template if invalid/out of bounds) |
-| Item property    | `{{item.id}}`            | "trip_123"                                             |
-| Index in loop    | `{{index}}`              | 1, 2, 3...                                             |
-| User identifier  | `{{user.channel_id}}`    | "+254712345678" (WhatsApp) or "U012345" (Slack)        |
-| Channel name     | `{{user.channel}}`       | "whatsapp", "telegram", "slack"                        |
-| Input            | `{{input}}`              | User's message                                         |
+| Pattern          | Example                | Result                                                 |
+| ---------------- | ---------------------- | ------------------------------------------------------ |
+| Flow variable    | `{{name}}`             | "John"                                                 |
+| Nested object    | `{{user.email}}`       | "john@example.com"                                     |
+| Array index      | `{{items.0}}`          | First item (literal template if invalid/out of bounds) |
+| Item property    | `{{item.id}}`          | "trip_123" (MENU nodes only)                           |
+| Index in loop    | `{{index}}`            | 1, 2, 3... (MENU nodes only)                           |
+| User identifier  | `{{user.channel_id}}`  | "+254712345678" (API_ACTION nodes only)                |
+| Channel name     | `{{user.channel}}`     | "whatsapp" (API_ACTION nodes only)                     |
+| Input            | `{{input}}`            | User's message (PROMPT validation only)                |
+
+**Important**: Do NOT use `{{context.*}}` prefix in templates. Flow variables are accessed directly:
+- ✅ Correct: `{{name}}`, `{{user_email}}`, `{{age}}`
+- ❌ Wrong: `{{context.name}}`, `{{context.user_email}}`, `{{context.age}}`
+
+**Note**: The `context.` prefix is ONLY used in route conditions and validation expressions, NOT in templates:
+- Templates: `"text": "Hello {{name}}!"`
+- Conditions: `"condition": "context.age > 18"`
+
+**Nested Objects**:
+- Nested paths like `{{user.email}}` work for **rendering text** in all node types
+- For **type conversion in API request bodies**, the variable name in flow definitions must match the **last segment** of the path
+- Example: For `{{user.age}}`, define variable as `"age": {"type": "NUMBER"}`, not `"user_age"`
+
+### Context Structure Best Practices
+
+**Option 1 - Flat Structure** (Recommended - Simple and explicit):
+```json
+"variables": {
+  "user_name": {"type": "STRING", "default": null},
+  "user_email": {"type": "STRING", "default": null},
+  "user_age": {"type": "NUMBER", "default": 0}
+}
+
+// Runtime context (variables stored at root level):
+{
+  "user_name": "Alice",
+  "user_email": "alice@example.com",
+  "user_age": 25
+}
+
+// Templates (access variables directly):
+"text": "Hello {{user_name}}!"  // ✓ Renders as "Hello Alice!"
+"body": {"name": "{{user_name}}", "age": "{{user_age}}"}  // ✓ Types preserved
+```
+
+**Option 2 - Nested Structure** (More organized):
+```json
+"variables": {
+  "name": {"type": "STRING", "default": null},     // ← Matches last segment
+  "email": {"type": "STRING", "default": null},    // ← Matches last segment
+  "age": {"type": "NUMBER", "default": 0}          // ← Matches last segment
+}
+
+// Runtime context (nested objects):
+{
+  "user": {
+    "name": "Alice",
+    "email": "alice@example.com",
+    "age": 25
+  }
+}
+
+// Templates (access nested properties):
+"text": "Hello {{user.name}}!"  // ✓ Renders as "Hello Alice!"
+"body": {"age": "{{user.age}}"}  // ✓ Converts to number (25, not "25")
+```
+
+**Critical Rule for Type Conversion**:
+The variable name in flow definitions must match the **last segment** of the template path:
+- Path: `{{user.age}}` → Define variable: `"age"` ✓
+- Path: `{{user.age}}` → Define variable: `"user_age"` ✗ (won't find it)
+
+**When to Use Each**:
+- **Flat structure**: Clearer variable names, no ambiguity, easier to maintain
+- **Nested structure**: More organized context, works if variable names match last segments
+- **Deep nesting** (`{{a.b.c.d}}`): Technically supported but harder to maintain
 
 ### Template Capabilities
 
@@ -2200,6 +2555,7 @@ Query parameters can be added using template syntax in the URL:
 - Special variables (item, index, user)
 - Multiple templates in same string
 - Templates in URLs and request bodies
+- Type preservation in JSON request bodies (numbers, booleans, arrays)
 
 ❌ **Not Supported**:
 
@@ -2209,9 +2565,74 @@ Query parameters can be added using template syntax in the URL:
 - Loops: `{{for item in items}}`
 - Function calls: `{{formatDate(date)}}`
 - Complex expressions: `{{a > b ? c : d}}`
-- Default values with `||` operator: `{{context.name || 'Guest'}}`
+- Default values with `||` operator: `{{name || 'Guest'}}`
   - **Workaround**: Initialize variables with defaults in flow definition
-  - **Example**: `"variables": {"name": {"type": "string", "default": "Guest"}}`
+  - **Example**: `"variables": {"name": {"type": "STRING", "default": "Guest"}}`
+- **Array `.length` property**: `{{items.length}}`
+  - **Important**: `.length` does NOT work in templates (MESSAGE, MENU, PROMPT text)
+  - **Where it DOES work**: LOGIC_EXPRESSION route conditions, PROMPT validation expressions
+  - **Workaround**: Store array length as separate variable first
+
+### Array Length Limitation
+
+**Critical Limitation**: The `.length` property is NOT available on arrays in message templates.
+
+**❌ Does NOT Work in Templates**:
+```json
+{
+  "type": "MESSAGE",
+  "config": {
+    "text": "You have {{items.length}} items."
+  }
+}
+// Output: "You have {{items.length}} items." (displayed literally)
+```
+
+**✅ DOES Work in Conditions**:
+```json
+{
+  "type": "LOGIC_EXPRESSION",
+  "routes": [
+    {
+      "condition": "context.items.length > 0",  // ✓ Works here
+      "target_node": "node_has_items"
+    }
+  ]
+}
+```
+
+**✅ DOES Work in Validation**:
+```json
+{
+  "type": "PROMPT",
+  "config": {
+    "validation": {
+      "type": "EXPRESSION",
+      "rule": "input.length >= 3",  // ✓ Works here
+      "error_message": "Minimum 3 characters"
+    }
+  }
+}
+```
+
+**Workaround - Store Length as Variable**:
+```json
+// In API_ACTION, extract array and its length separately:
+"response_map": [
+  {"source_path": "items", "target_variable": "items"},
+  {"source_path": "items.length", "target_variable": "items_count"}
+]
+
+// Then use in template:
+{
+  "type": "MESSAGE",
+  "config": {
+    "text": "You have {{items_count}} items."  // ✓ Works
+  }
+}
+```
+
+**Why this limitation exists**: The template engine resolves paths using Python's native attribute/dict access. Python lists don't have a `.length` attribute (they use `len()` function). Only the conditions evaluator has special handling to convert `.length` to `len()`.
 
 ### Missing Variable Behavior
 
@@ -2222,13 +2643,13 @@ When a template references a variable that doesn't exist in context:
 **Examples**:
 
 ```json
-// Template: "Welcome, {{context.user_name}}!"
-// If context.user_name not set
-// Output: "Welcome, {{context.user_name}}!"
+// Template: "Welcome, {{user_name}}!"
+// If user_name not set
+// Output: "Welcome, {{user_name}}!"
 
-// Template: "Order {{context.order.id}} confirmed"
-// If context.order is null
-// Output: "Order {{context.order.id}} confirmed"
+// Template: "Order {{order.id}} confirmed"
+// If order is null
+// Output: "Order {{order.id}} confirmed"
 ```
 
 **Why this design**:
@@ -2241,20 +2662,20 @@ When a template references a variable that doesn't exist in context:
 
 ```json
 "variables": {
-  "user_name": { "type": "string", "default": "Guest" },
-  "order_id": { "type": "string", "default": null }
+  "user_name": { "type": "STRING", "default": "Guest" },
+  "order_id": { "type": "STRING", "default": null }
 }
 ```
 
 ### Template Contexts by Node
 
-| Node Type        | Available Variables                        | Notes                                                                                                                                          |
-| ---------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| PROMPT           | `{{context.*}}`, `{{input}}`               | `input` only in validation expressions                                                                                                         |
-| MENU             | `{{context.*}}`, `{{item.*}}`, `{{index}}` | `item` and `index` only in `item_template`                                                                                                     |
-| API_ACTION       | `{{context.*}}`, `{{user.channel_id}}`     | `user.channel_id` is the platform-specific user identifier (e.g., phone number for WhatsApp). Other user data should be fetched via API calls. |
-| LOGIC_EXPRESSION | N/A (no templates)                         | Routes use expressions, not templates                                                                                                          |
-| MESSAGE          | `{{context.*}}`                            | All context variables available                                                                                                                |
+| Node Type        | Available Variables                   | Notes                                                                                                                                          |
+| ---------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| PROMPT           | `{{variable}}`, `{{input}}`           | `input` only in validation expressions                                                                                                         |
+| MENU             | `{{variable}}`, `{{item.*}}`, `{{index}}` | `item` and `index` only in `item_template`                                                                                                     |
+| API_ACTION       | `{{variable}}`, `{{user.channel_id}}` | `user.channel_id` is the platform-specific user identifier (e.g., phone number for WhatsApp). Other user data should be fetched via API calls. |
+| LOGIC_EXPRESSION | N/A (no templates)                    | Routes use expressions, not templates                                                                                                          |
+| MESSAGE          | `{{variable}}`                        | All flow variables available                                                                                                                   |
 
 **Special Variables**:
 
@@ -2614,8 +3035,8 @@ sorted_routes = [
 ```json
 // First, declare variables with correct types
 "variables": {
-  "age": { "type": "number", "default": 0 },
-  "verified": { "type": "boolean", "default": false }
+  "age": { "type": "NUMBER", "default": 0 },
+  "verified": { "type": "BOOLEAN", "default": false }
 }
 
 // Then use response_map (type inference automatic)
@@ -3260,7 +3681,7 @@ Bot Flow → API_ACTION → Your Backend (secure) → Third-Party API (with cred
       "url": "https://your-backend.com/api/create-trip", // Your secure backend
       "body": {
         "user_id": "{{user.channel_id}}",
-        "destination": "{{context.destination}}"
+        "destination": "{{destination}}"
       }
     }
   }
@@ -3346,10 +3767,10 @@ async def create_trip(request: TripRequest):
 {
   "type": "MESSAGE",
   "config": {
-    "text": "Hello {{context.user_name}}! Your request has been received."
+    "text": "Hello {{user_name}}! Your request has been received."
   }
 }
-// Even if user_name contains "{{context.password}}", it displays literally
+// Even if user_name contains "{{password}}", it displays literally
 ```
 
 #### 5. Session Security
@@ -3382,7 +3803,7 @@ async def create_trip(request: TripRequest):
     "url": "https://api.example.com/secure-endpoint", // ✅ HTTPS
     "headers": {
       "Content-Type": "application/json",
-      "X-Request-ID": "{{context.request_id}}" // For tracing
+      "X-Request-ID": "{{request_id}}" // For tracing
     }
   }
 }
@@ -3684,8 +4105,8 @@ Before deploying a flow to production, verify:
 
    ```json
    "variables": {
-     "user_name": { "type": "string", "default": null },
-     "selected_items": { "type": "array", "default": [] }
+     "user_name": { "type": "STRING", "default": null },
+     "selected_items": { "type": "ARRAY", "default": [] }
    }
    ```
 
@@ -3716,12 +4137,12 @@ Before deploying a flow to production, verify:
    Then use in templates:
 
    ```
-   Welcome, {{context.user_name}}!
+   Welcome, {{user_name}}!
    ```
 
 2. **Keep Templates Simple**
 
-   - Avoid deeply nested: `{{context.user.profile.settings.theme}}`
+   - Avoid deeply nested: `{{user.profile.settings.theme}}`
    - Extract to variable first if needed
 
 3. **Test Edge Cases**

@@ -33,3 +33,7 @@ pytest-asyncio==0.21.1
 
 # Development
 python-dotenv==1.0.0
+
+# Monitoring & Observability
+sentry-sdk[fastapi]==1.38.0
+prometheus-fastapi-instrumentator==6.1.0

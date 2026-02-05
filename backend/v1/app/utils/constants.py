@@ -198,6 +198,11 @@ class RegexPatterns:
     # Phone number (with optional +)
     PHONE = r'^\+?[0-9]{10,15}$'
 
+    # Numeric input validation (used in input.isNumeric())
+    # Accepts: "123", "-45", "12.34", ".5"
+    # Rejects: "1e10" (scientific notation), "1.2.3" (multiple decimals), "--5", "+5"
+    NUMERIC_INPUT = r'^-?(\d+\.?|\d*\.\d+)$'
+
 
 # Route Validation Rules
 class RouteValidationRules:

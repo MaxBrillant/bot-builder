@@ -41,10 +41,14 @@ class ConditionEvaluator:
     OPERATORS = {
         '==': lambda a, b: a == b,
         '!=': lambda a, b: a != b,
-        '>': lambda a, b: a > b if isinstance(a, (int, float)) and isinstance(b, (int, float)) else False,
-        '<': lambda a, b: a < b if isinstance(a, (int, float)) and isinstance(b, (int, float)) else False,
-        '>=': lambda a, b: a >= b if isinstance(a, (int, float)) and isinstance(b, (int, float)) else False,
-        '<=': lambda a, b: a <= b if isinstance(a, (int, float)) and isinstance(b, (int, float)) else False,
+        '>': lambda a, b: (a > b if isinstance(a, (int, float)) and not isinstance(a, bool)
+                           and isinstance(b, (int, float)) and not isinstance(b, bool) else False),
+        '<': lambda a, b: (a < b if isinstance(a, (int, float)) and not isinstance(a, bool)
+                           and isinstance(b, (int, float)) and not isinstance(b, bool) else False),
+        '>=': lambda a, b: (a >= b if isinstance(a, (int, float)) and not isinstance(a, bool)
+                            and isinstance(b, (int, float)) and not isinstance(b, bool) else False),
+        '<=': lambda a, b: (a <= b if isinstance(a, (int, float)) and not isinstance(a, bool)
+                            and isinstance(b, (int, float)) and not isinstance(b, bool) else False),
     }
 
     # Operator regex pattern (order matters - longer operators first)
@@ -94,14 +98,16 @@ class ConditionEvaluator:
             if condition == 'error':
                 return context.get('_api_result') == 'error'
 
-            # Handle logical operators (&&, ||)
-            if '&&' in condition:
-                parts = [p.strip() for p in condition.split('&&')]
-                return all(self.evaluate(part, context) for part in parts)
-
+            # Handle logical operators (||, &&)
+            # Check || first (lower precedence) to ensure correct parsing order
+            # Expression "a && b || c" should parse as "(a && b) || c"
             if '||' in condition:
                 parts = [p.strip() for p in condition.split('||')]
                 return any(self.evaluate(part, context) for part in parts)
+
+            if '&&' in condition:
+                parts = [p.strip() for p in condition.split('&&')]
+                return all(self.evaluate(part, context) for part in parts)
 
             # Handle comparison expressions
             match = self.OPERATOR_PATTERN.search(condition)
@@ -197,15 +203,10 @@ class ConditionEvaluator:
             if operator == '!=' and (left is None or right is None):
                 return left != right
 
-            # Get comparison function
+            # Get comparison function (lambdas handle type checking including boolean exclusion)
             compare_fn = self.OPERATORS.get(operator)
             if not compare_fn:
                 return False
-
-            # Type check for numeric comparisons
-            if operator in ['>', '<', '>=', '<=']:
-                if not (isinstance(left, (int, float)) and isinstance(right, (int, float))):
-                    return False
 
             return compare_fn(left, right)
 

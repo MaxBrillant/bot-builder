@@ -186,6 +186,11 @@ async def google_callback(
             await db.commit()
             await db.refresh(user)
 
+            # Create example bot with flows for new user
+            from app.services.bot_service import BotService
+            bot_service = BotService(db)
+            await bot_service.create_example_bot_for_user(user.user_id)
+
         # 4. Generate JWT token (same as password login)
         access_token = create_access_token(
             data={"sub": str(user.user_id)},

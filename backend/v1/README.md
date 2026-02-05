@@ -279,7 +279,7 @@ DATABASE_URL=postgresql+asyncpg://botbuilder:password@localhost:5432/botbuilder
 
 # Security
 SECRET_KEY=your-secret-key-here
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
 # Application
 ENVIRONMENT=development

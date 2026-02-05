@@ -14,7 +14,7 @@ services:
       - SECURITY__SECRET_KEY=${SECRET_KEY}
       - SECURITY__ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - SECURITY__ALGORITHM=HS256
-      - SECURITY__ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - SECURITY__ACCESS_TOKEN_EXPIRE_MINUTES=4320
       # Evolution API config (nested with __)
       - EVOLUTION_API__URL=http://evolution-api:8080
       - EVOLUTION_API__API_KEY=${EVOLUTION_API_KEY}
@@ -61,6 +61,42 @@ services:
       - redis_data:/data
     ports:
       - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - botbuilder-network
+
+  # Prometheus - Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - botbuilder-network
+
+  # Grafana - Metrics Visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
     restart: unless-stopped
     networks:
       - botbuilder-network
@@ -168,6 +204,10 @@ volumes:
   evolution_instances:
     driver: local
   evolution_store:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
 
 networks:

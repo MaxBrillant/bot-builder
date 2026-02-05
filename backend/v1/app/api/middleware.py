@@ -434,10 +434,22 @@ async def request_validation_exception_handler(
     # Combine all errors into a single message
     error_message = "; ".join(errors) if errors else "Validation error occurred"
 
+    # Sanitize errors for JSON serialization (remove non-serializable objects like ValueError)
+    sanitized_errors = []
+    for error in exc.errors():
+        sanitized_error = error.copy()
+        # Convert ctx values to strings if they contain exception objects
+        if 'ctx' in sanitized_error and isinstance(sanitized_error['ctx'], dict):
+            sanitized_error['ctx'] = {
+                k: str(v) if isinstance(v, Exception) else v
+                for k, v in sanitized_error['ctx'].items()
+            }
+        sanitized_errors.append(sanitized_error)
+
     logger.warning(
         f"Request validation error: {error_message}",
         path=str(request.url),
-        errors=exc.errors()
+        errors=sanitized_errors
     )
 
     return JSONResponse(
@@ -476,3 +488,58 @@ def register_exception_handlers(app):
     app.add_exception_handler(BotBuilderException, generic_botbuilder_exception_handler)
 
     logger.info("Registered exception handlers for all BotBuilderException categories and RequestValidationError")
+
+
+# ===== Security Headers Middleware =====
+
+async def security_headers_middleware(request: Request, call_next):
+    """
+    Add security headers to all responses
+
+    Headers added:
+    - X-Content-Type-Options: Prevents MIME-type sniffing
+    - X-Frame-Options: Prevents clickjacking
+    - X-XSS-Protection: Legacy XSS filter (for older browsers)
+    - Referrer-Policy: Controls referrer information
+    - Permissions-Policy: Restricts browser features
+    - Cache-Control: Prevents caching of sensitive responses (for API)
+    """
+    response = await call_next(request)
+
+    # Prevent MIME-type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # Prevent clickjacking - deny all framing
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # Legacy XSS protection for older browsers
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    # Control referrer information
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # Restrict browser features (camera, microphone, geolocation, etc.)
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+
+    # Prevent caching of API responses (contains user data)
+    # Skip for static files or health checks
+    if not request.url.path.startswith("/docs") and not request.url.path.startswith("/redoc"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+
+    return response
+
+
+def register_security_middleware(app):
+    """
+    Register security headers middleware with FastAPI app
+
+    Usage:
+        from app.api.middleware import register_security_middleware
+        register_security_middleware(app)
+
+    Args:
+        app: FastAPI application instance
+    """
+    from starlette.middleware.base import BaseHTTPMiddleware
+    app.add_middleware(BaseHTTPMiddleware, dispatch=security_headers_middleware)
+    logger.info("Registered security headers middleware")

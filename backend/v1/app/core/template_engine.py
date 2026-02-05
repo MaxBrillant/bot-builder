@@ -10,6 +10,7 @@ from urllib.parse import quote
 from app.utils.logger import get_logger
 from app.utils.exceptions import TemplateRenderError
 from app.utils.security import escape_html
+from app.utils.shared import PathResolver
 
 logger = get_logger(__name__)
 
@@ -88,7 +89,7 @@ class TemplateEngine:
                 if value is None:
                     return match.group(0)  # Return {{variable}} as-is
 
-                return str(value)
+                return self._format_value(value)
 
             rendered = self.VARIABLE_PATTERN.sub(replace_variable, template)
             return rendered
@@ -131,7 +132,7 @@ class TemplateEngine:
                 if value is None:
                     return match.group(0)  # Return {{variable}} as-is
 
-                return str(value)
+                return self._format_value(value)
 
             rendered = self.VARIABLE_PATTERN.sub(replace_variable, template)
             return rendered
@@ -254,64 +255,30 @@ class TemplateEngine:
 
     def _resolve_path(self, path: str, context: Dict[str, Any]) -> Any:
         """
-        Resolve dot-notation path to actual value
-        
+        Resolve dot-notation path to actual value using PathResolver
+
         Args:
             path: Variable path (e.g., 'context.user.name', 'item.id', 'index')
             context: Context dictionary
-        
+
         Returns:
             Resolved value or None if not found
-        
+
         Examples:
             >>> engine._resolve_path("context.user.name", {"user": {"name": "John"}})
             "John"
-            
+
             >>> engine._resolve_path("context.items.0", {"items": ["a", "b"]})
             "a"
-            
+
             >>> engine._resolve_path("context.missing", {})
             None
+
+        Note:
+            Uses shared PathResolver for consistent behavior across the system,
+            including support for .length property and wildcard paths.
         """
-        if not path:
-            return None
-        
-        try:
-            # Split path by dots
-            parts = path.split('.')
-            current = context
-            
-            for part in parts:
-                if current is None:
-                    return None
-                
-                # Handle dictionary access
-                if isinstance(current, dict):
-                    current = current.get(part)
-                
-                # Handle array/list access (numeric indices)
-                elif isinstance(current, (list, tuple)):
-                    try:
-                        index = int(part)
-                        if 0 <= index < len(current):
-                            current = current[index]
-                        else:
-                            return None  # Index out of bounds
-                    except (ValueError, IndexError):
-                        return None
-                
-                # Handle object attribute access
-                elif hasattr(current, part):
-                    current = getattr(current, part)
-                
-                else:
-                    return None  # Path not found
-            
-            return current
-            
-        except Exception as e:
-            logger.debug(f"Path resolution error: {str(e)}", path=path)
-            return None
+        return PathResolver.resolve(path, context)
     
     def _extract_variables(self, template: str) -> List[str]:
         """
@@ -442,13 +409,235 @@ class TemplateEngine:
                     template=original_template
                 )
     
+    def render_json_value(
+        self,
+        template: str,
+        context: Dict[str, Any],
+        flow_variables: Optional[Dict[str, Dict[str, Any]]] = None
+    ) -> Any:
+        """
+        Render template value with type preservation for JSON bodies
+
+        This method is specifically for rendering template variables in API request bodies.
+        Unlike render() which always returns strings, this preserves native JSON types
+        (numbers, booleans, arrays) based on variable declarations or value inference.
+
+        Type Resolution Order:
+        1. Check flow variable type definition (if variable declared and flow_variables provided)
+        2. Infer from actual Python value type
+        3. Preserve native types for JSON (number, boolean, array)
+
+        Args:
+            template: Template string with {{variable}} placeholder
+            context: Dictionary containing variable values
+            flow_variables: Optional flow variable definitions for type lookup
+
+        Returns:
+            Properly-typed value for JSON serialization (not stringified)
+            - Numbers remain numbers
+            - Booleans remain booleans
+            - Arrays remain arrays
+            - Strings remain strings
+            - None if variable not found
+
+        Examples:
+            >>> engine = TemplateEngine()
+            >>> flow_vars = {"amount": {"type": "number"}}
+            >>> engine.render_json_value("{{context.amount}}", {"amount": 500}, flow_vars)
+            500  # Returns int, not "500"
+
+            >>> engine.render_json_value("{{context.active}}", {"active": True})
+            True  # Returns bool, not "True"
+
+            >>> engine.render_json_value("{{context.name}}", {"name": "Alice"})
+            "Alice"  # Strings remain strings
+
+        Raises:
+            TemplateRenderError: If template contains unsupported syntax
+        """
+        if not template:
+            return ""
+
+        # Validate template syntax
+        self.validate_template(template)
+
+        # Check if this is a simple variable template (just {{variable}})
+        match = self.VARIABLE_PATTERN.match(template.strip())
+        if not match:
+            # Not a simple variable template, fall back to string rendering
+            return self.render(template, context)
+
+        # Extract variable path
+        variable_path = match.group(1).strip()
+
+        # Resolve the value from context
+        value = self._resolve_path(variable_path, context)
+
+        # If value not found, return literal template for debugging
+        if value is None:
+            return template
+
+        # Determine target type
+        target_type = None
+
+        # Step 1: Check flow variable type definition
+        if flow_variables:
+            # Extract the variable name from the path (e.g., "context.amount" -> "amount")
+            var_name = self._extract_variable_name(variable_path)
+            if var_name and var_name in flow_variables:
+                var_def = flow_variables[var_name]
+                target_type = var_def.get("type")
+
+        # Step 2: Infer from actual value type if no declaration
+        if not target_type:
+            return self._preserve_native_type(value)
+
+        # Step 3: Convert to declared type
+        try:
+            # Use validation system for type conversion if available
+            # For now, do basic type conversion
+            return self._convert_to_type(value, target_type)
+        except Exception as e:
+            logger.debug(f"Type conversion failed, preserving native type: {str(e)}")
+            return self._preserve_native_type(value)
+
+    def _extract_variable_name(self, variable_path: str) -> Optional[str]:
+        """
+        Extract base variable name from path
+
+        Returns the LAST segment of the path to match against flow variable definitions.
+        This ensures nested paths like "context.user.age" correctly extract "age" as the
+        variable name to look up in the flow's variables section.
+
+        Args:
+            variable_path: Variable path like "context.amount" or "amount"
+
+        Returns:
+            Base variable name (e.g., "amount") or None
+
+        Examples:
+            >>> engine._extract_variable_name("context.amount")
+            "amount"
+            >>> engine._extract_variable_name("amount")
+            "amount"
+            >>> engine._extract_variable_name("context.user.name")
+            "name"  # Fixed: now extracts last part, not second part
+        """
+        if not variable_path:
+            return None
+
+        parts = variable_path.split('.')
+
+        # Return the last part of the path
+        # This matches the actual variable name in flow definitions
+        return parts[-1] if parts else None
+
+    def _preserve_native_type(self, value: Any) -> Any:
+        """
+        Preserve native Python type for JSON serialization
+
+        Args:
+            value: Python value
+
+        Returns:
+            Value with native type preserved
+        """
+        # Preserve native JSON-compatible types
+        if isinstance(value, (bool, int, float, list, dict)):
+            return value
+
+        # Convert everything else to string
+        return str(value)
+
+    def _convert_to_type(self, value: Any, target_type: str) -> Any:
+        """
+        Convert value to target type
+
+        Args:
+            value: Source value
+            target_type: Target type (string, number, boolean, array)
+
+        Returns:
+            Converted value
+
+        Raises:
+            ValueError: If conversion fails
+        """
+        if target_type == "string":
+            return str(value)
+
+        elif target_type == "number":
+            # If already a number, return as-is
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return value
+            # Try to convert string to number
+            if isinstance(value, str):
+                # Try int first, then float
+                try:
+                    return int(value)
+                except ValueError:
+                    return float(value)
+            return float(value)
+
+        elif target_type == "boolean":
+            # If already boolean, return as-is
+            if isinstance(value, bool):
+                return value
+            # Convert string representations
+            if isinstance(value, str):
+                lower_val = value.lower().strip()
+                if lower_val in ("true", "1", "yes"):
+                    return True
+                elif lower_val in ("false", "0", "no", ""):
+                    return False
+            # Convert numbers
+            if isinstance(value, (int, float)):
+                return bool(value)
+            return bool(value)
+
+        elif target_type == "array":
+            # If already a list, return as-is
+            if isinstance(value, list):
+                return value
+            # Wrap single values in array
+            return [value]
+
+        # Unknown type, preserve native
+        return self._preserve_native_type(value)
+
+    def _format_value(self, value: Any) -> str:
+        """
+        Format value for display in templates with smart number formatting
+
+        Args:
+            value: Value to format
+
+        Returns:
+            String representation
+
+        Note:
+            Numbers are formatted intelligently:
+            - Integers display without decimals: 10.0 → "10"
+            - Floats display with decimals: 10.5 → "10.5"
+        """
+        # Smart number formatting - remove unnecessary .0
+        if isinstance(value, float):
+            # Check if it's a whole number
+            if value.is_integer():
+                return str(int(value))
+            else:
+                return str(value)
+
+        # Everything else: standard string conversion
+        return str(value)
+
     def has_variables(self, template: str) -> bool:
         """
         Check if template contains any variables
-        
+
         Args:
             template: Template string
-        
+
         Returns:
             True if template contains {{variable}} patterns
         """

@@ -214,87 +214,99 @@ class PromptProcessor(BaseProcessor):
 
         # Save to variable
         if config.save_to_variable:
-            # Get variable type from flow variables definition
-            var_type = self._get_variable_type(config.save_to_variable, context)
-
-            # Convert input to appropriate type
-            try:
-                converted_value = self.validation_system.convert_type(user_input, var_type)
-                context[config.save_to_variable] = converted_value
-
-                self.logger.info(
-                    f"Saved input to variable '{config.save_to_variable}'",
-                    variable=config.save_to_variable,
-                    type=var_type
+            # Check if variable exists in flow variables definition
+            flow_variables = context.get('_flow_variables', {})
+            if config.save_to_variable not in flow_variables:
+                # Skip saving if variable doesn't exist in flow schema
+                # This will cause templates to display literal {{context.variable}} text
+                self.logger.warning(
+                    f"PROMPT node references non-existent variable, skipping save: {config.save_to_variable}",
+                    node_id=node.id,
+                    variable=config.save_to_variable
                 )
+                # Continue to route evaluation without saving
+            else:
+                # Get variable type from flow variables definition
+                var_type = self._get_variable_type(config.save_to_variable, context)
 
-                # Validation and type conversion both passed - reset validation attempts
-                if session and db:
-                    from app.core.session_manager import SessionManager
-                    session_mgr = SessionManager(db)
-                    retry_handler = RetryHandler(session_mgr, self.template_engine)
-                    await retry_handler.reset_attempts(session)
-            except Exception as e:
-                self.logger.error(f"Type conversion failed: {str(e)}")
-                # If type conversion fails, treat as validation error
-                error_msg = validation.error_message if validation else "Invalid input format"
+                # Convert input to appropriate type
+                try:
+                    converted_value = self.validation_system.convert_type(user_input, var_type)
+                    context[config.save_to_variable] = converted_value
 
-                # Handle type conversion failure with retry logic (counts toward max attempts)
-                if session and db:
-                    from app.core.session_manager import SessionManager
-                    session_mgr = SessionManager(db)
-                    retry_handler = RetryHandler(session_mgr, self.template_engine)
-
-                    # Audit log: type conversion failure (counted as validation failure)
-                    audit_log = AuditLogRepository(db)
-                    await audit_log.log_validation_failure(
-                        node_id=node.id,
-                        attempt=session.validation_attempts + 1,
-                        user_id=logger.mask_pii(session.channel_user_id, "user_id"),
-                        event_metadata={
-                            "session_id": str(session.session_id),
-                            "bot_id": str(session.bot_id),
-                            "validation_type": "type_conversion",
-                            "target_type": var_type,
-                            "error": str(e)
-                        }
+                    self.logger.info(
+                        f"Saved input to variable '{config.save_to_variable}'",
+                        variable=config.save_to_variable,
+                        type=var_type
                     )
 
-                    # Handle type conversion failure through retry handler
-                    retry_result = await retry_handler.handle_validation_failure(
-                        session,
-                        context,
-                        error_msg
-                    )
+                    # Validation and type conversion both passed - reset validation attempts
+                    if session and db:
+                        from app.core.session_manager import SessionManager
+                        session_mgr = SessionManager(db)
+                        retry_handler = RetryHandler(session_mgr, self.template_engine)
+                        await retry_handler.reset_attempts(session)
+                except Exception as e:
+                    self.logger.error(f"Type conversion failed: {str(e)}")
+                    # If type conversion fails, treat as validation error
+                    error_msg = validation.error_message if validation else "Invalid input format"
 
-                    # Check if should continue with retry
-                    if retry_result.should_continue:
+                    # Handle type conversion failure with retry logic (counts toward max attempts)
+                    if session and db:
+                        from app.core.session_manager import SessionManager
+                        session_mgr = SessionManager(db)
+                        retry_handler = RetryHandler(session_mgr, self.template_engine)
+
+                        # Audit log: type conversion failure (counted as validation failure)
+                        audit_log = AuditLogRepository(db)
+                        await audit_log.log_validation_failure(
+                            node_id=node.id,
+                            attempt=session.validation_attempts + 1,
+                            user_id=logger.mask_pii(session.channel_user_id, "user_id"),
+                            event_metadata={
+                                "session_id": str(session.session_id),
+                                "bot_id": str(session.bot_id),
+                                "validation_type": "type_conversion",
+                                "target_type": var_type,
+                                "error": str(e)
+                            }
+                        )
+
+                        # Handle type conversion failure through retry handler
+                        retry_result = await retry_handler.handle_validation_failure(
+                            session,
+                            context,
+                            error_msg
+                        )
+
+                        # Check if should continue with retry
+                        if retry_result.should_continue:
+                            return ProcessResult(
+                                message=retry_result.error_message,
+                                needs_input=True,
+                                context=context
+                            )
+
+                        # Max attempts reached - route or terminate
+                        if retry_result.terminal:
+                            return ProcessResult(
+                                message=retry_result.error_message,
+                                terminal=True,
+                                context=context
+                            )
+
+                        # Route to fail_route
                         return ProcessResult(
-                            message=retry_result.error_message,
-                            needs_input=True,
+                            next_node=retry_result.next_node,
                             context=context
                         )
 
-                    # Max attempts reached - route or terminate
-                    if retry_result.terminal:
-                        return ProcessResult(
-                            message=retry_result.error_message,
-                            terminal=True,
-                            context=context
-                        )
-
-                    # Route to fail_route
+                    # No session/db - just return error
                     return ProcessResult(
-                        next_node=retry_result.next_node,
+                        message=error_msg,
+                        needs_input=True,
                         context=context
                     )
-
-                # No session/db - just return error
-                return ProcessResult(
-                    message=error_msg,
-                    needs_input=True,
-                    context=context
-                )
         
         # Evaluate routes
         next_node = self.evaluate_routes(node.routes, context, node.type)

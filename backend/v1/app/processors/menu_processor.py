@@ -372,7 +372,17 @@ class MenuProcessor(BaseProcessor):
             
             if not target_var:
                 continue
-            
+
+            # Check if variable exists in flow variables definition
+            if target_var not in variables:
+                # Skip mapping if variable doesn't exist in flow schema
+                self.logger.warning(
+                    f"MENU node references non-existent variable, skipping mapping: {target_var}",
+                    source_path=source_path,
+                    target_variable=target_var
+                )
+                continue
+
             # Look up the target variable's declared type
             var_definition = variables.get(target_var, {})
             var_type = var_definition.get("type", "string")  # Default to string if not defined

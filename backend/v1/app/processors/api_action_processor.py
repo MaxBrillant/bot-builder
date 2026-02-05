@@ -269,15 +269,25 @@ class APIActionProcessor(BaseProcessor):
         context: Dict[str, Any]
     ) -> Any:
         """
-        Render request body with context variables
-        
+        Render request body with context variables and type preservation
+
+        Template variables in JSON bodies preserve their native types:
+        - Numbers remain numbers (not converted to strings)
+        - Booleans remain booleans
+        - Arrays remain arrays
+        - Strings remain strings
+
+        Type is determined by:
+        1. Flow variable type definition (if declared)
+        2. Actual Python value type (if not declared)
+
         Args:
             body_json_string: Body as JSON string (with possible template variables)
             context: Session context
-        
+
         Returns:
-            Rendered body structure (parsed from JSON)
-            
+            Rendered body structure with proper types preserved
+
         Raises:
             ConstraintViolationError: If rendered body exceeds MAX_REQUEST_BODY_SIZE
         """
@@ -287,14 +297,20 @@ class APIActionProcessor(BaseProcessor):
         except json.JSONDecodeError as e:
             self.logger.error(f"Failed to parse body JSON: {str(e)}")
             return {}
-        
-        # Recursively render templates in the parsed structure
+
+        # Get flow variables for type lookup
+        flow_variables = context.get("_flow_variables", {})
+
+        # Recursively render templates in the parsed structure with type preservation
         def render_structure(obj: Any) -> Any:
             if isinstance(obj, dict):
                 rendered = {}
                 for key, value in obj.items():
                     if isinstance(value, str):
-                        rendered[key] = self.template_engine.render(value, context)
+                        # Use type-aware rendering for JSON values
+                        rendered[key] = self.template_engine.render_json_value(
+                            value, context, flow_variables
+                        )
                     elif isinstance(value, (dict, list)):
                         rendered[key] = render_structure(value)
                     else:
@@ -303,10 +319,10 @@ class APIActionProcessor(BaseProcessor):
             elif isinstance(obj, list):
                 return [render_structure(item) for item in obj]
             elif isinstance(obj, str):
-                return self.template_engine.render(obj, context)
+                return self.template_engine.render_json_value(obj, context, flow_variables)
             else:
                 return obj
-        
+
         rendered_body = render_structure(body_template)
         
         # Validate request body size after rendering
@@ -341,40 +357,52 @@ class APIActionProcessor(BaseProcessor):
     ) -> bool:
         """
         Check if API call was successful
-        
+
+        Both status_codes and expression are evaluated on equal footing with AND logic:
+        - If only status_codes provided: status must match
+        - If only expression provided: expression must evaluate to True
+        - If both provided: BOTH must pass (AND logic)
+
         Args:
             api_response: Validated APIResponse object
             success_check: Optional APISuccessCheck instance
-        
+
         Returns:
             True if successful, False otherwise
         """
         if not success_check:
             # Default: check status code in 200-299 range
             return api_response.success
-        
-        # Check status code list
-        status_codes = success_check.status_codes or []
-        if status_codes and api_response.status_code in status_codes:
-            return True
-        
-        # Check expression
+
+        # Evaluate each check that's provided (AND logic)
+        status_check_passed = True
+        expression_check_passed = True
+
+        # Check status codes if provided
+        if success_check.status_codes:
+            status_check_passed = api_response.status_code in success_check.status_codes
+
+        # Check expression if provided
         if success_check.expression:
             # Create context with response data
             eval_context = {
                 'response': {
                     'body': api_response.body,
-                    'status': api_response.status_code
+                    'status': api_response.status_code,
+                    'headers': api_response.headers
                 }
             }
-            
+
             try:
-                return self.condition_evaluator.evaluate(success_check.expression, eval_context)
+                expression_check_passed = self.condition_evaluator.evaluate(
+                    success_check.expression, eval_context
+                )
             except Exception as e:
                 self.logger.error(f"Success check expression error: {str(e)}")
-                return False
-        
-        return False
+                expression_check_passed = False
+
+        # Both conditions must pass (AND logic)
+        return status_check_passed and expression_check_passed
     
     def _apply_response_mapping(
         self,
@@ -404,11 +432,13 @@ class APIActionProcessor(BaseProcessor):
                 {"user_id": {"type": "number"}, "user_name": {"type": "string"}}
 
             Result: context updated with user_id=123 (as number), user_name="Alice"
-        """
-        if not isinstance(api_response.body, dict):
-            self.logger.warning(f"API response body is not a dict, cannot map: {type(api_response.body)}")
-            return False
 
+        Note:
+            Supports dict, array, and primitive root responses:
+            - Dict root: Use "field", "data.nested"
+            - Array root: Use "*", "*.0", "*.0.field"
+            - Primitive root: Use "*"
+        """
         # Track successful mappings
         successful_mappings = 0
         total_mappings = 0
@@ -424,6 +454,16 @@ class APIActionProcessor(BaseProcessor):
                 continue
 
             total_mappings += 1
+
+            # Check if variable exists in flow variables definition
+            if target_var not in variables:
+                # Skip mapping if variable doesn't exist in flow schema
+                self.logger.warning(
+                    f"API_ACTION node references non-existent variable, skipping mapping: {target_var}",
+                    source_path=source_path,
+                    target_variable=target_var
+                )
+                continue
 
             # Look up the target variable's declared type
             var_definition = variables.get(target_var, {})

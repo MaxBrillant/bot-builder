@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import ValidationError
 
-from app.utils.shared import PathResolver, TypeConverter, ExpressionParser
+from app.utils.shared import PathResolver, TypeConverter
 from app.utils.logger import get_logger
 from app.utils.exceptions import InputValidationError
 from app.utils.constants import (
@@ -35,7 +35,7 @@ class InputValidator:
 
     Features:
     - REGEX validation (full string match)
-    - EXPRESSION validation (custom methods using ExpressionParser)
+    - EXPRESSION validation (custom methods via string replacement and evaluation)
     - Type conversion (using TypeConverter)
     - Safe evaluation (no arbitrary code execution)
 
@@ -44,7 +44,7 @@ class InputValidator:
     - input.isNumeric() - Numeric format (digits, optional decimal, optional minus)
     - input.isDigit() - Only digits (0-9)
     - input.length - String length property
-    - Context variable access
+    - Context variable access (including array indices like context.items.0)
     - Comparison operators
     - Logical operators (&&, ||)
     """
@@ -52,7 +52,6 @@ class InputValidator:
     def __init__(self):
         self.path_resolver = PathResolver()
         self.type_converter = TypeConverter()
-        self.expression_parser = ExpressionParser()
 
     def validate_regex(self, input_value: str, pattern: str) -> bool:
         """
@@ -177,6 +176,14 @@ class InputValidator:
             - Array/object methods
             - Date/time operations
         """
+        from app.utils.constants import SystemConstraints
+
+        # Check expression length (spec: MAX_EXPRESSION_LENGTH = 512)
+        if len(expr) > SystemConstraints.MAX_EXPRESSION_LENGTH:
+            raise ValueError(
+                f"Expression exceeds maximum length of {SystemConstraints.MAX_EXPRESSION_LENGTH} characters "
+                f"(current: {len(expr)} characters)"
+            )
         # Check for unsupported input methods (method calls with parentheses)
         input_methods = re.findall(r'input\.(\w+)\s*\(', expr)
         supported_input_methods = ['isAlpha', 'isNumeric', 'isDigit']
@@ -189,7 +196,9 @@ class InputValidator:
                 )
 
         # Check for unsupported input properties (beyond 'length')
-        input_properties = re.findall(r'input\.(\w+)(?!\s*\()', expr)
+        # Find all input.xxx references, then exclude methods to get only properties
+        all_input_refs = re.findall(r'input\.(\w+)', expr)
+        input_properties = [ref for ref in all_input_refs if ref not in input_methods]
         supported_properties = ['length']
 
         for prop in input_properties:
@@ -231,13 +240,15 @@ class InputValidator:
         expr = self._replace_context_variables(expr, context)
 
         # Handle logical operators
-        if '&&' in expr:
-            parts = [p.strip() for p in expr.split('&&')]
-            return all(self._evaluate_simple(part) for part in parts)
-
+        # Check || first (lower precedence) to ensure correct parsing order
+        # Expression "a && b || c" should parse as "(a && b) || c"
         if '||' in expr:
             parts = [p.strip() for p in expr.split('||')]
             return any(self._evaluate_simple(part) for part in parts)
+
+        if '&&' in expr:
+            parts = [p.strip() for p in expr.split('&&')]
+            return all(self._evaluate_simple(part) for part in parts)
 
         return self._evaluate_simple(expr)
 
@@ -282,6 +293,8 @@ class InputValidator:
             - "--5" (multiple minus signs)
             - "+5" (plus sign not supported)
         """
+        from app.utils.constants import RegexPatterns
+
         if not value:
             return False
 
@@ -289,13 +302,13 @@ class InputValidator:
         #   - digits with optional trailing decimal: \d+\.?
         #   - optional digits with decimal and required trailing digits: \d*\.\d+
         # This accepts both "1." and ".5" for consistency
-        pattern = r'^-?(\d+\.?|\d*\.\d+)$'
-        return bool(re.match(pattern, value))
+        return bool(re.match(RegexPatterns.NUMERIC_INPUT, value))
 
     def _replace_context_variables(self, expr: str, context: Dict[str, Any]) -> str:
         """Replace context variables with their values using PathResolver"""
-        # Find context.variable patterns
-        pattern = r'context\.([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)'
+        # Find context.variable patterns (supports array indices like context.items.0.name)
+        # Pattern matches: identifier OR numeric, then (dot + identifier OR numeric) repeated
+        pattern = r'context\.((?:[a-zA-Z_][a-zA-Z0-9_]*|\d+)(?:\.(?:[a-zA-Z_][a-zA-Z0-9_]*|\d+))*)'
 
         def replace_var(match):
             var_path = match.group(1)
@@ -389,9 +402,11 @@ class InputValidator:
         """
         try:
             if target_type == VariableType.STRING.value:
-                return self.type_converter.to_string(value)
+                result = self.type_converter.to_string(value)
+                # to_string returns None only if value is None, which is valid
+                return result
             elif target_type == VariableType.NUMBER.value:
-                result = self.type_converter.to_integer(value)
+                result = self.type_converter.to_number(value)
                 if result is None and value is not None:
                     raise InputValidationError(
                         message=f"Cannot convert '{value}' to number",
@@ -510,7 +525,19 @@ class RouteConditionValidator:
         route_index: int
     ) -> List[Dict[str, str]]:
         """Validate that a route condition is valid for the given node type"""
+        from app.utils.constants import SystemConstraints
+
         errors = []
+
+        # Check route condition length (spec: MAX_ROUTE_CONDITION_LENGTH = 512)
+        if len(condition) > SystemConstraints.MAX_ROUTE_CONDITION_LENGTH:
+            errors.append({
+                "type": "constraint_violation",
+                "message": f"Route condition exceeds maximum length of {SystemConstraints.MAX_ROUTE_CONDITION_LENGTH} characters (current: {len(condition)} characters)",
+                "location": f"nodes.{node_id}.routes[{route_index}].condition",
+                "constraint": "MAX_ROUTE_CONDITION_LENGTH"
+            })
+            return errors
 
         # Special handling for LOGIC_EXPRESSION nodes
         if node_type == NodeType.LOGIC_EXPRESSION.value:

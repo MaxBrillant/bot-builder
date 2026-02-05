@@ -101,7 +101,7 @@ class RetryHandler:
         counter_text = retry_logic.get('counter_text', '')
 
         # Check if max attempts exceeded
-        if new_attempt_count >= max_attempts:
+        if new_attempt_count > max_attempts:
             # Max attempts reached - reset counter
             await self.session_manager.reset_validation_attempts(session.session_id)
 

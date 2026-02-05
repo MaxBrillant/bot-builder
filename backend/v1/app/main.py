@@ -11,6 +11,25 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 from app.config import settings
+
+# ===== Sentry Initialization (must be early, before other imports) =====
+if settings.observability.sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+    sentry_sdk.init(
+        dsn=settings.observability.sentry_dsn,
+        environment=settings.environment,
+        release=f"bot-builder@{settings.app_version}",
+        traces_sample_rate=settings.observability.sentry_traces_sample_rate,
+        integrations=[
+            FastApiIntegration(transaction_style="endpoint"),
+            SqlalchemyIntegration(),
+        ],
+        # Don't send PII to Sentry
+        send_default_pii=False,
+    )
 from app.database import init_db, close_db, check_database, AsyncSessionLocal
 from app.core.redis_manager import redis_manager
 from app.core.engine import init_http_client, close_http_client
@@ -21,9 +40,10 @@ from app.api import (
     core_webhook_router,
     oauth_router,
     whatsapp_router,
-    whatsapp_webhook_router
+    whatsapp_webhook_router,
+    evolution_proxy_router
 )
-from app.api.middleware import register_exception_handlers
+from app.api.middleware import register_exception_handlers, register_security_middleware
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -176,6 +196,25 @@ app.add_middleware(
 # Exception handlers - Register structured exception handling from middleware
 register_exception_handlers(app)
 
+# Security headers middleware
+register_security_middleware(app)
+
+# Prometheus metrics instrumentation
+if settings.observability.prometheus_enabled:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    instrumentator = Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        should_respect_env_var=False,
+        should_instrument_requests_inprogress=True,
+        excluded_handlers=["/health", "/metrics"],
+        inprogress_name="http_requests_inprogress",
+        inprogress_labels=True,
+    )
+    instrumentator.instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+    logger.info("Prometheus metrics enabled at /metrics")
+
 
 # Catch-all for unexpected exceptions (not BotBuilderException subclasses)
 @app.exception_handler(Exception)
@@ -211,6 +250,7 @@ app.include_router(flows_router)  # Nested under /bots/{bot_id}/flows
 app.include_router(core_webhook_router)  # Core platform-agnostic webhook
 app.include_router(whatsapp_router)  # WhatsApp/Evolution API management
 app.include_router(whatsapp_webhook_router)  # WhatsApp webhooks (messages + system events)
+app.include_router(evolution_proxy_router)  # Evolution API proxy for flows
 
 
 # Health check endpoint

@@ -167,6 +167,26 @@ class EvolutionAPIConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EVOLUTION_API__")
 
 
+class ObservabilityConfig(BaseSettings):
+    """Observability configuration (Sentry, Prometheus)"""
+    sentry_dsn: str = Field(
+        default="",
+        description="Sentry DSN for error tracking (leave empty to disable)"
+    )
+    sentry_traces_sample_rate: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="Sentry performance tracing sample rate (0.0-1.0)"
+    )
+    prometheus_enabled: bool = Field(
+        default=True,
+        description="Enable Prometheus metrics endpoint at /metrics"
+    )
+
+    model_config = SettingsConfigDict(env_prefix="OBSERVABILITY__")
+
+
 class Settings(BaseSettings):
     """
     Main application settings with nested configuration groups
@@ -198,6 +218,7 @@ class Settings(BaseSettings):
     flow_constraints: FlowConstraintsConfig = Field(default_factory=FlowConstraintsConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     evolution_api: EvolutionAPIConfig = Field(default_factory=EvolutionAPIConfig)
+    observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -234,8 +255,8 @@ class Settings(BaseSettings):
             if self.debug:
                 raise ValueError("DEBUG must be False in production")
 
-            if self.security.access_token_expire_minutes > 1440:  # 24 hours
-                raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES should not exceed 24 hours in production")
+            if self.security.access_token_expire_minutes > 4320:  # 3 days
+                raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES should not exceed 3 days in production")
 
         return self
 

@@ -107,9 +107,14 @@ async def register(
         db.add(user)
         await db.commit()
         await db.refresh(user)
-        
+
         logger.info(f"User registered", user_id=str(user.user_id), email=user.email)
-        
+
+        # Create example bot with flows for new user
+        from app.services.bot_service import BotService
+        bot_service = BotService(db)
+        await bot_service.create_example_bot_for_user(user.user_id)
+
         return user
     except IntegrityError as e:
         await db.rollback()
