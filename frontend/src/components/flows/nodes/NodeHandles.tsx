@@ -72,6 +72,12 @@ export default function NodeHandles({ node, allNodes, isEndNode = false, outputH
               bottom: "-6px",
             };
             break;
+          default:
+            position = Position.Right;
+            style = {
+              top: `${handle.position * 100}%`,
+              right: "-6px",
+            };
         }
 
         return (

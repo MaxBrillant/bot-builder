@@ -14,7 +14,7 @@ interface MessageConfigFormProps {
   nodeName?: string;
   onNodeNameChange?: (name: string) => void;
   nodeNameError?: string;
-  nodeNameInputRef?: React.RefObject<HTMLInputElement>;
+  nodeNameInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 export function MessageConfigForm({

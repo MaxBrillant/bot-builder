@@ -109,11 +109,6 @@ export function RouteEditor({
     );
   };
 
-  const getGeneralRouteErrors = (): ValidationError[] => {
-    return errors.filter((error) => error.field === "routes");
-  };
-
-  const generalErrors = getGeneralRouteErrors();
 
   // Get context-specific example based on node type
   const getExample = () => {

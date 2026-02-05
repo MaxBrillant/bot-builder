@@ -29,6 +29,7 @@ import type {
   ValidationError,
   HTTPMethod,
   APIHeader,
+  VariableType,
 } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -38,16 +39,16 @@ interface ApiActionConfigFormProps {
   onChange: (config: APIActionNodeConfig) => void;
   errors: ValidationError[];
   availableVariables?: string[];
-  variables?: Array<{ name: string; type: string }>;
+  variables?: Array<{ name: string; type: VariableType }>;
   onCreateVariable: (variable: {
     name: string;
-    type: string;
+    type: VariableType;
     default: any;
   }) => Promise<void>;
   nodeName?: string;
   onNodeNameChange?: (name: string) => void;
   nodeNameError?: string;
-  nodeNameInputRef?: React.RefObject<HTMLInputElement>;
+  nodeNameInputRef?: React.RefObject<HTMLInputElement | null>;
   botId?: string;
 }
 
@@ -106,9 +107,6 @@ export function ApiActionConfigForm({
     }
   }, [config]);
 
-  const getFieldError = (field: string) => {
-    return errors.find((e) => e.field === field)?.message;
-  };
 
   const handleMethodChange = (method: HTTPMethod) => {
     onChange({

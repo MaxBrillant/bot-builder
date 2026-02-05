@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import isEqual from "fast-deep-equal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -298,17 +298,6 @@ export function FlowSettingsPanel({
     );
   };
 
-  // Validate form
-  const isValid = (): boolean => {
-    if (nameError || !name.trim()) return false;
-    if (triggerKeywords.length === 0) return false;
-    for (const variable of variables) {
-      if (!variable.name.trim() || variable.defaultError) return false;
-    }
-    if (maxAttempts < 1 || maxAttempts > 10) return false;
-    if (!failRoute || failRoute.trim() === "") return false;
-    return true;
-  };
 
   // Store onChange in a ref to avoid infinite loops
   const onChangeRef = useRef(onChange);
@@ -374,7 +363,7 @@ export function FlowSettingsPanel({
         triggerKeywords,
         variables: variablesObj,
         defaults: defaultsObj,
-        isValid: valid,
+        isValid: valid as boolean,
       });
     }
   }, [name, nameError, triggerKeywords, variables, maxAttempts, counterText, failRoute, initialValues]);

@@ -25,14 +25,13 @@ interface MessageNodeData {
   onNodeClick?: () => void;
   openSelector?: boolean;
   onSelectorOpenChange?: (open: boolean) => void;
+  outputHandleIds?: string[];
 }
 
 function MessageNode({
   data,
-  selected,
 }: NodeProps<MessageNodeData>) {
   const name = data?.name || "Message";
-  const nodeId = data?.nodeId || "";
   const text = data?.config?.text || "Your message here";
   const truncatedText = text.length > 30 ? text.substring(0, 30) + "..." : text;
 

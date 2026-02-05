@@ -51,6 +51,8 @@ export interface WhatsAppStatus {
 export interface APIError {
   detail: string | APIValidationError[];
   error_code?: string;
+  errors?: Array<{ type?: string; location?: string; message?: string }>;
+  error?: string;
 }
 
 export interface APIValidationError {
@@ -324,7 +326,7 @@ export interface FlowListResponse {
 export interface FlowCreateRequest {
   name: string;
   trigger_keywords: string[]; // Required by backend, at least one keyword needed
-  variables?: Record<string, { type: string; default: any }>;
+  variables?: Record<string, { type: VariableType; default: any }>;
   defaults?: {
     retry_logic?: {
       max_attempts: number;

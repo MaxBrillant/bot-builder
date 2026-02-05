@@ -209,12 +209,12 @@ export function calculateHandleAssignments(
   routesBySide.bottom = sortBySpatialPosition(routesBySide.bottom, "bottom");
 
   // Track handle capacity for each side
-  const maxCapacity = {
+  const maxCapacity: Record<"right" | "top" | "bottom", number> = {
     right: HANDLE_POSITIONS.RIGHT.length,
     top: HANDLE_POSITIONS.TOP.length,
     bottom: HANDLE_POSITIONS.BOTTOM.length,
   };
-  const availableCapacity = { ...maxCapacity };
+  const availableCapacity: Record<"right" | "top" | "bottom", number> = { ...maxCapacity };
   const assignments: HandleAssignment[] = [];
 
   // Pass 1: Redistribute overflow routes to available sides

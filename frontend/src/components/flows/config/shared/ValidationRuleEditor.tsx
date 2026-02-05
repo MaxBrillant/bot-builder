@@ -1,19 +1,9 @@
-import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { FieldError } from "./FieldError";
 import { FieldHelp } from "./FieldHelp";
 import { ExpressionInput } from "./ExpressionInput";
 import { TemplateInput } from "./TemplateInput";
-import type { ValidationRule, ValidationType } from "@/lib/types";
+import type { ValidationRule } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 interface ValidationRuleEditorProps {
   value?: ValidationRule;
@@ -28,14 +18,6 @@ export function ValidationRuleEditor({
   errors = {},
   availableVariables = [],
 }: ValidationRuleEditorProps) {
-  const handleTypeChange = (type: ValidationType) => {
-    onChange({
-      type,
-      rule: value?.rule || "",
-      error_message: value?.error_message || "",
-    });
-  };
-
   const handleRuleChange = (rule: string) => {
     if (value) {
       onChange({ ...value, rule });

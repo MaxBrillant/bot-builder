@@ -33,10 +33,8 @@ interface LogicExpressionNodeData {
 
 function LogicExpressionNode({
   data,
-  selected,
 }: NodeProps<LogicExpressionNodeData>) {
   const name = data?.name || "Logic";
-  const nodeId = data?.nodeId || "";
   const routes = data?.flowNode?.routes || [];
   const routeCount = routes.length || 0;
 

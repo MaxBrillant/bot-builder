@@ -6,7 +6,6 @@ import type {
   FlowCreateRequest,
   FlowValidationResponse,
   BotListResponse,
-  WhatsAppStatus,
 } from "./types";
 import { queryClient } from "./queryClient";
 
@@ -121,19 +120,6 @@ const transformFlowResponse = (response: FlowResponse): Flow => {
   };
 };
 
-/**
- * Transform Flow to FlowCreateRequest for backend
- */
-const transformFlowToRequest = (flow: Flow): FlowCreateRequest => {
-  return {
-    name: flow.name,
-    trigger_keywords: flow.trigger_keywords,
-    variables: flow.variables,
-    defaults: flow.defaults,
-    start_node_id: flow.start_node_id,
-    nodes: flow.nodes,
-  };
-};
 
 /**
  * Fetch all flows for a bot (oldest first)

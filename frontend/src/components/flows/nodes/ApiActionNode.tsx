@@ -34,9 +34,8 @@ interface ApiActionNodeData {
   outputHandleIds?: string[];
 }
 
-function ApiActionNode({ data, selected }: NodeProps<ApiActionNodeData>) {
+function ApiActionNode({ data }: NodeProps<ApiActionNodeData>) {
   const name = data?.name || "API Action";
-  const nodeId = data?.nodeId || "";
   const method = data?.config?.request?.method || "GET";
   const url = data?.config?.request?.url || "https://api.example.com/endpoint";
   const truncatedUrl = url.length > 25 ? url.substring(0, 25) + "..." : url;

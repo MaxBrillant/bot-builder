@@ -253,7 +253,7 @@ export function ExpressionInput({
   maxLength,
   placeholder,
   rows = 2,
-  maxRows = 8,
+  maxRows: _maxRows = 8,
   context,
   availableVariables = [],
   onKeyDown,
@@ -466,8 +466,8 @@ export function ExpressionInput({
           <Input
             ref={textareaRef as any}
             value={value}
-            onChange={handleTextChange}
-            onKeyDown={handleKeyDown}
+            onChange={handleTextChange as any}
+            onKeyDown={handleKeyDown as any}
             placeholder={placeholder}
             maxLength={maxLength}
             className={cn(

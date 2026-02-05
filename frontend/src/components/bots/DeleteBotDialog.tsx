@@ -61,7 +61,7 @@ export default function DeleteBotDialog({
     },
   });
 
-  const onSubmit = async (values: FormValues) => {
+  const onSubmit = async (_values: FormValues) => {
     if (!bot) return;
 
     deleteBotMutation.mutate(bot.bot_id, {

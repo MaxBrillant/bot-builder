@@ -12,12 +12,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { ConditionSelector } from "./config/shared/ConditionSelector";
-import {
-  getUnassignedConditions,
-  getDefaultCondition,
-} from "@/lib/routeConditionUtils";
+import { getDefaultCondition } from "@/lib/routeConditionUtils";
 import type { NodeType, FlowNode } from "@/lib/types";
 
 interface NodeTypeOption {

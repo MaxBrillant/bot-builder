@@ -26,17 +26,14 @@ interface PromptNodeData {
   onNodeClick?: () => void;
   openSelector?: boolean;
   onSelectorOpenChange?: (open: boolean) => void;
+  outputHandleIds?: string[];
 }
 
 function PromptNode({
   data,
-  selected,
 }: NodeProps<PromptNodeData>) {
   const name = data?.name || "Prompt";
-  const nodeId = data?.nodeId || "";
-  const text = data?.config?.text || "Enter your prompt text";
   const variable = data?.config?.save_to_variable || "user_input";
-  const truncatedText = text.length > 30 ? text.substring(0, 30) + "..." : text;
 
   return (
     <NodeWrapper

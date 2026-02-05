@@ -63,7 +63,7 @@ export function MyAccountDialog() {
     },
   });
 
-  const onSubmit = async (values: FormValues) => {
+  const onSubmit = async (_values: FormValues) => {
     try {
       setIsDeleting(true);
       await deleteUserData();

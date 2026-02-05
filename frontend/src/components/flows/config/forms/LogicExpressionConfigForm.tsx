@@ -11,7 +11,7 @@ interface LogicExpressionConfigFormProps {
   nodeName?: string;
   onNodeNameChange?: (name: string) => void;
   nodeNameError?: string;
-  nodeNameInputRef?: React.RefObject<HTMLInputElement>;
+  nodeNameInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 export function LogicExpressionConfigForm({

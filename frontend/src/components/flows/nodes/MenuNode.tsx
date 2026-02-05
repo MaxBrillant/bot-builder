@@ -33,13 +33,10 @@ interface MenuNodeData {
   outputHandleIds?: string[];
 }
 
-function MenuNode({ data, selected }: NodeProps<MenuNodeData>) {
+function MenuNode({ data }: NodeProps<MenuNodeData>) {
   const name = data?.name || "Menu";
-  const nodeId = data?.nodeId || "";
   const sourceType = data?.config?.source_type || "STATIC";
   const optionsCount = data?.config?.static_options?.length || 0;
-  const text = data?.config?.text || "Select an option";
-  const truncatedText = text.length > 30 ? text.substring(0, 30) + "..." : text;
   const displayText =
     sourceType === "DYNAMIC"
       ? "Dynamic menu"

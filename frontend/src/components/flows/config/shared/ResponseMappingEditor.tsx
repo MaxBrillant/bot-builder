@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, X } from "lucide-react";
 import { VariableSelect } from "./VariableSelect";
 import { FieldHelp } from "./FieldHelp";
-import type { APIResponseMapping } from "@/lib/types";
+import type { APIResponseMapping, VariableType } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -11,10 +11,10 @@ interface ResponseMappingEditorProps {
   value: APIResponseMapping[];
   onChange: (value: APIResponseMapping[]) => void;
   errors?: Record<string, string>;
-  variables?: Array<{ name: string; type: string }>;
+  variables?: Array<{ name: string; type: VariableType }>;
   onCreateVariable: (variable: {
     name: string;
-    type: string;
+    type: VariableType;
     default: any;
   }) => Promise<void>;
 }

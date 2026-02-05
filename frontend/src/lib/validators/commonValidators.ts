@@ -1,4 +1,3 @@
-import { SystemConstraints } from "../types";
 import { RESERVED_KEYWORDS } from "../constants";
 
 /**
@@ -148,11 +147,6 @@ export function validateSuccessExpression(expression: string): {
 
   const trimmed = expression.trim();
 
-  // Check for basic syntax patterns
-  // Allowed: response.body.*, response.status, operators, numbers, strings, keywords
-  const allowedPattern =
-    /^[a-zA-Z0-9_.\s'"()\[\]]+(?:==|!=|>|<|>=|<=|&&|\|\|)[a-zA-Z0-9_.\s'"()\[\]]+$/;
-  const singleValuePattern = /^[a-zA-Z0-9_.]+$/;
 
   // Check for disallowed patterns
   if (trimmed.includes("context.")) {

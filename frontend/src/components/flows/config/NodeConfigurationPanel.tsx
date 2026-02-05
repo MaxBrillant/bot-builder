@@ -36,6 +36,7 @@ import type {
   APIActionNodeConfig,
   ValidationError,
   Route,
+  VariableType,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -61,10 +62,10 @@ interface NodeConfigurationPanelProps {
   }) => void;
   availableVariables?: string[];
   availableNodes?: Array<{ id: string; type: NodeType; name: string }>;
-  variables?: Array<{ name: string; type: string }>;
+  variables?: Array<{ name: string; type: VariableType }>;
   onCreateVariable: (variable: {
     name: string;
-    type: string;
+    type: VariableType;
     default: any;
   }) => Promise<void>;
   botId?: string;
@@ -216,17 +217,6 @@ export const NodeConfigurationPanel = forwardRef<
     return cleaned;
   };
 
-  // Helper function to sort routes by condition for consistent comparison
-  // This matches the backend's route sorting behavior (specific conditions before catch-all)
-  const sortRoutesForComparison = (routes: Route[]) => {
-    return [...routes].sort((a, b) => {
-      // "true" (catch-all) goes last
-      if (a.condition.trim().toLowerCase() === "true") return 1;
-      if (b.condition.trim().toLowerCase() === "true") return -1;
-      // Otherwise sort alphabetically by condition
-      return a.condition.localeCompare(b.condition);
-    });
-  };
 
   // Note: Dirty state tracking removed - using unified onChange approach
 

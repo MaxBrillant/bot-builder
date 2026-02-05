@@ -1,14 +1,30 @@
 import { useState } from 'react';
-import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath } from 'reactflow';
+import { BaseEdge, EdgeLabelRenderer, getBezierPath } from 'reactflow';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import NodeTypeSelector from '../NodeTypeSelector';
 import type { NodeType, FlowNode } from '@/lib/types';
 
+// Local Position enum to avoid reactflow type export issues
+enum Position {
+  Left = 'left',
+  Top = 'top',
+  Right = 'right',
+  Bottom = 'bottom',
+}
+
 /**
  * Stub edge props
  */
-interface StubEdgeProps extends EdgeProps {
+interface StubEdgeProps {
+  id: string;
+  sourceX: number;
+  sourceY: number;
+  targetX: number;
+  targetY: number;
+  sourcePosition: Position;
+  targetPosition: Position;
+  style?: React.CSSProperties;
   data?: {
     sourceNodeId?: string;
     sourceNode?: FlowNode;

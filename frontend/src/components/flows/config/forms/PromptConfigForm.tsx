@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -8,8 +7,6 @@ import { ChevronRight } from "lucide-react";
 import { TemplateInput } from "../shared/TemplateInput";
 import { ValidationRuleEditor } from "../shared/ValidationRuleEditor";
 import { InterruptsGrid } from "../shared/InterruptsGrid";
-import { CharacterCounter } from "../shared/CharacterCounter";
-import { FieldError } from "../shared/FieldError";
 import { FieldHelp } from "../shared/FieldHelp";
 import { VariableSelect } from "../shared/VariableSelect";
 import {
@@ -24,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { PromptNodeConfig, ValidationError } from "@/lib/types";
+import type { PromptNodeConfig, ValidationError, VariableType } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -34,16 +31,16 @@ interface PromptConfigFormProps {
   errors: ValidationError[];
   availableVariables?: string[];
   availableNodes?: Array<{ id: string; name: string }>;
-  variables?: Array<{ name: string; type: string }>;
+  variables?: Array<{ name: string; type: VariableType }>;
   onCreateVariable: (variable: {
     name: string;
-    type: string;
+    type: VariableType;
     default: any;
   }) => Promise<void>;
   nodeName?: string;
   onNodeNameChange?: (name: string) => void;
   nodeNameError?: string;
-  nodeNameInputRef?: React.RefObject<HTMLInputElement>;
+  nodeNameInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 export function PromptConfigForm({

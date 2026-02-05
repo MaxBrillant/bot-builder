@@ -5,7 +5,7 @@
  * via Evolution API proxy
  */
 
-import type { APIActionNodeConfig, APIHeader } from "./types";
+import type { APIActionNodeConfig } from "./types";
 
 // Get API base URL from environment
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";

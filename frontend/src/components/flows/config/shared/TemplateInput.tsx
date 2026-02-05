@@ -195,7 +195,7 @@ export function TemplateInput({
     const cursorPos = textarea.selectionStart;
 
     const beforeVariable = value.substring(0, startPos);
-    const afterCursor = value.substring(cursorPos);
+    const afterCursor = value.substring(cursorPos ?? 0);
     const newValue = `${beforeVariable}{{${variable}}}${afterCursor}`;
 
     onChange(newValue);
@@ -254,8 +254,8 @@ export function TemplateInput({
           <Input
             ref={textareaRef as any}
             value={value}
-            onChange={handleTextChange}
-            onKeyDown={handleKeyDown}
+            onChange={handleTextChange as any}
+            onKeyDown={handleKeyDown as any}
             placeholder={placeholder}
             maxLength={maxLength}
             className={cn(
@@ -266,7 +266,7 @@ export function TemplateInput({
           />
         ) : (
           <Textarea
-            ref={textareaRef}
+            ref={textareaRef as React.RefObject<HTMLTextAreaElement>}
             value={value}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}

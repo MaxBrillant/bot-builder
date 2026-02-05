@@ -8,13 +8,11 @@ import type {
   LogicExpressionNodeConfig,
   ValidationError,
   ValidationRule,
-  HTTPMethod,
 } from "../types";
 import { SystemConstraints } from "../types";
 import {
   isNonEmptyString,
   isWithinMaxLength,
-  isValidVariableName,
   isValidURL,
   isValidHTTPMethod,
   isValidValidationType,
@@ -814,7 +812,7 @@ export function validateAPIActionConfig(
  * LOGIC_EXPRESSION node validation
  */
 export function validateLogicExpressionConfig(
-  config: LogicExpressionNodeConfig
+  _config: LogicExpressionNodeConfig
 ): ValidationResult {
   // LOGIC_EXPRESSION has no config fields - routes are configured separately
   // No validation needed

@@ -1246,7 +1246,7 @@ export function moveNode(
 
   // Extract nodeToMove from current position first
   const parentInfo = findParentNode(updatedFlow, nodeToMove);
-  const childOfMovingNode = updatedNodeToMove.routes[0].target_node;
+  const childOfMovingNode = updatedNodeToMove.routes![0].target_node;
 
   if (parentInfo) {
     updatedFlow.nodes[parentInfo.parentId].routes![parentInfo.routeIndex].target_node = childOfMovingNode;
@@ -1255,15 +1255,15 @@ export function moveNode(
   }
 
   // NOW check for circular reference after extraction
-  const targetAfterInsertion = updatedMoveNextToNode.routes[routeIndex].target_node;
+  const targetAfterInsertion = updatedMoveNextToNode.routes![routeIndex].target_node;
   if (wouldCreateCircularReference(updatedFlow, nodeToMove, targetAfterInsertion)) {
     return null;
   }
 
   // Insert nodeToMove after moveNextToNode
-  updatedNodeToMove.routes[0].target_node = targetAfterInsertion;
-  updatedNodeToMove.routes[0].condition = "true";
-  updatedMoveNextToNode.routes[routeIndex].target_node = nodeToMove;
+  updatedNodeToMove.routes![0].target_node = targetAfterInsertion;
+  updatedNodeToMove.routes![0].condition = "true";
+  updatedMoveNextToNode.routes![routeIndex].target_node = nodeToMove;
 
   // Position updates handled by wrappers
 
@@ -1289,23 +1289,24 @@ export function moveNodeLeft(flowJson: Flow, nodeId: string): Flow | null {
     result = moveNode(flowJson, nodeId, grandparentInfo.parentId, grandparentInfo.routeIndex);
   } else {
     // Parent is START - manually swap to make nodeId the new START
-    result = JSON.parse(JSON.stringify(flowJson));
-    const node = result.nodes[nodeId];
-    const parentNode = result.nodes[parentInfo.parentId];
+    const clonedFlow: Flow = JSON.parse(JSON.stringify(flowJson));
+    const node = clonedFlow.nodes[nodeId];
+    const parentNode = clonedFlow.nodes[parentInfo.parentId];
 
     // Node must have exactly one route to be moveable
     if (!node.routes || node.routes.length !== 1) return null;
 
     // Extract node from parent
     const nodeChild = node.routes[0].target_node;
-    parentNode.routes[0].target_node = nodeChild;
+    parentNode.routes![0].target_node = nodeChild;
 
     // Make node point to parent
     node.routes[0].target_node = parentInfo.parentId;
     node.routes[0].condition = "true";
 
     // Make node the new START
-    result.start_node_id = nodeId;
+    clonedFlow.start_node_id = nodeId;
+    result = clonedFlow;
   }
 
   if (result) {

@@ -68,7 +68,7 @@ import {
   findNodeLeft,
   findNodeRight,
 } from "@/utils/nodeNavigationUtils";
-import { POSITION_NUDGE, POSITION_NUDGE_LARGE, snapToGrid, GRID_SIZE } from "@/utils/canvasPositioningUtils";
+import { POSITION_NUDGE, POSITION_NUDGE_LARGE, snapToGrid } from "@/utils/canvasPositioningUtils";
 
 // Custom hooks
 import { useDialogState } from "@/hooks/useDialogState";

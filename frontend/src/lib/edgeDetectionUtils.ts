@@ -6,7 +6,15 @@
  * on both bezier curves and smooth step paths.
  */
 
-import { getBezierPath, getSmoothStepPath, Position } from 'reactflow';
+import { getBezierPath, getSmoothStepPath } from 'reactflow';
+
+// Local Position enum to avoid reactflow type export issues
+enum Position {
+  Left = 'left',
+  Top = 'top',
+  Right = 'right',
+  Bottom = 'bottom',
+}
 
 // Type aliases for reactflow
 type Edge = any;

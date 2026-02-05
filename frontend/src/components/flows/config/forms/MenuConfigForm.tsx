@@ -26,6 +26,7 @@ import type {
   MenuNodeConfig,
   ValidationError,
   MenuSourceType,
+  VariableType,
 } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -36,16 +37,16 @@ interface MenuConfigFormProps {
   errors: ValidationError[];
   availableVariables?: string[];
   availableNodes?: Array<{ id: string; name: string }>;
-  variables?: Array<{ name: string; type: string }>;
+  variables?: Array<{ name: string; type: VariableType }>;
   onCreateVariable: (variable: {
     name: string;
-    type: string;
+    type: VariableType;
     default: any;
   }) => Promise<void>;
   nodeName?: string;
   onNodeNameChange?: (name: string) => void;
   nodeNameError?: string;
-  nodeNameInputRef?: React.RefObject<HTMLInputElement>;
+  nodeNameInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 export function MenuConfigForm({
