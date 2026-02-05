@@ -11,6 +11,18 @@ services:
       - caddy_config:/config
     depends_on:
       - api
+      - frontend
+    restart: unless-stopped
+    networks:
+      - botbuilder-network
+
+  # Frontend - React App
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-https://api.frontend.ndash.my}
     restart: unless-stopped
     networks:
       - botbuilder-network

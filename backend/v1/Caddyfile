@@ -1,14 +1,9 @@
+# Frontend - React App
+frontend.ndash.my {
+    reverse_proxy frontend:80
+}
+
 # API - Backend
 api.frontend.ndash.my {
     reverse_proxy api:8000
 }
-
-# Frontend - React App (uncomment when frontend container is ready)
-# frontend.ndash.my {
-#     reverse_proxy frontend:3000
-# }
-
-# Grafana - Monitoring (optional, remove in production if not needed publicly)
-# grafana.frontend.ndash.my {
-#     reverse_proxy grafana:3000
-# }
