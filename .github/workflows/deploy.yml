@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -17,7 +17,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || 22 }}
+          port: 22
           script: |
             cd ${{ secrets.APP_PATH }}
 
@@ -25,15 +25,15 @@ jobs:
             git pull origin main
 
             # Build and restart containers
-            docker-compose pull
-            docker-compose build --no-cache api
-            docker-compose up -d
+            docker compose pull
+            docker compose build --no-cache api frontend
+            docker compose up -d
 
             # Clean up old images
             docker image prune -f
 
             # Health check
-            sleep 10
+            sleep 15
             curl -f http://localhost:8000/health || exit 1
 
             echo "Deployment complete!"
