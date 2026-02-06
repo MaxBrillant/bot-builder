@@ -1,36 +1,18 @@
+# Development Docker Compose
+# Usage: docker-compose -f docker-compose.dev.yml up -d
+#
+# Same as production BUT:
+# - No Caddy (frontend runs separately with npm run dev)
+# - No Frontend container (run with npm run dev)
+# - API port exposed directly on localhost:8000
+# - Uses .env file for secrets (same as production)
+
 services:
-  # Caddy - Reverse Proxy & HTTPS
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - api
-      - frontend
-    restart: unless-stopped
-    networks:
-      - botbuilder-network
-
-  # Frontend - React App
-  frontend:
-    build:
-      context: ../../frontend
-      dockerfile: Dockerfile
-      args:
-        - VITE_API_URL=${VITE_API_URL:-https://api.frontend.ndash.my}
-    restart: unless-stopped
-    networks:
-      - botbuilder-network
-
   # Bot Builder API
   api:
     build: .
-    # No public port - accessed via Caddy reverse proxy only
+    ports:
+      - "8000:8000"  # Direct access for local development
     env_file: .env
     environment:
       # Database config (nested with __)
@@ -41,15 +23,21 @@ services:
       - SECURITY__SECRET_KEY=${SECRET_KEY}
       - SECURITY__ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - SECURITY__ALGORITHM=HS256
-      - SECURITY__ACCESS_TOKEN_EXPIRE_MINUTES=4320
+      - SECURITY__ACCESS_TOKEN_EXPIRE_MINUTES=120
       # Evolution API config (nested with __)
       - EVOLUTION_API__URL=http://evolution-api:8080
       - EVOLUTION_API__API_KEY=${EVOLUTION_API_KEY}
       - EVOLUTION_API__ENABLED=true
       - EVOLUTION_API__WEBHOOK_BASE_URL=http://api:8000
-      # App config (lowercase)
-      - environment=${ENVIRONMENT:-development}
-      - debug=${DEBUG:-True}
+      # App config - override for local dev
+      - environment=development
+      - debug=true
+      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:8000
+      - FRONTEND_URL=http://localhost:5173
+      # Google OAuth
+      - GOOGLE__CLIENT_ID=${GOOGLE__CLIENT_ID:-}
+      - GOOGLE__CLIENT_SECRET=${GOOGLE__CLIENT_SECRET:-}
+      - GOOGLE__REDIRECT_URI=http://localhost:8000/auth/google/callback
     depends_on:
       db:
         condition: service_healthy
@@ -71,7 +59,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"  # Localhost only - use SSH tunnel for remote access
+      - "5432:5432"  # Accessible for DB tools
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U botbuilder"]
       interval: 10s
@@ -88,7 +76,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "127.0.0.1:6379:6379"  # Localhost only - use SSH tunnel for remote access
+      - "6379:6379"  # Accessible for Redis tools
     restart: unless-stopped
     networks:
       - botbuilder-network
@@ -102,7 +90,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "127.0.0.1:9090:9090"  # Localhost only - use SSH tunnel for remote access
+      - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -120,10 +108,10 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "127.0.0.1:3001:3000"  # Localhost only - use SSH tunnel for remote access
+      - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
@@ -134,18 +122,19 @@ services:
     networks:
       - botbuilder-network
 
-  # Evolution API for WhatsApp Integration (v2.3.7 - built from source)
+  # Evolution API for WhatsApp Integration
   evolution-api:
     build:
       context: .
       dockerfile: Dockerfile.evolution
-    # No public port - accessed internally by API service only
+    ports:
+      - "8080:8080"  # Exposed for local debugging
     environment:
       # Server Configuration
       - SERVER_TYPE=http
       - SERVER_PORT=8080
       - SERVER_URL=http://evolution-api:8080
-      - CORS_ORIGIN=http://api:8000  # Restrict to internal API service only
+      - CORS_ORIGIN=http://api:8000,http://localhost:8000
       - CORS_METHODS=GET,POST,PUT,DELETE
       - CORS_CREDENTIALS=true
 
@@ -191,12 +180,12 @@ services:
       - LOG_COLOR=true
       - LOG_BAILEYS=error
 
-      # Webhook Configuration (disabled - using instance-specific webhooks)
+      # Webhook Configuration
       - WEBHOOK_GLOBAL_ENABLED=false
       - WEBHOOK_GLOBAL_URL=
       - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false
 
-      # Webhook Events (enable specific events to be fired)
+      # Webhook Events
       - WEBHOOK_EVENTS_QRCODE_UPDATED=true
       - WEBHOOK_EVENTS_CONNECTION_UPDATE=true
       - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
@@ -240,10 +229,6 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
-    driver: local
-  caddy_data:
-    driver: local
-  caddy_config:
     driver: local
 
 networks:
