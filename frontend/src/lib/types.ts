@@ -352,9 +352,9 @@ export interface FlowValidationResponse {
 // ============================================
 
 // Auth responses
+// SECURITY: Token is NOT in response body - it's set via httpOnly cookie by the backend
+// This prevents XSS attacks from stealing tokens via JavaScript
 export interface LoginResponse {
-  access_token: string;
-  token_type: string;
   user: User;
 }
 

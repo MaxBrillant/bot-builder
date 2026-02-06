@@ -3,40 +3,50 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
+/**
+ * OAuth Callback Page
+ *
+ * Handles the redirect from OAuth provider (Google).
+ * SECURITY: Token is NOT in URL - it's in an httpOnly cookie set by the backend.
+ * This page just verifies the cookie is valid by calling /auth/me.
+ */
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { setAuthFromToken } = useAuth();
+  const { verifyAuthCookie } = useAuth();
 
   useEffect(() => {
-    const token = searchParams.get("token");
     const error = searchParams.get("error");
     const redirect = searchParams.get("redirect");
 
     if (error) {
-      // Handle OAuth error
+      // Handle OAuth error - map error codes to user-friendly messages
       console.error("OAuth error:", error);
-      navigate("/login?error=oauth_failed");
+      navigate(`/login?error=${error}`);
       return;
     }
 
-    if (token) {
-      // Store token and fetch user data
-      setAuthFromToken(token)
-        .then(() => {
-          // Navigate to redirect URL if present, otherwise go to /bots
-          const decodedRedirect = redirect ? decodeURIComponent(redirect) : null;
-          navigate(decodedRedirect || "/bots");
-        })
-        .catch((error) => {
-          console.error("Failed to authenticate:", error);
-          navigate("/login?error=auth_failed");
-        });
-    } else {
-      // No token or error - redirect to login
-      navigate("/login?error=oauth_failed");
-    }
-  }, [searchParams, navigate, setAuthFromToken]);
+    // SECURITY: Token is in httpOnly cookie, not URL
+    // Verify the cookie is valid by calling /auth/me
+    verifyAuthCookie()
+      .then(() => {
+        // Navigate to redirect URL if present, otherwise go to /bots
+        // Validate redirect is a relative path to prevent open redirect
+        let targetPath = "/bots";
+        if (redirect) {
+          const decodedRedirect = decodeURIComponent(redirect);
+          // Only allow relative paths starting with /
+          if (decodedRedirect.startsWith("/") && !decodedRedirect.startsWith("//")) {
+            targetPath = decodedRedirect;
+          }
+        }
+        navigate(targetPath);
+      })
+      .catch((error) => {
+        console.error("Failed to verify authentication:", error);
+        navigate("/login?error=auth_failed");
+      });
+  }, [searchParams, navigate, verifyAuthCookie]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/30">

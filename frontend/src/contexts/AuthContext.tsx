@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import type { User, LoginResponse } from "../lib/types";
+import type { User } from "../lib/types";
 import {
   login as apiLogin,
   register as apiRegister,
@@ -16,7 +16,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  setAuthFromToken: (token: string) => Promise<void>;
+  verifyAuthCookie: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,34 +28,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check for existing token on mount
+  // Check for existing auth on mount by calling /auth/me
+  // SECURITY: We no longer store tokens in localStorage - auth is via httpOnly cookie only
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    const storedUser = localStorage.getItem("user");
-
-    if (token && storedUser) {
+    const checkAuth = async () => {
       try {
-        setUser(JSON.parse(storedUser));
-      } catch (error) {
-        console.error("Failed to parse stored user:", error);
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
+        // Try to get current user using httpOnly cookie
+        const response = await getCurrentUser();
+        setUser(response.data);
+      } catch {
+        // Not authenticated or cookie expired - this is normal
+        setUser(null);
+      } finally {
+        setIsLoading(false);
       }
-    }
-    setIsLoading(false);
+    };
+
+    checkAuth();
   }, []);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
+      // Backend sets httpOnly cookie on successful login
       const response = await apiLogin(email, password);
-      const data: LoginResponse = response.data;
-
-      // Store token and user
-      localStorage.setItem("token", data.access_token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      setUser(data.user);
-
+      // Response includes user data (but token is in httpOnly cookie, not accessible to JS)
+      setUser(response.data.user);
       toast.success("Login successful!");
     } catch (error: unknown) {
       console.error("Login error:", error);
@@ -90,20 +88,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logout = async () => {
     try {
-      // Backend logout FIRST (to blacklist token)
+      // Backend logout - clears httpOnly cookie and blacklists token
       await logoutApi();
 
-      // Then clear local state
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
+      // Clear local state
       setUser(null);
       queryClient.clear();
 
       toast.success("Logged out successfully");
     } catch (error) {
-      // If backend fails, still clear local but warn user
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
+      // If backend fails, still clear local state but warn user
       setUser(null);
       queryClient.clear();
 
@@ -112,24 +106,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const setAuthFromToken = async (token: string) => {
+  /**
+   * Verify authentication via httpOnly cookie
+   * Used after OAuth callback where token is set via cookie (not URL)
+   */
+  const verifyAuthCookie = async () => {
     setIsLoading(true);
     try {
-      // Store token
-      localStorage.setItem("token", token);
-
-      // Fetch user profile using token
+      // Call /auth/me - this will use the httpOnly cookie automatically
       const response = await getCurrentUser();
-      const userData: User = response.data;
-
-      // Store user data
-      localStorage.setItem("user", JSON.stringify(userData));
-      setUser(userData);
-
+      setUser(response.data);
       toast.success("Login successful!");
     } catch (error: unknown) {
-      console.error("Failed to authenticate with token:", error);
-      localStorage.removeItem("token");
+      console.error("Failed to verify auth cookie:", error);
       const message = getErrorMessage(error);
       toast.error(message || "Authentication failed");
       throw error;
@@ -139,7 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, setAuthFromToken }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, logout, verifyAuthCookie }}>
       {children}
     </AuthContext.Provider>
   );

@@ -9,18 +9,17 @@ import type {
 } from "./types";
 import { queryClient } from "./queryClient";
 
-// Create axios instance with base URL
+/**
+ * API Client Configuration
+ *
+ * SECURITY: Authentication is handled via httpOnly cookies only.
+ * - No tokens stored in localStorage (prevents XSS token theft)
+ * - No Authorization header (token is in cookie)
+ * - withCredentials: true ensures cookies are sent with requests
+ */
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000",
-});
-
-// Add token to requests if available
-API.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+  withCredentials: true, // SECURITY: Send httpOnly cookies with all requests
 });
 
 // Handle 401 responses (unauthorized) and 429 (rate limiting)
@@ -41,17 +40,14 @@ API.interceptors.response.use(
 
     // Handle unauthorized
     if (error.response?.status === 401) {
-      // Clear authentication data
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-
       // Clear React Query cache to prevent showing old user's data
       queryClient.clear();
 
       // Redirect to login if not already there
       if (
         window.location.pathname !== "/login" &&
-        window.location.pathname !== "/"
+        window.location.pathname !== "/" &&
+        !window.location.pathname.startsWith("/auth/")
       ) {
         // Capture current path and append as redirect query parameter
         const currentPath = window.location.pathname + window.location.search;
@@ -64,7 +60,7 @@ API.interceptors.response.use(
   }
 );
 
-// Auth functions (placeholders for Phase 2)
+// Auth functions
 export const login = (email: string, password: string) =>
   API.post("/auth/login", { email, password });
 
@@ -77,7 +73,7 @@ export const getCurrentUser = () => API.get("/auth/me");
 
 export const deleteUserData = () => API.delete("/auth/me/data");
 
-// Bot management (Phase 3)
+// Bot management
 export const getBots = () => API.get<BotListResponse>("/bots");
 
 export const getBot = (botId: string) => API.get(`/bots/${botId}`);

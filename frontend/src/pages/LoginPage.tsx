@@ -55,6 +55,12 @@ export default function LoginPage() {
         oauth_not_configured: "Google Sign-In is not configured. Please use email/password.",
         account_inactive: "Your account is inactive. Please contact support.",
         auth_failed: "Authentication failed. Please try again.",
+        // Security: Account exists with password - don't auto-link
+        account_exists_use_password: "An account with this email already exists. Please sign in with your password instead.",
+        // Security: Account uses different OAuth provider
+        different_oauth_provider: "This account uses a different sign-in method. Please use your original sign-in method.",
+        // Security: Google account ID mismatch
+        oauth_id_mismatch: "Google account mismatch. Please contact support if you believe this is an error.",
       };
       toast.error(errorMessages[error] || "An error occurred. Please try again.");
 
