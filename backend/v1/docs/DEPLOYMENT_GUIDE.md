@@ -394,9 +394,9 @@ jobs:
             # Clean up old images
             docker image prune -f
 
-            # Health check
+            # Health check (API port not exposed to host, check inside container)
             sleep 15
-            curl -f http://localhost:8000/health || exit 1
+            docker compose exec -T api curl -f http://localhost:8000/health || exit 1
 
             echo "Deployment complete!"
 ```
@@ -478,8 +478,11 @@ docker compose ps
 # Check API logs
 docker compose logs api
 
-# Test health endpoint directly
-curl http://localhost:8000/health
+# Test health endpoint (inside container, port not exposed to host)
+docker compose exec api curl -f http://localhost:8000/health
+
+# Or test via Caddy (if SSL is working)
+curl https://api.frontend.ndash.my/health
 ```
 
 ### Database Connection Issues

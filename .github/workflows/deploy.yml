@@ -32,8 +32,8 @@ jobs:
             # Clean up old images
             docker image prune -f
 
-            # Health check
+            # Health check (API port not exposed to host, check inside container)
             sleep 15
-            curl -f http://localhost:8000/health || exit 1
+            docker compose exec -T api curl -f http://localhost:8000/health || exit 1
 
             echo "Deployment complete!"
