@@ -113,16 +113,18 @@ class Token(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    """Schema for login response"""
-    access_token: str
-    token_type: str = "bearer"
+    """
+    Schema for login response
+
+    SECURITY: Token is NOT included in response body.
+    Authentication is via httpOnly cookie only (set by server).
+    This prevents XSS attacks from stealing tokens via JavaScript.
+    """
     user: UserResponse
-    
+
     model_config = {
         "json_schema_extra": {
             "example": {
-                "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                "token_type": "bearer",
                 "user": {
                     "user_id": "123e4567-e89b-12d3-a456-426614174000",
                     "email": "user@example.com",

@@ -72,6 +72,27 @@ class CircuitBreakerOpenError(SystemException):
         super().__init__(message, error_code, **metadata)
 
 
+class RedisUnavailableError(SystemException):
+    """Raised when Redis is required but unavailable"""
+
+    def __init__(self, feature: str, message: str = None, error_code: str = None, **metadata):
+        self.feature = feature
+        msg = message or f"Redis unavailable - {feature} requires Redis"
+        super().__init__(msg, error_code or "REDIS_UNAVAILABLE", feature=feature, **metadata)
+
+
+class SecurityServiceUnavailableError(RedisUnavailableError):
+    """Security-critical Redis feature unavailable (rate limiting, token blacklist)"""
+
+    def __init__(self, feature: str, message: str = None, error_code: str = None, **metadata):
+        super().__init__(
+            feature,
+            message or f"Security service unavailable - {feature} requires Redis",
+            error_code or "SECURITY_SERVICE_UNAVAILABLE",
+            **metadata
+        )
+
+
 # ============================================================================
 # Category 2: Validation Exceptions
 # ============================================================================
@@ -151,6 +172,13 @@ class ContextSizeExceededError(SessionException):
 
     def __init__(self, message: str = "Context size limit exceeded", error_code: str = None, context_size: int = None, **metadata):
         super().__init__(message, error_code, context_size=context_size, **metadata)
+
+
+class SessionLockError(SessionException):
+    """Session is locked by another concurrent request"""
+
+    def __init__(self, message: str = "Session is being processed by another request", error_code: str = None, session_id: str = None, **metadata):
+        super().__init__(message, error_code or "SESSION_LOCKED", session_id=session_id, **metadata)
 
 
 # ============================================================================

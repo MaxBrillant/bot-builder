@@ -1,12 +1,14 @@
 """
 Authentication API
 Endpoints for user registration, login, and profile management
+
+SECURITY: Authentication is via httpOnly cookies ONLY.
+This prevents XSS attacks from stealing tokens via JavaScript.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta, timezone
 
@@ -19,7 +21,6 @@ from app.schemas.auth_schema import (
     UserResponse,
     LoginRequest,
     LoginResponse,
-    Token
 )
 from app.utils.security import (
     get_password_hash,
@@ -31,13 +32,14 @@ from app.dependencies import get_current_user
 from app.config import settings
 from app.core.redis_manager import redis_manager
 from app.utils.logger import get_logger
-from app.utils.exceptions import AuthenticationError
-
-security = HTTPBearer()
+from app.utils.exceptions import AuthenticationError, SecurityServiceUnavailableError
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# Cookie configuration
+ACCESS_TOKEN_COOKIE_NAME = "access_token"
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -61,26 +63,31 @@ async def register(
         HTTPException: If user_id or email already exists, or rate limit exceeded
     """
     # Rate limit registration by IP address
-    if settings.redis.enabled and redis_manager.is_connected():
-        client_ip = request.client.host if request.client else "unknown"
-
-        # Rate limit registrations per IP
-        rate_key = f"register:{client_ip}"
+    client_ip = request.client.host if request.client else "unknown"
+    rate_key = f"register:{client_ip}"
+    try:
         allowed = await redis_manager.check_rate_limit_user(
             rate_key,
             max_requests=settings.rate_limit.register_max,
             window_seconds=settings.rate_limit.register_window
         )
-        
+
         if not allowed:
             logger.warning(f"Registration rate limit exceeded", ip=client_ip)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many registration attempts. Please try again later."
             )
+    except SecurityServiceUnavailableError:
+        # SECURITY: If Redis is down, we can't rate limit - reject registration for safety
+        logger.error("Redis unavailable during registration - rejecting for security")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Registration service temporarily unavailable. Please try again later."
+        )
     
     # Check if email already exists
-    stmt = select(User).where(User.email == user_data.email)
+    stmt = select(User).where(func.lower(User.email) == func.lower(user_data.email))
     result = await db.execute(stmt)
     if result.scalar_one_or_none():
         raise HTTPException(
@@ -119,7 +126,7 @@ async def register(
     except IntegrityError as e:
         await db.rollback()
         error_msg = str(e)
-        if "email" in error_msg or "users_email_key" in error_msg:
+        if "email" in error_msg or "users_email_key" in error_msg or "idx_users_email_unique_lower" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
@@ -136,46 +143,58 @@ async def register(
 async def login(
     credentials: LoginRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db)
 ):
     """
     User login
-    
+
     Args:
         credentials: Login credentials (email and password)
         request: HTTP request (for IP-based rate limiting)
+        response: HTTP response (for setting cookies)
         db: Database session
-    
+
     Returns:
-        Access token and user profile
-    
+        User profile (token is set via httpOnly cookie, not in response body)
+
+    Security:
+        SECURITY: Token is set via httpOnly cookie ONLY.
+        This prevents XSS attacks from stealing tokens via JavaScript.
+        Token is NOT returned in response body.
+
     Raises:
         HTTPException: If credentials are invalid or rate limit exceeded
     """
     # Rate limit login attempts by IP address to prevent brute-force attacks
-    if settings.redis.enabled and redis_manager.is_connected():
-        client_ip = request.client.host if request.client else "unknown"
-
-        # Rate limit login attempts per IP
-        rate_key = f"login:{client_ip}"
+    client_ip = request.client.host if request.client else "unknown"
+    rate_key = f"login:{client_ip}"
+    try:
         allowed = await redis_manager.check_rate_limit_user(
             rate_key,
             max_requests=settings.rate_limit.login_max,
             window_seconds=settings.rate_limit.login_window
         )
-        
+
         if not allowed:
             logger.warning(f"Login rate limit exceeded", ip=client_ip)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many login attempts. Please try again later."
             )
-    
+    except SecurityServiceUnavailableError:
+        # SECURITY: If Redis is down, we can't rate limit - reject login for safety
+        logger.error("Redis unavailable during login - rejecting for security")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable. Please try again later."
+        )
+
     # Get user by email
-    stmt = select(User).where(User.email == credentials.email)
+    stmt = select(User).where(func.lower(User.email) == func.lower(credentials.email))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
-    
+
     if not user:
         logger.warning(f"Login failed - user not found", email=credentials.email)
         raise HTTPException(
@@ -198,25 +217,36 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
         )
-    
+
     # Check if user is active
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
-    
+
     # Create access token (convert UUID to string for JWT)
     access_token = create_access_token(
         data={"sub": str(user.user_id)},
         expires_delta=timedelta(minutes=settings.security.access_token_expire_minutes)
     )
 
+    # SECURITY: Set token as httpOnly cookie ONLY (not in response body)
+    # This prevents XSS attacks from stealing tokens via JavaScript
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE_NAME,
+        value=access_token,
+        httponly=True,              # JavaScript cannot access this cookie
+        secure=settings.is_production,  # HTTPS only in production
+        samesite="lax",             # CSRF protection
+        max_age=settings.security.access_token_expire_minutes * 60,
+        path="/"
+    )
+
     logger.info(f"User logged in", user_id=str(user.user_id))
 
+    # Return user data only (token is in httpOnly cookie)
     return LoginResponse(
-        access_token=access_token,
-        token_type="bearer",
         user=UserResponse.model_validate(user)
     )
 
@@ -239,41 +269,53 @@ async def get_current_user_profile(
 
 @router.post("/logout")
 async def logout(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    response: Response,
     current_user: User = Depends(get_current_user)
 ):
     """
-    User logout - Blacklist current JWT token
-    
+    User logout - Blacklist current JWT token and clear cookie
+
     Args:
-        credentials: JWT token from Authorization header
+        request: HTTP request (for cookie access)
+        response: HTTP response (for clearing cookie)
         current_user: Current authenticated user
-    
+
     Returns:
         Logout confirmation message
-    
-    Note:
-        - Token is added to blacklist if Redis is enabled
-        - Token remains invalid until it expires naturally
-        - If Redis is not available, logout only logs the action
-    """
-    token = credentials.credentials
 
-    # Blacklist token if Redis is enabled
-    if settings.redis.enabled and redis_manager.is_connected():
+    Note:
+        - Token is added to blacklist via Redis
+        - Token remains invalid until it expires naturally
+        - Cookie is always cleared
+    """
+    # Get token from httpOnly cookie
+    token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+
+    # Always clear the cookie
+    response.delete_cookie(
+        key=ACCESS_TOKEN_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        secure=settings.is_production,
+        samesite="lax"
+    )
+
+    # Blacklist token if available
+    if token:
         try:
             # Decode token to get JTI and expiration time
             payload = decode_access_token(token)
             jti = payload.get("jti")
             exp_timestamp = payload.get("exp")
-            
+
             if not jti:
                 logger.error(f"Token missing JTI claim", user_id=str(current_user.user_id))
             elif exp_timestamp:
                 # Calculate TTL (time to live) for blacklist entry
                 exp_datetime = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
                 ttl_seconds = int((exp_datetime - datetime.now(timezone.utc)).total_seconds())
-                
+
                 if ttl_seconds > 0:
                     # Blacklist token by JTI with TTL matching token expiration
                     await redis_manager.blacklist_token(jti, ttl_seconds)
@@ -284,8 +326,8 @@ async def logout(
             logger.error(f"Failed to blacklist token: {e}", user_id=str(current_user.user_id))
             # Don't fail logout if blacklist fails
     else:
-        logger.info(f"User logged out (Redis disabled)", user_id=str(current_user.user_id))
-    
+        logger.info(f"User logged out (no token to blacklist)", user_id=str(current_user.user_id))
+
     return {
         "message": "Successfully logged out",
         "user_id": str(current_user.user_id)
@@ -294,7 +336,8 @@ async def logout(
 
 @router.delete("/me/data", status_code=status.HTTP_200_OK)
 async def delete_user_data(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -309,7 +352,8 @@ async def delete_user_data(
     - All bot integrations
 
     Args:
-        credentials: JWT token from Authorization header
+        request: HTTP request (for cookie access)
+        response: HTTP response (for clearing cookie)
         current_user: Current authenticated user
         db: Database session
 
@@ -323,6 +367,7 @@ async def delete_user_data(
         - Requires authentication
         - Audit logs the deletion event (with masked PII)
         - Token is blacklisted after deletion
+        - Cookie is always cleared
     """
     user_id = str(current_user.user_id)
     user_email = current_user.email
@@ -349,10 +394,21 @@ async def delete_user_data(
             user_id_partial=user_id[:8] + "..."
         )
 
-        # Blacklist the current token if Redis is enabled
-        if settings.redis.enabled and redis_manager.is_connected():
+        # Get token from httpOnly cookie
+        token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+
+        # Clear the authentication cookie
+        response.delete_cookie(
+            key=ACCESS_TOKEN_COOKIE_NAME,
+            path="/",
+            httponly=True,
+            secure=settings.is_production,
+            samesite="lax"
+        )
+
+        # Blacklist the current token
+        if token and redis_manager.is_connected():
             try:
-                token = credentials.credentials
                 payload = decode_access_token(token)
                 jti = payload.get("jti")
                 exp_timestamp = payload.get("exp")

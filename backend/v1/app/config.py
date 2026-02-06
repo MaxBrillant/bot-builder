@@ -14,6 +14,8 @@ class DatabaseConfig(BaseSettings):
     url: str = "postgresql+asyncpg://botbuilder:password@localhost:5432/botbuilder"
     pool_size: int = Field(10, ge=1, le=100, description="Number of permanent connections")
     max_overflow: int = Field(20, ge=0, le=100, description="Additional connections beyond pool_size")
+    pool_timeout: int = Field(30, ge=5, le=120, description="Seconds to wait for connection from pool")
+    pool_recycle: int = Field(3600, ge=300, description="Recycle connections after N seconds")
     echo: bool = Field(False, description="Log all SQL statements")
 
     @field_validator('url')
@@ -25,13 +27,30 @@ class DatabaseConfig(BaseSettings):
 
 
 class RedisConfig(BaseSettings):
-    """Redis configuration group"""
+    """Redis configuration group (Redis is MANDATORY for security - rate limiting and token blacklisting)"""
     url: str = "redis://localhost:6379/0"
-    enabled: bool = True
     socket_timeout: int = Field(5, ge=1, le=30, description="Socket connection timeout in seconds")
     socket_connect_timeout: int = Field(2, ge=1, le=10, description="Initial connection timeout")
     max_reconnect_attempts: int = Field(3, ge=0, le=10, description="Maximum reconnection attempts")
     reconnect_backoff_cap: int = Field(30, ge=1, le=300, description="Maximum backoff time in seconds")
+
+    @field_validator('url')
+    @classmethod
+    def validate_redis_url(cls, v: str) -> str:
+        """Validate Redis URL and warn about missing/weak passwords"""
+        import warnings
+        # Check if password is present in URL (format: redis://:password@host:port/db)
+        if '@' not in v:
+            warnings.warn(
+                "Redis URL has no password. For production, use: redis://:password@host:port/db",
+                UserWarning
+            )
+        elif 'changeme' in v.lower() or ':password@' in v.lower():
+            warnings.warn(
+                "Redis password appears to be a default value. Use a strong password in production.",
+                UserWarning
+            )
+        return v
 
 
 class CacheConfig(BaseSettings):
@@ -193,7 +212,7 @@ class Settings(BaseSettings):
 
     Environment variables support nested access using double underscore:
     - DATABASE__URL=postgresql://...
-    - REDIS__ENABLED=true
+    - REDIS__URL=redis://...
     - SECURITY__SECRET_KEY=...
     """
 
@@ -201,7 +220,7 @@ class Settings(BaseSettings):
     app_name: str = "Bot Builder"
     app_version: str = "1.0.0"
     environment: str = Field("development", pattern="^(development|staging|production)$")
-    debug: bool = True
+    debug: bool = False
     base_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:3000"
 
@@ -246,9 +265,9 @@ class Settings(BaseSettings):
     @model_validator(mode='after')
     def validate_cross_field(self):
         """Cross-field validation"""
-        # Redis URL required when enabled
-        if self.redis.enabled and not self.redis.url:
-            raise ValueError("REDIS__URL is required when REDIS__ENABLED=true")
+        # Redis URL is always required (Redis is mandatory)
+        if not self.redis.url:
+            raise ValueError("REDIS__URL is required (Redis is mandatory for security)")
 
         # Production-specific validations
         if self.is_production:

@@ -29,11 +29,11 @@ class BotService:
     def generate_webhook_secret() -> str:
         """
         Generate a secure webhook secret
-        
+
         Returns:
-            32-character random hex string
+            64-character URL-safe random string (48 bytes of entropy)
         """
-        return secrets.token_hex(32)
+        return secrets.token_urlsafe(48)
     
     async def create_bot(
         self,

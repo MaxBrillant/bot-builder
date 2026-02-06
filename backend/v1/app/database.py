@@ -29,7 +29,9 @@ else:
         echo=settings.database.echo,
         pool_pre_ping=True,
         pool_size=settings.database.pool_size,
-        max_overflow=settings.database.max_overflow
+        max_overflow=settings.database.max_overflow,
+        pool_timeout=settings.database.pool_timeout,
+        pool_recycle=settings.database.pool_recycle,
     )
 
 # Create async session factory

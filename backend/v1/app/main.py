@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
     
     Startup:
     - Initialize database connection
-    - Initialize Redis (if enabled)
+    - Initialize Redis (mandatory for security)
     - Log application start
     
     Shutdown:
@@ -77,13 +77,13 @@ async def lifespan(app: FastAPI):
         logger.error(f"Database initialization failed: {str(e)}")
         raise
 
-    # Initialize Redis
-    if settings.redis.enabled:
-        try:
-            await redis_manager.connect()
-            logger.info("Redis initialized")
-        except Exception as e:
-            logger.warning(f"Redis initialization failed: {str(e)} - continuing without Redis")
+    # Initialize Redis (MANDATORY for security - rate limiting and token blacklisting)
+    try:
+        await redis_manager.connect()
+        logger.info("Redis initialized")
+    except Exception as e:
+        logger.error(f"Redis initialization failed: {str(e)}")
+        raise
     
     # Initialize shared HTTP client
     try:
@@ -150,10 +150,9 @@ async def lifespan(app: FastAPI):
     await close_http_client()
     logger.info("HTTP client closed")
 
-    # Close Redis
-    if settings.redis.enabled:
-        await redis_manager.disconnect()
-        logger.info("Redis connection closed")
+    # Close Redis (always required)
+    await redis_manager.disconnect()
+    logger.info("Redis connection closed")
 
     # Close database
     await close_db()
@@ -263,9 +262,9 @@ async def health_check():
         Application health status
     """
     db_healthy = await check_database()
-    redis_health = await redis_manager.health_check() if settings.redis.enabled else {"status": "disabled"}
+    redis_health = await redis_manager.health_check()
 
-    overall_healthy = db_healthy and (not settings.redis.enabled or redis_health["status"] == "healthy")
+    overall_healthy = db_healthy and redis_health["status"] == "healthy"
 
     return {
         "status": "healthy" if overall_healthy else "degraded",

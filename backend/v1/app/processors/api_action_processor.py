@@ -9,6 +9,7 @@ import json
 
 from app.utils.constants import HTTPMethod, SpecialVariables, VariableType, SystemConstraints
 from app.utils.exceptions import ConstraintViolationError
+from app.utils.security import is_safe_url_for_ssrf
 from app.models.node_configs import (
     FlowNode,
     APIActionNodeConfig,
@@ -176,7 +177,22 @@ class APIActionProcessor(BaseProcessor):
                 body={"error": "API endpoints must use HTTPS. Insecure HTTP connections are not allowed."},
                 success=False
             )
-        
+
+        # SECURITY: SSRF Protection - Block requests to private/internal networks
+        is_safe, ssrf_error = is_safe_url_for_ssrf(rendered_url)
+        if not is_safe:
+            self.logger.error(
+                "API endpoint blocked by SSRF protection",
+                url=rendered_url,
+                reason=ssrf_error,
+                security_requirement="SSRF_PROTECTION"
+            )
+            return APIResponse(
+                status_code=403,
+                body={"error": "API endpoint not allowed: requests to internal or private networks are blocked."},
+                success=False
+            )
+
         # Get HTTP method
         method = config.request.method.upper()
         
@@ -214,7 +230,7 @@ class APIActionProcessor(BaseProcessor):
             self.logger.error(f"API size constraint violated: {e.message}", url=rendered_url)
             return APIResponse(
                 status_code=413,  # Payload Too Large
-                body={"error": e.message},
+                body={"error": "Request or response payload too large"},
                 success=False
             )
         except httpx.TimeoutException:
@@ -226,10 +242,10 @@ class APIActionProcessor(BaseProcessor):
                 success=False
             )
         except httpx.RequestError as e:
-            self.logger.error(f"API call request error: {str(e)}", url=rendered_url)
+            self.logger.error(f"API call request error: {str(e)}", url=rendered_url, exc_info=True)
             return APIResponse(
                 status_code=500,
-                body={"error": str(e)},
+                body={"error": "API request failed"},
                 success=False
             )
         except Exception as e:

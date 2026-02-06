@@ -106,6 +106,18 @@ class Session(Base):
             'expires_at',
             postgresql_where=text("status = 'ACTIVE'")
         ),
+        # Composite index for bot+status filtering (common query pattern)
+        Index(
+            'idx_sessions_bot_status',
+            'bot_id',
+            'status'
+        ),
+        # Index for cleanup queries on completed sessions
+        Index(
+            'idx_sessions_completed_at',
+            'completed_at',
+            postgresql_where=text("completed_at IS NOT NULL")
+        ),
     )
 
     # Relationships

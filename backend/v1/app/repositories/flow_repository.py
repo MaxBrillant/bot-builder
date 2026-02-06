@@ -4,7 +4,7 @@ Flow repository - centralizes all flow queries
 
 from typing import Optional, List
 from uuid import UUID
-from sqlalchemy import select, delete, func, text
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.base import BaseRepository
@@ -110,13 +110,18 @@ class FlowRepository(BaseRepository[Flow]):
 
         Returns:
             Flow with matching keyword or None
+
+        Security:
+            Uses JSONB containment operator (@>) which is parameterized by SQLAlchemy,
+            preventing SQL injection attacks.
         """
         keyword_upper = keyword.upper()
 
-        # Use PostgreSQL's JSONB path query with explicit cast to jsonpath
+        # Use JSONB containment operator - SQLAlchemy parameterizes this safely
+        # This checks if trigger_keywords array contains the keyword
         stmt = select(Flow).where(
             Flow.bot_id == bot_id,
-            text(f"jsonb_path_exists(flows.trigger_keywords, '$[*] ? (@ == \"{keyword_upper}\")'::jsonpath)")
+            Flow.trigger_keywords.contains([keyword_upper])
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -130,10 +135,14 @@ class FlowRepository(BaseRepository[Flow]):
 
         Returns:
             Flow with wildcard trigger or None
+
+        Security:
+            Uses JSONB containment operator which is parameterized by SQLAlchemy.
         """
+        # Use JSONB containment operator - safe from injection
         stmt = select(Flow).where(
             Flow.bot_id == bot_id,
-            text("jsonb_path_exists(flows.trigger_keywords, '$[*] ? (@ == \"*\")'::jsonpath)")
+            Flow.trigger_keywords.contains(["*"])
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -168,12 +177,17 @@ class FlowRepository(BaseRepository[Flow]):
 
         Returns:
             True if keyword exists
+
+        Security:
+            Uses JSONB containment operator which is parameterized by SQLAlchemy,
+            preventing SQL injection attacks.
         """
         keyword_upper = keyword.upper()
 
+        # Use JSONB containment operator - SQLAlchemy parameterizes this safely
         stmt = select(Flow).where(
             Flow.bot_id == bot_id,
-            text(f"jsonb_path_exists(flows.trigger_keywords, '$[*] ? (@ == \"{keyword_upper}\")'::jsonpath)")
+            Flow.trigger_keywords.contains([keyword_upper])
         )
 
         if exclude_flow_id:

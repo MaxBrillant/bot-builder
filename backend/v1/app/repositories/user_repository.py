@@ -4,7 +4,7 @@ User repository - centralizes all user queries
 
 from typing import Optional
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.base import BaseRepository
@@ -19,7 +19,7 @@ class UserRepository(BaseRepository[User]):
 
     async def get_by_email(self, email: str) -> Optional[User]:
         """
-        Get user by email address
+        Get user by email address (case-insensitive)
 
         Args:
             email: User email
@@ -27,7 +27,7 @@ class UserRepository(BaseRepository[User]):
         Returns:
             User or None if not found
         """
-        stmt = select(User).where(User.email == email)
+        stmt = select(User).where(func.lower(User.email) == func.lower(email))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -46,7 +46,7 @@ class UserRepository(BaseRepository[User]):
 
     async def get_active_by_email(self, email: str) -> Optional[User]:
         """
-        Get active user by email
+        Get active user by email (case-insensitive)
 
         Args:
             email: User email
@@ -54,6 +54,6 @@ class UserRepository(BaseRepository[User]):
         Returns:
             Active user or None
         """
-        stmt = select(User).where(User.email == email, User.is_active == True)
+        stmt = select(User).where(func.lower(User.email) == func.lower(email), User.is_active == True)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

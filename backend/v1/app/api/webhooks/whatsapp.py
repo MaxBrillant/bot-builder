@@ -21,7 +21,7 @@ from app.core.redis_manager import redis_manager, get_redis_manager
 from app.config import settings
 from app.utils.constants import IntegrationPlatform, IntegrationStatus
 from app.utils.logger import logger
-from app.utils.exceptions import NotFoundError
+from app.utils.exceptions import NotFoundError, SecurityServiceUnavailableError
 from app.schemas.evolution_webhook_schema import WebhookResponse
 from app.utils.security import sanitize_input, check_suspicious_patterns
 
@@ -73,8 +73,8 @@ async def receive_whatsapp_message(
         logger.debug(f"WhatsApp message filtered out for bot {bot_id}")
         return {"status": "ignored", "message": "Message filtered"}
 
-    # Rate limiting
-    if settings.redis.enabled and redis_manager.is_connected():
+    # Rate limiting (fail-closed: deny requests if Redis unavailable)
+    try:
         allowed = await redis_manager.check_rate_limit_channel_user(
             normalized_message["channel"],
             normalized_message["channel_user_id"],
@@ -84,6 +84,9 @@ async def receive_whatsapp_message(
         if not allowed:
             logger.warning(f"Rate limit exceeded for WhatsApp user", bot_id=str(bot_id))
             return {"status": "error", "message": "Rate limit exceeded"}
+    except SecurityServiceUnavailableError as e:
+        logger.error(f"Security service unavailable: {e.feature}", bot_id=str(bot_id))
+        return {"status": "error", "message": "Service temporarily unavailable"}
 
     # Input Sanitization (Layer 1 + Layer 3) - Per spec Section 10.1
     original_message = normalized_message["message_text"]

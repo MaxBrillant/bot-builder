@@ -73,6 +73,8 @@ class AuditLog(Base):
         Index('idx_audit_event_timestamp', 'event_type', 'timestamp'),
         # Compound index for user audit trails
         Index('idx_audit_user_timestamp', 'user_id', 'timestamp'),
+        # Compound index for resource lookups ("show all events for session X")
+        Index('idx_audit_resource', 'resource_type', 'resource_id'),
     )
 
     def __repr__(self):

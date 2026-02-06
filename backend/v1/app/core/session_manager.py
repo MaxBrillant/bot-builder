@@ -10,6 +10,7 @@ import json
 import sys
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.models.session import Session
 from app.models.audit_log import AuditResult
@@ -18,6 +19,7 @@ from app.utils.logger import get_logger
 from app.utils.exceptions import (
     SessionExpiredError,
     SessionNotFoundError,
+    SessionLockError,
     MaxAutoProgressionError,
     ContextSizeExceededError,
     ConstraintViolationError
@@ -58,164 +60,178 @@ class SessionManager:
         flow_snapshot: Dict[str, Any]
     ) -> Session:
         """
-        Create new session, terminate existing if any
-        
+        Create new session, terminate existing if any (atomic operation)
+
         Args:
             channel: Communication channel (whatsapp, sms, telegram, etc.)
             channel_user_id: User identifier in the channel
             bot_id: Bot ID this session belongs to
             flow_id: Flow UUID identifier
             flow_snapshot: Complete flow definition (for version isolation)
-        
+
         Returns:
             New session instance
-        
+
         Note:
-            - Silently terminates any existing active session for this (channel, user, bot)
+            - Uses SELECT FOR UPDATE to prevent race conditions
+            - Terminates + creates in single transaction (lock held throughout)
+            - Retries once on unique constraint violation (handles race edge case)
             - Sets expires_at to created_at + 30 minutes (absolute)
         """
-        try:
-            # Silently terminate any existing active session for this channel+user+bot
-            await self._terminate_existing_session(channel, channel_user_id, bot_id)
-            
-            # Get start_node_id from flow snapshot
-            start_node_id = flow_snapshot.get('start_node_id')
-            if not start_node_id:
-                raise ValueError("Flow snapshot missing start_node_id")
-            
-            # Calculate expiration time (30 minutes from now, absolute)
-            created_at = datetime.now(timezone.utc)
-            expires_at = created_at + timedelta(minutes=settings.flow_constraints.session_timeout_minutes)
-            
-            # Initialize context with flow variables and defaults
-            initial_context = self._initialize_context(flow_snapshot)
-            
-            # Create new session
-            session = Session(
-                channel=channel,
-                channel_user_id=channel_user_id,
-                bot_id=bot_id,
-                flow_id=flow_id,
-                flow_snapshot=flow_snapshot,
-                current_node_id=start_node_id,
-                context=initial_context,
-                status=SessionStatus.ACTIVE.value,
-                created_at=created_at,
-                expires_at=expires_at,
-                auto_progression_count=0,
-                validation_attempts=0
-            )
-            
-            self.db.add(session)
-            await self.db.commit()
-            await self.db.refresh(session)
-            
-            # Mask user ID for logging
-            masked_user_id = self.logger.mask_pii(channel_user_id, "user_id")
+        # Get start_node_id from flow snapshot
+        start_node_id = flow_snapshot.get('start_node_id')
+        if not start_node_id:
+            raise ValueError("Flow snapshot missing start_node_id")
 
-            self.logger.log_session_event(
-                str(session.session_id),
-                "created",
-                channel=channel,
-                channel_user_id=masked_user_id,
-                bot_id=str(bot_id),
-                flow_id=str(flow_id)
-            )
+        masked_user_id = self.logger.mask_pii(channel_user_id, "user_id")
+        max_retries = 2
 
-            # Audit log: session created
-            await self.audit_log.log_session_event(
-                action="session_created",
-                session_id=str(session.session_id),
-                user_id=masked_user_id,
-                bot_id=str(bot_id),
-                result=AuditResult.SUCCESS,
-                event_metadata={
-                    "channel": channel,
-                    "flow_id": str(flow_id)
-                }
-            )
+        for attempt in range(max_retries):
+            try:
+                # Lock any existing active session (held until transaction completes)
+                # This prevents race conditions when two requests try to create sessions
+                stmt = (
+                    select(Session)
+                    .where(
+                        Session.channel == channel,
+                        Session.channel_user_id == channel_user_id,
+                        Session.bot_id == bot_id,
+                        Session.status == SessionStatus.ACTIVE.value
+                    )
+                    .with_for_update()
+                )
 
-            return session
-            
-        except Exception as e:
-            await self.db.rollback()
-            self.logger.error(f"Failed to create session: {str(e)}")
-            raise
-    
-    async def _terminate_existing_session(self, channel: str, channel_user_id: str, bot_id: UUID):
-        """
-        Silently delete existing active session with row locking
+                result = await self.db.execute(stmt)
+                existing_session = result.scalar_one_or_none()
 
-        Per specification (Section 8, line 2828):
-        "New flow triggered → Old session deleted silently, new ACTIVE session created"
+                if existing_session:
+                    old_session_id = str(existing_session.session_id)
 
-        Args:
-            channel: Communication channel
-            channel_user_id: User identifier in channel
-            bot_id: Bot ID
+                    # Delete existing session (still within same transaction)
+                    await self.db.delete(existing_session)
+                    await self.db.flush()  # Apply delete but don't commit yet
 
-        Note:
-            Uses SELECT FOR UPDATE to prevent race conditions when creating new sessions.
-            Commits immediately to release lock before creating new session.
-        """
-        # Lock existing active session to prevent concurrent modifications
-        stmt = (
-            select(Session)
-            .where(
-                Session.channel == channel,
-                Session.channel_user_id == channel_user_id,
-                Session.bot_id == bot_id,
-                Session.status == SessionStatus.ACTIVE.value
-            )
-            .with_for_update()  # Database-level row lock
+                    self.logger.log_session_event(
+                        old_session_id,
+                        "deleted_on_new_flow",
+                        channel=channel,
+                        channel_user_id=masked_user_id,
+                        bot_id=str(bot_id)
+                    )
+
+                    # Audit log: session terminated (on new flow start)
+                    await self.audit_log.log_session_event(
+                        action="session_terminated_on_new_flow",
+                        session_id=old_session_id,
+                        user_id=masked_user_id,
+                        bot_id=str(bot_id),
+                        result=AuditResult.SUCCESS,
+                        event_metadata={"channel": channel}
+                    )
+
+                # Calculate expiration time (30 minutes from now, absolute)
+                created_at = datetime.now(timezone.utc)
+                expires_at = created_at + timedelta(minutes=settings.flow_constraints.session_timeout_minutes)
+
+                # Initialize context with flow variables and defaults
+                initial_context = self._initialize_context(flow_snapshot)
+
+                # Create new session (still in same transaction, lock still held)
+                session = Session(
+                    channel=channel,
+                    channel_user_id=channel_user_id,
+                    bot_id=bot_id,
+                    flow_id=flow_id,
+                    flow_snapshot=flow_snapshot,
+                    current_node_id=start_node_id,
+                    context=initial_context,
+                    status=SessionStatus.ACTIVE.value,
+                    created_at=created_at,
+                    expires_at=expires_at,
+                    auto_progression_count=0,
+                    validation_attempts=0
+                )
+
+                self.db.add(session)
+                await self.db.commit()  # Releases lock
+                await self.db.refresh(session)
+
+                self.logger.log_session_event(
+                    str(session.session_id),
+                    "created",
+                    channel=channel,
+                    channel_user_id=masked_user_id,
+                    bot_id=str(bot_id),
+                    flow_id=str(flow_id)
+                )
+
+                # Audit log: session created
+                await self.audit_log.log_session_event(
+                    action="session_created",
+                    session_id=str(session.session_id),
+                    user_id=masked_user_id,
+                    bot_id=str(bot_id),
+                    result=AuditResult.SUCCESS,
+                    event_metadata={
+                        "channel": channel,
+                        "flow_id": str(flow_id)
+                    }
+                )
+
+                return session
+
+            except IntegrityError as e:
+                await self.db.rollback()
+
+                # Check if it's our unique constraint violation (race condition edge case)
+                if attempt < max_retries - 1 and 'idx_unique_active_session' in str(e):
+                    self.logger.info(
+                        "Session creation race detected, retrying",
+                        channel=channel,
+                        bot_id=str(bot_id),
+                        attempt=attempt + 1
+                    )
+                    continue
+
+                self.logger.error(f"Failed to create session (integrity error): {str(e)}")
+                raise ConstraintViolationError(
+                    message="Failed to create session due to constraint violation",
+                    constraint="unique_active_session"
+                )
+
+            except Exception as e:
+                await self.db.rollback()
+                self.logger.error(f"Failed to create session: {str(e)}")
+                raise
+
+        # Should not reach here, but just in case
+        raise ConstraintViolationError(
+            message="Failed to create session after retries",
+            constraint="unique_active_session"
         )
-
-        result = await self.db.execute(stmt)
-        existing_session = result.scalar_one_or_none()
-
-        if existing_session:
-            old_session_id = str(existing_session.session_id)
-            masked_user_id = self.logger.mask_pii(channel_user_id, "user_id")
-
-            # Delete the session per specification (not mark as COMPLETED)
-            await self.db.delete(existing_session)
-            # Commit immediately to release lock before creating new session
-            await self.db.commit()
-
-            self.logger.log_session_event(
-                old_session_id,
-                "deleted_on_new_flow",
-                channel=channel,
-                channel_user_id=masked_user_id,
-                bot_id=str(bot_id)
-            )
-
-            # Audit log: session terminated (on new flow start)
-            await self.audit_log.log_session_event(
-                action="session_terminated_on_new_flow",
-                session_id=old_session_id,
-                user_id=masked_user_id,
-                bot_id=str(bot_id),
-                result=AuditResult.SUCCESS,
-                event_metadata={"channel": channel}
-            )
     
     async def get_active_session(
         self,
         channel: str,
         channel_user_id: str,
-        bot_id: UUID
+        bot_id: UUID,
+        for_update: bool = False
     ) -> Optional[Session]:
         """
         Get active session for specific channel, user, and bot
-        
+
         Args:
             channel: Communication channel
             channel_user_id: User identifier in channel
             bot_id: Bot ID
-        
+            for_update: If True, acquire row lock (SELECT FOR UPDATE NOWAIT)
+                        Use this when you intend to modify the session.
+
         Returns:
             Active session or None if no active session exists
+
+        Raises:
+            SessionLockError: If for_update=True and session is locked by another request
         """
         stmt = select(Session).where(
             Session.channel == channel,
@@ -223,11 +239,22 @@ class SessionManager:
             Session.bot_id == bot_id,
             Session.status == SessionStatus.ACTIVE.value
         )
-        
-        result = await self.db.execute(stmt)
-        session = result.scalar_one_or_none()
-        
-        return session
+
+        if for_update:
+            # NOWAIT: fail immediately if row is locked, don't wait
+            stmt = stmt.with_for_update(nowait=True)
+
+        try:
+            result = await self.db.execute(stmt)
+            return result.scalar_one_or_none()
+        except OperationalError as e:
+            # PostgreSQL raises OperationalError when NOWAIT can't obtain lock
+            if 'could not obtain lock' in str(e).lower():
+                raise SessionLockError(
+                    message="Session is being processed by another request. Please wait.",
+                    session_id=None  # We don't have the session ID yet
+                )
+            raise
     
     async def get_session_by_id(self, session_id: UUID) -> Optional[Session]:
         """

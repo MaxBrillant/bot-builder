@@ -29,11 +29,13 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.CheckConstraint("oauth_provider IS NULL OR oauth_provider IN ('GOOGLE')", name='check_oauth_provider'),
-        sa.PrimaryKeyConstraint('user_id'),
-        sa.UniqueConstraint('email')
+        sa.PrimaryKeyConstraint('user_id')
+        # Note: email uniqueness enforced via case-insensitive index below
     )
     op.create_index(op.f('ix_users_user_id'), 'users', ['user_id'], unique=False)
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=False)
+    # Case-insensitive unique email index (prevents user@test.com and USER@test.com as different accounts)
+    op.create_index('idx_users_email_unique_lower', 'users', [sa.text('LOWER(email)')], unique=True)
     op.create_index('ix_users_oauth_provider_id', 'users', ['oauth_provider', 'oauth_id'], unique=True)
 
     # Create bots table (CLEAN - no platform-specific fields)
@@ -58,12 +60,13 @@ def upgrade() -> None:
     op.create_index(op.f('ix_bots_updated_at'), 'bots', ['updated_at'], unique=False)
 
     # Create bot_integrations table (NEW - platform-specific data isolated)
+    # Note: config is encrypted (LargeBinary) because it contains API tokens
     op.create_table(
         'bot_integrations',
         sa.Column('integration_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('bot_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('platform', sa.String(length=50), nullable=False),
-        sa.Column('config', postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default='{}'),
+        sa.Column('config', sa.LargeBinary(), nullable=False),  # ENCRYPTED - contains API tokens
         sa.Column('status', sa.String(length=20), nullable=False, server_default='DISCONNECTED'),
         sa.Column('connected_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('last_sync_at', sa.DateTime(timezone=True), nullable=True),
@@ -134,6 +137,11 @@ def upgrade() -> None:
                     unique=True, postgresql_where=sa.text("status = 'ACTIVE'"))
     op.create_index('idx_sessions_expires', 'sessions', ['expires_at'],
                     unique=False, postgresql_where=sa.text("status = 'ACTIVE'"))
+    # Composite index for bot+status filtering (common query pattern)
+    op.create_index('idx_sessions_bot_status', 'sessions', ['bot_id', 'status'])
+    # Index for cleanup queries on completed sessions
+    op.create_index('idx_sessions_completed_at', 'sessions', ['completed_at'],
+                    postgresql_where=sa.text("completed_at IS NOT NULL"))
 
     # Create audit_logs table (comprehensive security audit trail)
     op.create_table(
@@ -155,10 +163,13 @@ def upgrade() -> None:
     op.create_index(op.f('ix_audit_logs_action'), 'audit_logs', ['action'], unique=False)
     op.create_index('idx_audit_event_timestamp', 'audit_logs', ['event_type', 'timestamp'], unique=False)
     op.create_index('idx_audit_user_timestamp', 'audit_logs', ['user_id', 'timestamp'], unique=False)
+    # Composite index for resource lookups ("show all events for session X")
+    op.create_index('idx_audit_resource', 'audit_logs', ['resource_type', 'resource_id'])
 
 
 def downgrade() -> None:
     # Drop audit_logs table
+    op.drop_index('idx_audit_resource', table_name='audit_logs')
     op.drop_index('idx_audit_user_timestamp', table_name='audit_logs')
     op.drop_index('idx_audit_event_timestamp', table_name='audit_logs')
     op.drop_index(op.f('ix_audit_logs_action'), table_name='audit_logs')
@@ -168,6 +179,8 @@ def downgrade() -> None:
     op.drop_table('audit_logs')
 
     # Drop sessions table
+    op.drop_index('idx_sessions_completed_at', table_name='sessions', postgresql_where=sa.text("completed_at IS NOT NULL"))
+    op.drop_index('idx_sessions_bot_status', table_name='sessions')
     op.drop_index('idx_sessions_expires', table_name='sessions', postgresql_where=sa.text("status = 'ACTIVE'"))
     op.drop_index('idx_unique_active_session', table_name='sessions', postgresql_where=sa.text("status = 'ACTIVE'"))
     op.drop_index(op.f('ix_sessions_status'), table_name='sessions')
@@ -200,6 +213,7 @@ def downgrade() -> None:
 
     # Drop users table
     op.drop_index('ix_users_oauth_provider_id', table_name='users')
+    op.drop_index('idx_users_email_unique_lower', table_name='users')
     op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_index(op.f('ix_users_user_id'), table_name='users')
     op.drop_table('users')

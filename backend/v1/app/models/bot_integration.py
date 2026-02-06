@@ -1,11 +1,13 @@
 """
 Bot Integration Model
 Stores platform-specific integration configurations separate from core Bot model
+Config is encrypted at rest since it contains API tokens and secrets.
 """
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Index, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, DateTime, ForeignKey, Index, CheckConstraint, LargeBinary
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.sql import func
 import uuid
 
@@ -30,11 +32,11 @@ class BotIntegration(Base):
     # Uses String column to avoid SQLAlchemy enum NAME vs VALUE confusion
     platform = Column(String(50), nullable=False, index=True)
 
-    # Platform-specific config (flexible JSONB)
+    # ENCRYPTED: Platform-specific config (contains API tokens and secrets)
     # WhatsApp: {"instance_name": "bot_abc", "phone_number": "+254..."}
     # Telegram: {"bot_token": "...", "chat_id": "..."}
     # Slack: {"workspace_id": "...", "bot_user_id": "..."}
-    config = Column(JSONB, nullable=False, server_default='{}')
+    _config_encrypted = Column("config", LargeBinary, nullable=False)
 
     # Status: connected, disconnected, connecting, error
     status = Column(String(20), nullable=False, default=IntegrationStatus.DISCONNECTED.value, index=True)
@@ -56,6 +58,25 @@ class BotIntegration(Base):
 
     # Relationships
     bot = relationship("Bot", back_populates="integrations")
+
+    # Hybrid property for transparent encryption/decryption of config
+    @hybrid_property
+    def config(self) -> dict:
+        """Decrypt and return config"""
+        from app.utils.encryption import get_encryption_service
+        encrypted = self.__dict__.get('_config_encrypted')
+        if not isinstance(encrypted, (bytes, str)):
+            return {}  # Not yet initialized
+        encryption = get_encryption_service()
+        decrypted = encryption.decrypt_json(encrypted)
+        return decrypted if decrypted is not None else {}
+
+    @config.setter
+    def config(self, value: dict):
+        """Encrypt and store config"""
+        from app.utils.encryption import get_encryption_service
+        encryption = get_encryption_service()
+        self._config_encrypted = encryption.encrypt_json(value if value else {})
 
     def __repr__(self):
         return f"<BotIntegration(bot_id='{self.bot_id}', platform='{self.platform}', status='{self.status}')>"

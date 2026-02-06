@@ -3,7 +3,7 @@ User Model
 Stores user account information for multi-tenant system
 """
 
-from sqlalchemy import Column, String, Boolean, DateTime, Index, CheckConstraint
+from sqlalchemy import Column, String, Boolean, DateTime, Index, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -34,7 +34,8 @@ class User(Base):
     __tablename__ = "users"
 
     user_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
+    # Note: uniqueness enforced via case-insensitive index idx_users_email_unique_lower
+    email = Column(String(255), nullable=False, index=True)
     password_hash = Column(String(255), nullable=True)  # Nullable for OAuth-only users
     oauth_provider = Column(String(50), nullable=True)  # OAuth provider (e.g., 'GOOGLE')
     oauth_id = Column(String(255), nullable=True)  # OAuth provider's unique user ID
@@ -46,6 +47,8 @@ class User(Base):
     __table_args__ = (
         CheckConstraint("oauth_provider IS NULL OR oauth_provider IN ('GOOGLE')", name='check_oauth_provider'),
         Index('ix_users_oauth_provider_id', 'oauth_provider', 'oauth_id', unique=True),
+        # Case-insensitive unique email index (prevents user@test.com and USER@test.com as different accounts)
+        Index('idx_users_email_unique_lower', text('LOWER(email)'), unique=True),
     )
 
     # Relationships

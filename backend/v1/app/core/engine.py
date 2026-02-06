@@ -32,6 +32,7 @@ from app.utils.logger import get_logger
 from app.utils.constants import NodeType, ErrorMessages, SystemConstraints
 from app.utils.exceptions import (
     SessionExpiredError,
+    SessionLockError,
     NoMatchingRouteError,
     MaxAutoProgressionError
 )
@@ -63,7 +64,7 @@ async def get_http_client() -> httpx.AsyncClient:
         if _http_client is None:
             _http_client = httpx.AsyncClient(
                 timeout=settings.http_client.timeout,
-                follow_redirects=True,
+                follow_redirects=False,
                 verify=True,  # Explicitly enable SSL/TLS certificate verification (security requirement)
                 limits=httpx.Limits(
                     max_connections=settings.http_client.max_connections,
@@ -562,11 +563,13 @@ class ConversationOrchestrator:
         await self._ensure_http_client()
 
         try:
-            # Get or create session
+            # Try to get existing session with lock to prevent concurrent updates
+            # The lock is held for the duration of flow execution
             session = await self.session_manager.get_active_session(
                 channel,
                 channel_user_id,
-                bot_id
+                bot_id,
+                for_update=True  # Lock session to prevent concurrent modification
             )
 
             if session is None:
@@ -626,6 +629,15 @@ class ConversationOrchestrator:
                 "channel_id": channel_user_id
             }
             return await self.flow_executor.execute_flow(session, message, user_context)
+
+        except SessionLockError:
+            # Another request is already processing this session
+            # Return a friendly message to the user
+            return {
+                "messages": ["Your previous message is still being processed. Please wait a moment."],
+                "session_active": True,
+                "session_ended": False
+            }
 
         except SessionExpiredError:
             return {

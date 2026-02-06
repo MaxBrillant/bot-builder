@@ -130,13 +130,15 @@ Paste your production configuration:
 DATABASE__URL=postgresql+asyncpg://botbuilder:YOUR_DB_PASSWORD@db:5432/botbuilder
 DATABASE__POOL_SIZE=20
 DATABASE__MAX_OVERFLOW=40
+DATABASE__POOL_TIMEOUT=30
+DATABASE__POOL_RECYCLE=3600
 DATABASE__ECHO=false
 
 # =============================================================================
 # REDIS CONFIGURATION
 # =============================================================================
-REDIS__URL=redis://redis:6379/0
-REDIS__ENABLED=true
+REDIS_PASSWORD=YOUR_REDIS_PASSWORD
+REDIS__URL=redis://:YOUR_REDIS_PASSWORD@redis:6379/0
 REDIS__SOCKET_TIMEOUT=5
 REDIS__SOCKET_CONNECT_TIMEOUT=2
 REDIS__MAX_RECONNECT_ATTEMPTS=5
@@ -225,6 +227,7 @@ VITE_API_URL=https://api.frontend.ndash.my
 # DOCKER COMPOSE VARIABLES
 # =============================================================================
 DB_PASSWORD=YOUR_DB_PASSWORD
+REDIS_PASSWORD=YOUR_REDIS_PASSWORD
 SECRET_KEY=YOUR_SECRET_KEY
 ENCRYPTION_KEY=YOUR_ENCRYPTION_KEY
 EVOLUTION_API_KEY=YOUR_EVOLUTION_API_KEY
@@ -238,18 +241,47 @@ DEBUG=false
 Run these locally and paste the values into your .env:
 
 ```bash
-# SECRET_KEY
+# SECRET_KEY (JWT signing)
 python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
 
-# ENCRYPTION_KEY
+# ENCRYPTION_KEY (Fernet - for PII encryption)
 python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 
 # EVOLUTION_API_KEY
 python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
 
-# DB_PASSWORD & GRAFANA_PASSWORD
-python3 -c 'import secrets; print(secrets.token_urlsafe(16))'
+# DB_PASSWORD, REDIS_PASSWORD, GRAFANA_PASSWORD
+python3 -c 'import secrets; print(secrets.token_urlsafe(24))'
 ```
+
+Or generate all at once:
+
+```bash
+python3 -c "
+import secrets
+from cryptography.fernet import Fernet
+
+print('DB_PASSWORD=' + secrets.token_urlsafe(24))
+print('REDIS_PASSWORD=' + secrets.token_urlsafe(24))
+print('SECRET_KEY=' + secrets.token_urlsafe(32))
+print('ENCRYPTION_KEY=' + Fernet.generate_key().decode())
+print('EVOLUTION_API_KEY=' + secrets.token_urlsafe(32))
+print('GRAFANA_PASSWORD=' + secrets.token_urlsafe(16))
+"
+```
+
+### 3.3 How Environment Variables Work
+
+The setup uses a secure pattern:
+
+1. **`.dockerignore`** excludes `.env` from Docker images (secrets never baked in)
+2. **`docker-compose.yml`** uses `env_file: .env` to load variables at runtime
+3. **Explicit `environment:`** entries override `.env` where needed (e.g., for variable interpolation)
+
+This means:
+- Secrets stay on the server filesystem only
+- Changing `.env` doesn't require rebuilding images
+- Images can be shared without exposing secrets
 
 ---
 
@@ -463,6 +495,23 @@ docker compose logs db
 docker compose exec db psql -U botbuilder -d botbuilder -c "SELECT 1"
 ```
 
+### Redis Authentication Issues
+
+If you see `NOAUTH Authentication required` or `invalid password`:
+
+```bash
+# Check Redis is running
+docker compose ps redis
+
+# Verify REDIS_PASSWORD is set in .env
+grep REDIS_PASSWORD .env
+
+# Test Redis connection
+docker compose exec redis redis-cli -a YOUR_REDIS_PASSWORD ping
+```
+
+Make sure `REDIS_PASSWORD` in `.env` matches the password in `REDIS__URL`.
+
 ---
 
 ## Maintenance
@@ -508,18 +557,33 @@ docker compose exec db pg_dump -U botbuilder botbuilder > backup_$(date +%Y%m%d)
 cat backup_20240101.sql | docker compose exec -T db psql -U botbuilder botbuilder
 ```
 
+### Backup Encryption Key
+
+**CRITICAL**: Back up your `ENCRYPTION_KEY` securely. This key encrypts:
+- Session context data
+- Channel user IDs (PII)
+- Flow snapshots
+
+If lost, all encrypted data becomes **permanently unrecoverable**. Store it in:
+- Password manager (1Password, Bitwarden)
+- Cloud secrets manager (AWS Secrets Manager, HashiCorp Vault)
+- Encrypted backup file in separate location
+
 ---
 
 ## Security Checklist
 
 - [ ] Strong passwords in .env (use generated keys)
-- [ ] .env file is gitignored
+- [ ] .env file is gitignored (secrets not in git)
+- [ ] .dockerignore excludes .env (secrets not baked into Docker images)
 - [ ] Firewall configured (only 22, 80, 443 open)
 - [ ] `debug=false` in production
 - [ ] `environment=production` set
 - [ ] Google OAuth redirect URIs updated
 - [ ] Grafana password changed from default
+- [ ] Redis password set (not using default)
 - [ ] SSH key authentication (no password login)
+- [ ] ENCRYPTION_KEY backed up securely (loss = unrecoverable data)
 
 ---
 
@@ -547,3 +611,62 @@ Pre-configured dashboard: **Bot Builder API**
 ### Sentry Error Tracking
 
 Errors are automatically reported to Sentry. View them at [sentry.io](https://sentry.io).
+
+---
+
+## Rotating Credentials
+
+### Changing SECRET_KEY
+
+Invalidates all existing JWT tokens. Users must log in again.
+
+```bash
+# Generate new key
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+
+# Update .env (both SECURITY__SECRET_KEY and SECRET_KEY)
+nano .env
+
+# Restart API
+docker compose restart api
+```
+
+### Changing DB_PASSWORD
+
+Requires updating PostgreSQL user password:
+
+```bash
+# Connect to database
+docker compose exec db psql -U botbuilder -d botbuilder
+
+# Change password
+ALTER USER botbuilder WITH PASSWORD 'new_password';
+\q
+
+# Update .env (both DATABASE__URL and DB_PASSWORD)
+nano .env
+
+# Restart services
+docker compose restart api evolution-api
+```
+
+### Changing REDIS_PASSWORD
+
+```bash
+# Update .env (both REDIS_PASSWORD and REDIS__URL)
+nano .env
+
+# Restart all services (Redis server reads password from docker-compose)
+docker compose down
+docker compose up -d
+```
+
+### Changing ENCRYPTION_KEY
+
+**WARNING**: Changing this makes all existing encrypted data unreadable.
+
+Only change if:
+- Key was compromised
+- Starting fresh (no existing data)
+
+If you must rotate with existing data, you'll need a migration script to re-encrypt.

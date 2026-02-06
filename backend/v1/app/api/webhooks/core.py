@@ -15,7 +15,7 @@ from app.config import settings
 from app.schemas.webhook_schema import WebhookMessageRequest, WebhookMessageResponse
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.models.audit_log import AuditResult
-from app.utils.exceptions import NotFoundError
+from app.utils.exceptions import NotFoundError, SecurityServiceUnavailableError
 from app.utils.logger import logger
 from app.utils.security import sanitize_input, check_suspicious_patterns, SanitizationError
 
@@ -120,7 +120,7 @@ async def process_bot_message(
         )
 
     # 5. Rate limiting (channel-agnostic)
-    if settings.redis.enabled and redis_manager.is_connected():
+    try:
         allowed = await redis_manager.check_rate_limit_channel_user(
             message_data.channel,
             message_data.channel_user_id,
@@ -148,6 +148,12 @@ async def process_bot_message(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many requests. Please try again later."
             )
+    except SecurityServiceUnavailableError as e:
+        logger.error(f"Security service unavailable: {e.feature}", bot_id=str(bot_id))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service temporarily unavailable. Please try again later."
+        )
 
     # 6. Input Sanitization (Layer 1 + Layer 3)
     # Apply universal sanitization rules per spec Section 10.1

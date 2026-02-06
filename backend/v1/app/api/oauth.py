@@ -20,6 +20,9 @@ from app.utils.constants import OAuthProvider
 
 logger = get_logger(__name__)
 
+# Cookie name for access token (must match auth.py and dependencies.py)
+ACCESS_TOKEN_COOKIE_NAME = "access_token"
+
 router = APIRouter(prefix="/auth/google", tags=["OAuth"])
 
 # Initialize OAuth client with validation
@@ -104,15 +107,18 @@ async def google_callback(
     Handle Google OAuth callback
 
     Processes the OAuth callback from Google, exchanges authorization code
-    for tokens, retrieves user info, and creates/updates user account.
-    Auto-links accounts by email if user already exists.
+    for tokens, retrieves user info, and creates/logs in user account.
+
+    SECURITY: Does NOT auto-link accounts. If a user registered with password,
+    they must use password login. This prevents account takeover attacks where
+    an attacker creates a Google account with victim's email.
 
     Args:
         request: FastAPI request object (contains auth code)
         db: Database session
 
     Returns:
-        Redirect to frontend with JWT token
+        Redirect to frontend (token is set via httpOnly cookie only)
 
     Raises:
         HTTPException: If OAuth exchange fails or email not provided
@@ -152,26 +158,50 @@ async def google_callback(
                 detail="User ID not provided by Google"
             )
 
-        # 3. Find or create user (auto-link by email)
+        # 3. Find or create user (NO auto-linking for security)
         user_repo = UserRepository(db)
         user = await user_repo.get_by_email(email)
+        frontend_base_url = settings.frontend_url.rstrip('/')
 
         if user:
             # Check if user account is active
             if not user.is_active:
                 logger.warning(f"OAuth login attempt by inactive user", email=email, user_id=str(user.user_id))
-                error_url = f"{settings.frontend_url.rstrip('/')}/login?error=account_inactive"
+                error_url = f"{frontend_base_url}/login?error=account_inactive"
                 return RedirectResponse(url=error_url)
 
-            # User exists - update OAuth fields if not set
+            # SECURITY: Check if this is an OAuth user or password user
             if not user.oauth_provider:
-                logger.info(f"Linking existing user to Google OAuth", email=email)
-                user.oauth_provider = OAuthProvider.GOOGLE.value
-                user.oauth_id = google_user_id
-                await db.commit()
-                await db.refresh(user)
-            else:
-                logger.info(f"User logged in via Google OAuth", email=email)
+                # User registered with password - DO NOT auto-link (prevents account takeover)
+                logger.warning(
+                    f"OAuth login rejected - account exists with password",
+                    email=email,
+                    user_id=str(user.user_id)
+                )
+                error_url = f"{frontend_base_url}/login?error=account_exists_use_password"
+                return RedirectResponse(url=error_url)
+
+            # Verify it's the same OAuth provider
+            if user.oauth_provider != OAuthProvider.GOOGLE.value:
+                logger.warning(
+                    f"OAuth login rejected - account uses different OAuth provider",
+                    email=email,
+                    existing_provider=user.oauth_provider
+                )
+                error_url = f"{frontend_base_url}/login?error=different_oauth_provider"
+                return RedirectResponse(url=error_url)
+
+            # Verify OAuth ID matches (same Google account)
+            if user.oauth_id != google_user_id:
+                logger.warning(
+                    f"OAuth login rejected - Google ID mismatch",
+                    email=email,
+                    user_id=str(user.user_id)
+                )
+                error_url = f"{frontend_base_url}/login?error=oauth_id_mismatch"
+                return RedirectResponse(url=error_url)
+
+            logger.info(f"User logged in via Google OAuth", email=email)
         else:
             # Create new OAuth user
             logger.info(f"Creating new user via Google OAuth", email=email)
@@ -200,16 +230,28 @@ async def google_callback(
         # 5. Extract redirect URL from session if present
         redirect_url = request.session.pop('oauth_redirect', None)
 
-        # 6. Redirect to frontend with token in URL query parameter
-        frontend_base_url = settings.frontend_url.rstrip('/')
-        frontend_callback_url = f"{frontend_base_url}/auth/callback?token={access_token}"
+        # 6. SECURITY: Redirect WITHOUT token in URL (token only in httpOnly cookie)
+        # This prevents token exposure in browser history, referrer headers, and logs
+        frontend_callback_url = f"{frontend_base_url}/auth/callback"
 
-        # Add redirect parameter if present
+        # Add redirect parameter if present (this is safe, just a path)
         if redirect_url:
             from urllib.parse import quote
-            frontend_callback_url += f"&redirect={quote(redirect_url)}"
+            frontend_callback_url += f"?redirect={quote(redirect_url)}"
 
-        return RedirectResponse(url=frontend_callback_url)
+        # Create redirect response with httpOnly cookie (secure token transport)
+        response = RedirectResponse(url=frontend_callback_url)
+        response.set_cookie(
+            key=ACCESS_TOKEN_COOKIE_NAME,
+            value=access_token,
+            httponly=True,
+            secure=settings.is_production,
+            samesite="lax",
+            max_age=settings.security.access_token_expire_minutes * 60,
+            path="/"
+        )
+
+        return response
 
     except OAuthError as e:
         logger.error(f"OAuth error during callback: {e.error} - {e.description}")

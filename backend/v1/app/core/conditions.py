@@ -126,9 +126,9 @@ class ConditionEvaluator:
             return self._is_truthy(value)
 
         except Exception as e:
-            logger.error(f"Condition evaluation error: {str(e)}", condition=condition)
+            logger.error(f"Condition evaluation error: {str(e)}", condition=condition, exc_info=True)
             raise ConditionEvaluationError(
-                message=f"Failed to evaluate condition: {str(e)}",
+                message="Condition evaluation failed",
                 error_code="CONDITION_EVALUATION_ERROR",
                 condition=condition
             )
