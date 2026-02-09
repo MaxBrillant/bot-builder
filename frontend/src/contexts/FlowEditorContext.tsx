@@ -828,7 +828,7 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
       setDraftState(structuredClone(savedFlow));
 
       // Prevent setFlows from overwriting state when query cache update triggers it
-      justSavedFlowIdRef.current = savedFlow.flow_id;
+      justSavedFlowIdRef.current = savedFlow.flow_id ?? null;
 
       // Update flows array and query cache (avoids refetch which would clear selection)
       setFlowsState((prevFlows) => {

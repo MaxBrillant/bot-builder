@@ -19,6 +19,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22
           script: |
+            set -e
             cd ${{ secrets.APP_PATH }}
 
             # Pull latest code

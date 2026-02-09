@@ -1,7 +1,6 @@
 import dagre from "dagre";
 import type { Flow, FlowNode, NodeType, Route } from "./types";
-import { SystemConstraints } from "./types";
-import { getConditionLabel, getMaxRoutes, canAddRoute, isBranchingNode } from "./routeConditionUtils";
+import { getConditionLabel, canAddRoute, isBranchingNode } from "./routeConditionUtils";
 import { getRouteHandleInfo, HANDLE_POSITIONS } from "./handlePositioning";
 import { snapToGrid } from "@/utils/canvasPositioningUtils";
 
