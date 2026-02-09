@@ -517,12 +517,11 @@ export function FlowSettingsPanel({
               </p>
             )}
             <FieldHelp
-              text="Words that trigger this flow when user sends them"
+              text="Words that start this flow when a user sends them"
               tooltip={
                 <>
                   <p className="mb-2">
-                    When a user sends a message matching any of these keywords
-                    (case-insensitive), this flow will start executing.
+                    When a user sends a message matching any of these keywords, this flow will start. Matching ignores capitalization (START = start = Start).
                   </p>
                   <p className="text-xs font-medium mt-2">Examples:</p>
                   <p className="mt-1 text-xs">
@@ -538,13 +537,13 @@ export function FlowSettingsPanel({
                       SUPPORT
                     </code>
                   </p>
-                  <p className="text-xs font-medium mt-2">Wildcard:</p>
+                  <p className="text-xs font-medium mt-2">Catch-all option:</p>
                   <p className="mt-1 text-xs">
                     Use{" "}
                     <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
                       *
                     </code>{" "}
-                    to match any message.
+                    to start this flow for any message. Note: this should be the only keyword when used.
                   </p>
                 </>
               }

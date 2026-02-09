@@ -55,24 +55,33 @@ export function ValidationRuleEditor({
                 availableVariables={availableVariables}
               />
               <FieldHelp
-                text="Use input methods and logic operators"
+                text="Write rules to check the user's input"
                 tooltip={
                   <>
                     <p className="mb-2">
-                      Validate using built-in methods and comparisons.
+                      Create rules using these checks:
                     </p>
-                    <p className="text-xs font-medium mt-2">Available methods:</p>
+                    <p className="text-xs font-medium mt-2">What you can check:</p>
                     <p className="mt-1 text-xs">
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.isAlpha()</code>,{" "}
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.isNumeric()</code>,{" "}
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.isDigit()</code>,{" "}
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.length</code>
+                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.isAlpha()</code> - Only letters (A-Z)
+                    </p>
+                    <p className="mt-1 text-xs">
+                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.isNumeric()</code> - A number (like 42 or -3.5)
+                    </p>
+                    <p className="mt-1 text-xs">
+                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.isDigit()</code> - Only digits 0-9
+                    </p>
+                    <p className="mt-1 text-xs">
+                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.length</code> - How many characters
                     </p>
                     <p className="text-xs font-medium mt-2">Example:</p>
                     <p className="mt-1 text-xs">
                       <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
                         input.isAlpha() && input.length {">="}3
                       </code>
+                    </p>
+                    <p className="mt-1 text-xs">
+                      (Letters only AND at least 3 characters)
                     </p>
                   </>
                 }
@@ -93,29 +102,29 @@ export function ValidationRuleEditor({
                 availableVariables={availableVariables}
               />
               <FieldHelp
-                text="Regex pattern for full string match"
+                text="Text pattern to match the user's input"
                 tooltip={
                   <>
                     <p className="mb-2">
-                      Use regex to match specific patterns. Supports template variables for dynamic patterns.
+                      Define a pattern that the user's input must match exactly. This is useful for validating phone numbers, IDs, or specific formats.
                     </p>
-                    <p className="text-xs font-medium mt-2">Important:</p>
+                    <p className="text-xs font-medium mt-2">How it works:</p>
                     <p className="mt-1 text-xs mb-2">
-                      Patterns match the ENTIRE input from start to finish. No need to add ^ and $ anchors - they're automatic. If you want partial matches, include .* at the start or end.
+                      The pattern must match the user's ENTIRE input. For example, if you want exactly 10 digits, use <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">[0-9]{"{10}"}</code>.
                     </p>
-                    <p className="text-xs font-medium mt-2">Examples:</p>
+                    <p className="text-xs font-medium mt-2">Common patterns:</p>
                     <p className="mt-1 text-xs">
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">[0-9]{"{10}"}</code> - Exactly 10 digits, nothing else
-                    </p>
-                    <p className="mt-1 text-xs">
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
-                        .{"{1,"}{"{{context.max_length}}"}{"}"}
-                      </code> - Any characters with dynamic length
+                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">[0-9]{"{10}"}</code> - Exactly 10 digits (like a phone number)
                     </p>
                     <p className="mt-1 text-xs">
                       <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
                         .*@.*
-                      </code> - Contains @ symbol anywhere
+                      </code> - Must contain @ (like an email)
+                    </p>
+                    <p className="mt-1 text-xs">
+                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
+                        [A-Za-z]+
+                      </code> - Letters only (one or more)
                     </p>
                   </>
                 }

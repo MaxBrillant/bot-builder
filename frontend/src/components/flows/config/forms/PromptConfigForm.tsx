@@ -199,11 +199,11 @@ export function PromptConfigForm({
                   </p>
                   <p className="text-xs font-medium mt-2">Example:</p>
                   <p className="mt-1 text-xs">
-                    Hi {"{{user_name}}"}, how many seats do you need?
+                    Hi {"{{context.user_name}}"}, how many seats do you need?
                   </p>
-                  <p className="text-xs font-medium mt-2">Note:</p>
+                  <p className="text-xs font-medium mt-2">Getting array length:</p>
                   <p className="mt-1 text-xs">
-                    Array length ({"{{items.length}}"}) doesn't work in prompts. To show counts, save the count in a separate variable first.
+                    Use {"{{context.items.length}}"} to show how many items are in a list.
                   </p>
                 </>
               }
@@ -291,12 +291,12 @@ export function PromptConfigForm({
                 </SelectContent>
               </Select>
               <FieldHelp
-                text="Choose how to validate user input"
+                text="Choose how to check the user's answer"
                 tooltip={
                   <>
-                    <p className="mb-2"><strong>No validation:</strong> Accept any input</p>
-                    <p className="mb-2"><strong>Regex Pattern:</strong> Match against patterns like phone numbers, emails, or specific formats</p>
-                    <p className="mb-2"><strong>Expression:</strong> Logic-based validation using length checks, character type validation, or custom rules</p>
+                    <p className="mb-2"><strong>No validation:</strong> Accept anything the user types</p>
+                    <p className="mb-2"><strong>Pattern:</strong> Check if input matches a specific format (like 10 digits for a phone number, or must contain @)</p>
+                    <p className="mb-2"><strong>Expression:</strong> Check using rules like "must be at least 3 characters" or "must be letters only"</p>
                   </>
                 }
               />

@@ -107,7 +107,8 @@ const transformFlowResponse = (response: FlowResponse): Flow => {
     bot_id: response.bot_id,
     name: response.flow_definition.name,
     trigger_keywords: response.flow_definition.trigger_keywords,
-    variables: response.flow_definition.variables,
+    // Normalize to {} to prevent undefined vs missing-key mismatch after JSON.parse(JSON.stringify())
+    variables: response.flow_definition.variables ?? {},
     defaults: response.flow_definition.defaults,
     start_node_id: response.flow_definition.start_node_id,
     nodes: response.flow_definition.nodes,

@@ -192,21 +192,19 @@ export function VariablesEditor({ value, onChange, errors }: VariablesEditorProp
 
       {/* Help Text */}
       <FieldHelp
-        text="Define reusable variables for this flow"
+        text="Create places to store data during the conversation"
         tooltip={
           <>
             <p className="mb-2">
-              Variables store data that can be used throughout the flow.
-              They can be set by PROMPT nodes or API responses.
+              Variables hold information like user answers, API data, or anything you want to remember and use later in the conversation.
             </p>
-            <p className="text-xs font-medium mt-2">Variable names:</p>
+            <p className="text-xs font-medium mt-2">Naming rules:</p>
             <p className="mt-1 text-xs">
-              Use lowercase letters, numbers, and underscores only.
-              Must start with a letter.
+              Use letters, numbers, and underscores (like <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">user_name</code> or <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">order_count</code>)
             </p>
-            <p className="text-xs font-medium mt-2">Default values:</p>
+            <p className="text-xs font-medium mt-2">Types:</p>
             <p className="mt-1 text-xs">
-              Leave empty for null, or provide a value matching the type.
+              STRING = text, NUMBER = numbers, BOOLEAN = true/false, ARRAY = a list of items
             </p>
           </>
         }

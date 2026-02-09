@@ -147,6 +147,15 @@ export function calculateEdgeBounds(
         targetPosition
       );
 
+      // Get handleIndex and cumulativeLabelOffset from edge data (set in flowLayoutUtils.ts)
+      const edgeData = edge.data as { handleIndex?: number; cumulativeLabelOffset?: number } | undefined;
+      const handleIndex = edgeData?.handleIndex ?? 0;
+      const cumulativeLabelOffset = edgeData?.cumulativeLabelOffset ?? 0;
+
+      // Apply same offset as CustomEdge.tsx for consistency
+      const baseOffset = (handleIndex + 1) * 18;
+      const backwardOffset = useSmoothStep ? baseOffset + cumulativeLabelOffset : 0;
+
       const [, labelX, labelY] = useSmoothStep
         ? getSmoothStepPath({
             sourceX,
@@ -156,6 +165,7 @@ export function calculateEdgeBounds(
             targetY,
             targetPosition,
             borderRadius: 8,
+            offset: backwardOffset,
           })
         : getBezierPath({
             sourceX,

@@ -215,10 +215,9 @@ const getContextSuggestions = (
     suggestions.push(
       {
         value: "true",
-        description: "Boolean true (default route)",
+        description: "Fallback when nothing else matches",
         category: "Keywords",
       },
-      { value: "false", description: "Boolean false", category: "Keywords" },
       { value: "null", description: "Null value", category: "Keywords" },
       { value: "== ", description: "Equals operator", category: "Operators" },
       {

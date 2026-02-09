@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { ConditionSelector } from "./config/shared/ConditionSelector";
-import { getDefaultCondition } from "@/lib/routeConditionUtils";
+import { FieldHelp } from "./config/shared/FieldHelp";
+import { getDefaultCondition, isBranchingNode } from "@/lib/routeConditionUtils";
 import type { NodeType, FlowNode } from "@/lib/types";
 
 interface NodeTypeOption {
@@ -72,6 +73,7 @@ interface NodeTypeSelectorProps {
   parentNode?: FlowNode | null;
   preSelectedType?: NodeType;
   preFilledCondition?: string; // Pre-filled condition from edge click
+  conditionReadOnly?: boolean; // Show condition for context but don't allow editing
   availableVariables?: string[]; // Available variables for autocomplete
 }
 
@@ -85,6 +87,7 @@ export default function NodeTypeSelector({
   parentNode,
   preSelectedType,
   preFilledCondition,
+  conditionReadOnly = false,
   availableVariables = [],
 }: NodeTypeSelectorProps) {
   const [condition, setCondition] = useState("");
@@ -92,27 +95,29 @@ export default function NodeTypeSelector({
   const [selectedType, setSelectedType] = useState<NodeType | undefined>(preSelectedType);
 
   // Check if we need to show condition input
-  // Show for all branching node types (MENU, API_ACTION, LOGIC_EXPRESSION)
+  // Branching nodes need conditions, except dynamic menus which have a single "true" route
   const needsCondition =
-    parentNode &&
-    ["MENU", "API_ACTION", "LOGIC_EXPRESSION"].includes(parentNode.type);
+    parentNode && isBranchingNode(parentNode.type, parentNode.config);
 
   // Update selected type when preSelectedType changes
   useEffect(() => {
     setSelectedType(preSelectedType);
   }, [preSelectedType]);
 
-  // Initialize condition: use pre-filled value from edge, or smart default
+  // Initialize condition: use pre-filled value from edge, or smart default (except for LOGIC_EXPRESSION)
   useEffect(() => {
     if (needsCondition && parentNode) {
-      if (preFilledCondition !== undefined) {
+      if (preFilledCondition) {
         setCondition(preFilledCondition);
-      } else {
+      } else if (parentNode.type !== "LOGIC_EXPRESSION") {
+        // Only set smart default for MENU and API_ACTION, not for LOGIC_EXPRESSION
         const defaultCond = getDefaultCondition(
           parentNode,
           parentNode.routes || []
         );
         setCondition(defaultCond);
+      } else {
+        setCondition("");
       }
     }
   }, [needsCondition, parentNode, preFilledCondition]);
@@ -160,7 +165,7 @@ export default function NodeTypeSelector({
   };
 
   // Reset state when dialog closes
-  // Implicit save: if condition changed and we have an update handler, save it
+  // Implicit save: if condition changed and we have an update handler, save it (only when not read-only)
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
       // Check if condition was modified from original
@@ -168,8 +173,8 @@ export default function NodeTypeSelector({
       const originalCondition = preFilledCondition?.trim() || "";
       const conditionChanged = trimmedCondition && trimmedCondition !== originalCondition;
 
-      // Implicit save on close if condition changed
-      if (conditionChanged && onUpdateCondition) {
+      // Implicit save on close if condition changed (only when editable)
+      if (!conditionReadOnly && conditionChanged && onUpdateCondition) {
         onUpdateCondition(trimmedCondition);
       }
 
@@ -192,17 +197,25 @@ export default function NodeTypeSelector({
 
           {/* Condition Selector - only show for branching nodes */}
           {needsCondition && parentNode && (
-            <div className="px-2 pb-2 border-b border-border">
+            <div className="px-2 pb-2 border-b border-border space-y-1">
+              {conditionReadOnly && (
+                <div className="text-xs text-muted-foreground mb-1">
+                  Inserting on route:
+                </div>
+              )}
               <ConditionSelector
                 nodeType={parentNode.type}
                 nodeConfig={parentNode.config}
                 value={condition}
                 onChange={(value) => {
-                  setCondition(value);
-                  setError("");
+                  if (!conditionReadOnly) {
+                    setCondition(value);
+                    setError("");
+                  }
                 }}
                 onKeyDown={handleConditionKeyDown}
                 error={error}
+                disabled={conditionReadOnly}
                 placeholder={
                   parentNode.type === "MENU"
                     ? "Select menu option"
@@ -212,6 +225,72 @@ export default function NodeTypeSelector({
                 }
                 availableVariables={availableVariables}
               />
+              {!conditionReadOnly && parentNode.type === "MENU" && (
+                <FieldHelp
+                  text="Choose which menu option leads to this node"
+                  tooltip={
+                    <>
+                      <p className="mb-2">
+                        Each menu option can lead to a different next step. Select which option should go to the node you're adding.
+                      </p>
+                      <p className="text-xs font-medium mt-2">Tip:</p>
+                      <p className="mt-1 text-xs">
+                        Use "Default" as a fallback for any option not explicitly handled.
+                      </p>
+                    </>
+                  }
+                />
+              )}
+              {!conditionReadOnly && parentNode.type === "API_ACTION" && (
+                <FieldHelp
+                  text="Choose what happens after the API call"
+                  tooltip={
+                    <>
+                      <p className="mb-2">
+                        API calls can succeed or fail. Choose which outcome should lead to the node you're adding.
+                      </p>
+                      <p className="text-xs font-medium mt-2">Options:</p>
+                      <div className="space-y-1 mt-1">
+                        <p className="text-xs"><strong>Success</strong> - API returned expected status code</p>
+                        <p className="text-xs"><strong>Error</strong> - API failed or returned unexpected status</p>
+                      </div>
+                    </>
+                  }
+                />
+              )}
+              {!conditionReadOnly && parentNode.type === "LOGIC_EXPRESSION" && (
+                <FieldHelp
+                  text="Use context. to access your variables"
+                  tooltip={
+                    <>
+                      <p className="text-xs font-medium">Keywords:</p>
+                      <div className="space-y-1 mt-1 mb-3">
+                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">success</code> - previous API call succeeded</p>
+                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">error</code> - previous API call failed</p>
+                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">null</code> - value does not exist</p>
+                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">true</code> - fallback when nothing else matches</p>
+                      </div>
+                      <p className="text-xs font-medium">Operators:</p>
+                      <p className="text-xs mt-1 mb-3">
+                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">==</code>{" "}
+                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">!=</code>{" "}
+                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">&gt;</code>{" "}
+                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">&lt;</code>{" "}
+                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">&gt;=</code>{" "}
+                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">&lt;=</code>{" "}
+                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">&&</code>{" "}
+                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">||</code>
+                      </p>
+                      <p className="text-xs font-medium">Examples:</p>
+                      <div className="space-y-1 mt-1">
+                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">context.age &gt; 18</code> - over 18</p>
+                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">context.items.length &gt; 0</code> - list not empty</p>
+                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">context.verified && context.premium</code> - both true</p>
+                      </div>
+                    </>
+                  }
+                />
+              )}
             </div>
           )}
 

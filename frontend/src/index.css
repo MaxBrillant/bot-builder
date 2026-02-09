@@ -19,7 +19,7 @@
   --secondary: oklch(0.964 0 0); /* Light gray */
   --secondary-foreground: oklch(0.205 0 0); /* Near black */
   --muted: oklch(0.964 0 0); /* Light gray */
-  --muted-foreground: oklch(0.506 0 0); /* Medium gray */
+  --muted-foreground: oklch(0.6 0 0); /* Medium gray - matches dark mode contrast */
   --accent: oklch(0.964 0 0); /* Light gray */
   --accent-foreground: oklch(0.205 0 0); /* Near black */
 
@@ -169,9 +169,9 @@
     fill: var(--background) !important;
   }
 
-  /* React Flow Edges - Subtle in dark mode */
+  /* React Flow Edges - Default color (can be overridden by inline styles) */
   .react-flow__edge-path {
-    stroke: var(--muted-foreground) !important;
+    stroke: var(--muted-foreground);
   }
 
   .react-flow__edge .react-flow__edge-path {

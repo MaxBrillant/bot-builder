@@ -92,11 +92,11 @@ export function MessageConfigForm({
                   </p>
                   <p className="text-xs font-medium mt-2">Example:</p>
                   <p className="mt-1 text-xs">
-                    Hello {"{{user_name}}"}, your order {"{{order_id}}"} is ready!
+                    Hello {"{{context.user_name}}"}, your order {"{{context.order_id}}"} is ready!
                   </p>
-                  <p className="text-xs font-medium mt-2">Note:</p>
+                  <p className="text-xs font-medium mt-2">Getting list size:</p>
                   <p className="mt-1 text-xs">
-                    Array length ({"{{items.length}}"}) doesn't work in messages. To show counts, save the count in a separate variable first.
+                    Use {"{{context.items.length}}"} to show how many items are in a list.
                   </p>
                 </>
               }

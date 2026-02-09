@@ -28,8 +28,11 @@ interface FlowCanvasProps {
   onNodeDragStart?: (event: React.MouseEvent, node: Node) => void;
   onNodeDrag?: (event: React.MouseEvent, node: Node) => void;
   onNodeDragStop?: (event: React.MouseEvent, node: Node, nodes: Node[]) => void;
+  onEdgeMouseEnter?: (event: React.MouseEvent, edge: Edge) => void;
+  onEdgeMouseLeave?: (event: React.MouseEvent, edge: Edge) => void;
   pendingNodeSelection: boolean;
   hoveredEdgeId?: string | null;
+  isDraggingNode?: boolean;
   skipFitView?: boolean;
 }
 
@@ -48,12 +51,15 @@ export function FlowCanvas({
   onNodeDragStart,
   onNodeDrag,
   onNodeDragStop,
+  onEdgeMouseEnter,
+  onEdgeMouseLeave,
   pendingNodeSelection,
   hoveredEdgeId = null,
+  isDraggingNode = false,
   skipFitView = false,
 }: FlowCanvasProps) {
   return (
-    <EdgeHoverContext.Provider value={hoveredEdgeId}>
+    <EdgeHoverContext.Provider value={{ edgeId: hoveredEdgeId, isDragging: isDraggingNode }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -61,6 +67,7 @@ export function FlowCanvas({
         edgeTypes={edgeTypes}
         nodesDraggable={true} // Enable dragging
         nodesConnectable={false} // No manual connections
+        autoPanOnNodeDrag={true} // Pan canvas when dragging nodes to edge
         elementsSelectable={true}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
@@ -68,6 +75,8 @@ export function FlowCanvas({
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
+        onEdgeMouseEnter={onEdgeMouseEnter}
+        onEdgeMouseLeave={onEdgeMouseLeave}
         fitView={nodes.length > 0 && !pendingNodeSelection && !skipFitView}
         fitViewOptions={{ padding: 0.2 }}
         snapToGrid={true}

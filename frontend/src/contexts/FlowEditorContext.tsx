@@ -22,6 +22,7 @@ import {
   moveNodeRight,
   moveNodeBetween,
 } from '@/lib/flowLayoutUtils';
+import { canAddRoute, isBranchingNode } from '@/lib/routeConditionUtils';
 import { snapToGrid } from '@/utils/canvasPositioningUtils';
 import {
   createHistoryManager,
@@ -144,6 +145,9 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
 
   // Ref for pending node selection after insert operations
   const pendingNodeSelectionRef = useRef<string | null>(null);
+
+  // Tracks just-saved flow to prevent setFlows from overwriting state
+  const justSavedFlowIdRef = useRef<string | null>(null);
 
   // ========== History Management ==========
 
@@ -368,18 +372,28 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
   const setFlows = useCallback((newFlows: Flow[]) => {
     setFlowsState(newFlows);
 
-    // If we have flows and an active index, sync to editor state
-    if (newFlows.length > 0) {
-      const currentIndex = Math.min(activeFlowIndex, newFlows.length - 1);
-      const flow = newFlows[currentIndex];
-      setServerState(flow);
-      setDraftState(structuredClone(flow));
-      setSelectedNodeId(null);
-    } else {
+    if (newFlows.length === 0) {
       setServerState(null);
       setDraftState(null);
       setSelectedNodeId(null);
+      return;
     }
+
+    const currentIndex = Math.min(activeFlowIndex, newFlows.length - 1);
+    const flow = newFlows[currentIndex];
+
+    // Skip overwriting serverState/draftState if we just saved this flow.
+    // The query cache update triggers this function, but save() already set the state.
+    const justSaved = justSavedFlowIdRef.current === flow.flow_id;
+    if (justSaved) {
+      justSavedFlowIdRef.current = null;
+    } else {
+      setServerState(flow);
+      setDraftState(structuredClone(flow));
+    }
+
+    // Preserve selection if the node still exists in the flow
+    setSelectedNodeId((prev) => (prev && flow.nodes?.[prev] ? prev : null));
   }, [activeFlowIndex]);
 
   // Sync when activeFlowIndex changes
@@ -547,214 +561,193 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     condition?: string,
     routeIndex?: number
   ): string | null => {
-    let newNodeId: string | null = null;
+    const currentState = draftStateRef.current;
+    if (!currentState) return null;
 
-    setDraftState((prev) => {
-      if (!prev) return prev;
-
-      try {
-        // Determine if we should use route overtaking
-        let actualRouteIndex = routeIndex;
-        if (position === 'after' && targetId && condition && actualRouteIndex === undefined) {
-          const targetNode = prev.nodes[targetId];
-          if (targetNode?.routes) {
-            const foundIndex = targetNode.routes.findIndex(
-              (route) => route.condition.trim().toLowerCase() === condition.trim().toLowerCase()
-            );
-            if (foundIndex !== -1) {
-              actualRouteIndex = foundIndex;
-            }
+    try {
+      // Determine if we should use route overtaking
+      let actualRouteIndex = routeIndex;
+      if (position === 'after' && targetId && condition && actualRouteIndex === undefined) {
+        const targetNode = currentState.nodes[targetId];
+        if (targetNode?.routes) {
+          const foundIndex = targetNode.routes.findIndex(
+            (route) => route.condition.trim().toLowerCase() === condition.trim().toLowerCase()
+          );
+          if (foundIndex !== -1) {
+            actualRouteIndex = foundIndex;
           }
         }
-
-        const result = insertNodeInFlow(prev, position, targetId, nodeType, condition, actualRouteIndex);
-        newNodeId = result.newNodeId;
-
-        // Store for selection after render
-        pendingNodeSelectionRef.current = newNodeId;
-
-        // Record history
-        recordCommand(
-          CommandType.INSERT_NODE,
-          `Insert ${nodeType} node`,
-          prev,
-          result.flow,
-          [newNodeId]
-        );
-
-        return result.flow;
-      } catch (error) {
-        toast.error(`Failed to insert node: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        return prev;
       }
-    });
 
-    if (newNodeId) {
+      // Check route limit when adding a NEW route (not overtaking an existing one)
+      // Only applies to branching nodes - non-branching nodes always overtake their single route
+      if (position === 'after' && targetId && actualRouteIndex === undefined) {
+        const targetNode = currentState.nodes[targetId];
+        if (targetNode && isBranchingNode(targetNode.type, targetNode.config) && !canAddRoute(targetNode, currentState.nodes)) {
+          toast.error("Cannot add more routes to this node (maximum reached)");
+          return null;
+        }
+      }
+
+      const result = insertNodeInFlow(currentState, position, targetId, nodeType, condition, actualRouteIndex);
+      const newNodeId = result.newNodeId;
+
+      // Store for selection after render
+      pendingNodeSelectionRef.current = newNodeId;
+
+      // Record history BEFORE setting state (outside state updater to avoid StrictMode double-call)
+      recordCommand(
+        CommandType.INSERT_NODE,
+        `Insert ${nodeType} node`,
+        currentState,
+        result.flow,
+        [newNodeId]
+      );
+
+      setDraftState(result.flow);
       toast.success(`${nodeType} node added`);
-    }
 
-    return newNodeId;
+      return newNodeId;
+    } catch (error) {
+      toast.error(`Failed to insert node: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return null;
+    }
   }, [recordCommand]);
 
   const deleteNode = useCallback((nodeId: string): boolean => {
-    let success = false;
-    let nodeToDelete: FlowNode | undefined;
+    // Get current state from ref to avoid stale closure issues
+    const currentState = draftStateRef.current;
+    if (!currentState) return false;
+
+    const nodeToDelete = currentState.nodes[nodeId];
+    if (!nodeToDelete) return false;
+
+    let result: Flow;
     let deletedCount = 0;
 
-    setDraftState((prev) => {
-      if (!prev) return prev;
+    try {
+      const originalCount = Object.keys(currentState.nodes).length;
+      result = deleteNodeFromFlow(currentState, nodeId);
+      const newCount = Object.keys(result.nodes).length;
+      deletedCount = originalCount - newCount;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-      nodeToDelete = prev.nodes[nodeId];
-      const originalCount = Object.keys(prev.nodes).length;
-
-      try {
-        const result = deleteNodeFromFlow(prev, nodeId);
-        const newCount = Object.keys(result.nodes).length;
-        deletedCount = originalCount - newCount;
-        success = true;
-
-        // Record history
-        recordCommand(
-          CommandType.DELETE_NODE,
-          `Delete node "${nodeToDelete?.name}"`,
-          prev,
-          result,
-          [nodeId]
-        );
-
-        return result;
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-        if (errorMessage.includes('start node')) {
-          toast.error('Cannot delete the start node', {
-            description: 'The start node is the entry point of the flow and cannot be deleted.',
-          });
-        } else if (errorMessage.includes('END node')) {
-          toast.error('Cannot delete END nodes', {
-            description: 'END nodes mark flow completion points and cannot be deleted.',
-          });
-        } else if (errorMessage.includes("'true' (catch-all) route")) {
-          toast.error('Cannot delete branch node', {
-            description: "Branch node must have a 'true' (catch-all) route.",
-          });
-        } else {
-          toast.error(`Failed to delete node: ${errorMessage}`);
-        }
-        return prev;
-      }
-    });
-
-    if (success) {
-      // Clear selection if deleted node was selected
-      if (selectedNodeId === nodeId) {
-        setSelectedNodeId(null);
-      }
-
-      // Show appropriate success message
-      const isBranchNode = nodeToDelete && ['MENU', 'API_ACTION', 'LOGIC_EXPRESSION'].includes(nodeToDelete.type);
-      const hasMultipleRoutes = (nodeToDelete?.routes?.length || 0) > 1;
-
-      if (isBranchNode && hasMultipleRoutes && deletedCount > 1) {
-        toast.success(`Deleted ${deletedCount} node${deletedCount > 1 ? 's' : ''}`, {
-          description: 'Preserved the main flow path (true condition).',
+      if (errorMessage.includes('start node')) {
+        toast.error('Cannot delete the start node', {
+          description: 'The start node is the entry point of the flow and cannot be deleted.',
+        });
+      } else if (errorMessage.includes('END node')) {
+        toast.error('Cannot delete END nodes', {
+          description: 'END nodes mark flow completion points and cannot be deleted.',
+        });
+      } else if (errorMessage.includes("'true' (catch-all) route")) {
+        toast.error('Cannot delete branch node', {
+          description: "Branch node must have a 'true' (catch-all) route.",
         });
       } else {
-        toast.success('Node deleted');
+        toast.error(`Failed to delete node: ${errorMessage}`);
       }
+      return false;
     }
 
-    return success;
+    // Record history BEFORE setting state (outside state updater to avoid StrictMode double-call)
+    recordCommand(
+      CommandType.DELETE_NODE,
+      `Delete node "${nodeToDelete.name}"`,
+      currentState,
+      result,
+      [nodeId]
+    );
+
+    // Update state
+    setDraftState(result);
+
+    // Clear selection if deleted node was selected
+    if (selectedNodeId === nodeId) {
+      setSelectedNodeId(null);
+    }
+
+    // Show appropriate success message
+    const hasMultipleRoutes = (nodeToDelete.routes?.length || 0) > 1;
+
+    if (isBranchingNode(nodeToDelete.type, nodeToDelete.config) && hasMultipleRoutes && deletedCount > 1) {
+      toast.success(`Deleted ${deletedCount} node${deletedCount > 1 ? 's' : ''}`, {
+        description: 'Preserved the main flow path (true condition).',
+      });
+    } else {
+      toast.success('Node deleted');
+    }
+
+    return true;
   }, [selectedNodeId, recordCommand]);
 
   const moveLeft = useCallback((nodeId: string): boolean => {
-    let success = false;
+    const currentState = draftStateRef.current;
+    if (!currentState) return false;
 
-    setDraftState((prev) => {
-      if (!prev) return prev;
-      const result = moveNodeLeft(prev, nodeId);
-      if (result) {
-        success = true;
-
-        // Record history
-        recordCommand(
-          CommandType.MOVE_NODE_LEFT,
-          `Move node "${prev.nodes[nodeId]?.name}" left`,
-          prev,
-          result,
-          [nodeId]
-        );
-
-        return result;
-      }
-      return prev;
-    });
-
-    if (success) {
-      toast.success('Node moved left');
-    } else {
+    const result = moveNodeLeft(currentState, nodeId);
+    if (!result) {
       toast.error('Cannot move node left');
+      return false;
     }
 
-    return success;
+    // Record history BEFORE setting state (outside state updater to avoid StrictMode double-call)
+    recordCommand(
+      CommandType.MOVE_NODE_LEFT,
+      `Move node "${currentState.nodes[nodeId]?.name}" left`,
+      currentState,
+      result,
+      [nodeId]
+    );
+
+    setDraftState(result);
+    toast.success('Node moved left');
+    return true;
   }, [recordCommand]);
 
   const moveRight = useCallback((nodeId: string): boolean => {
-    let success = false;
+    const currentState = draftStateRef.current;
+    if (!currentState) return false;
 
-    setDraftState((prev) => {
-      if (!prev) return prev;
-      const result = moveNodeRight(prev, nodeId);
-      if (result) {
-        success = true;
-
-        // Record history
-        recordCommand(
-          CommandType.MOVE_NODE_RIGHT,
-          `Move node "${prev.nodes[nodeId]?.name}" right`,
-          prev,
-          result,
-          [nodeId]
-        );
-
-        return result;
-      }
-      return prev;
-    });
-
-    if (success) {
-      toast.success('Node moved right');
-    } else {
+    const result = moveNodeRight(currentState, nodeId);
+    if (!result) {
       toast.error('Cannot move node right');
+      return false;
     }
 
-    return success;
+    // Record history BEFORE setting state (outside state updater to avoid StrictMode double-call)
+    recordCommand(
+      CommandType.MOVE_NODE_RIGHT,
+      `Move node "${currentState.nodes[nodeId]?.name}" right`,
+      currentState,
+      result,
+      [nodeId]
+    );
+
+    setDraftState(result);
+    toast.success('Node moved right');
+    return true;
   }, [recordCommand]);
 
   const moveNodeBetweenEdge = useCallback((nodeId: string, edgeId: string): boolean => {
-    let success = false;
+    const currentState = draftStateRef.current;
+    if (!currentState) return false;
 
-    setDraftState((prev) => {
-      if (!prev) return prev;
-      const result = moveNodeBetween(prev, nodeId, edgeId);
-      if (result) {
-        success = true;
+    const result = moveNodeBetween(currentState, nodeId, edgeId);
+    if (!result) return false;
 
-        // Record history
-        recordCommand(
-          CommandType.MOVE_NODE_BETWEEN,
-          `Reorder node "${prev.nodes[nodeId]?.name}"`,
-          prev,
-          result,
-          [nodeId]
-        );
+    // Record history BEFORE setting state (outside state updater to avoid StrictMode double-call)
+    recordCommand(
+      CommandType.MOVE_NODE_BETWEEN,
+      `Reorder node "${currentState.nodes[nodeId]?.name}"`,
+      currentState,
+      result,
+      [nodeId]
+    );
 
-        return result;
-      }
-      return prev;
-    });
-
-    return success;
+    setDraftState(result);
+    return true;
   }, [recordCommand]);
 
   // ========== History Actions ==========
@@ -831,17 +824,20 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
         nodes: draftState.nodes,
       });
 
-      // Update both states to the saved version
       setServerState(savedFlow);
       setDraftState(structuredClone(savedFlow));
 
-      // Update the flows array with the saved flow
-      setFlowsState((prevFlows) =>
-        prevFlows.map((f) => (f.flow_id === savedFlow.flow_id ? savedFlow : f))
-      );
+      // Prevent setFlows from overwriting state when query cache update triggers it
+      justSavedFlowIdRef.current = savedFlow.flow_id;
 
-      // Invalidate cache for consistency
-      queryClient.invalidateQueries({ queryKey: flowsKeys.list(botId) });
+      // Update flows array and query cache (avoids refetch which would clear selection)
+      setFlowsState((prevFlows) => {
+        const updatedFlows = prevFlows.map((f) =>
+          f.flow_id === savedFlow.flow_id ? savedFlow : f
+        );
+        queryClient.setQueryData(flowsKeys.list(botId), updatedFlows);
+        return updatedFlows;
+      });
 
       toast.success('Flow saved');
       return true;

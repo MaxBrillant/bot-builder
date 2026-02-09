@@ -121,25 +121,21 @@ export function OutputMappingGrid({
 
       {/* Help Text */}
       <FieldHelp
-        text="Save specific data from the selected menu item into variables"
+        text="Save data from the user's selection to use later"
         tooltip={
           <>
             <p className="mb-2">
-              When the user picks a menu option, you can extract information from that selected item and save it to variables. For example, if they select a product, you can save the product's ID, price, or name.
+              When the user picks an option from the menu, you can save information from that choice (like its ID or name) into a variable for use later.
             </p>
-            <p className="text-xs font-medium mt-2">Example menu item:</p>
+            <p className="text-xs font-medium mt-2">Example: If menu items look like this:</p>
             <pre className="mt-1 text-xs bg-primary-foreground text-primary p-2 rounded overflow-x-auto">
               {`{
   "id": 42,
   "name": "Blue Shirt",
-  "price": 29.99,
-  "details": {
-    "size": "M",
-    "color": "blue"
-  }
+  "price": 29.99
 }`}
             </pre>
-            <p className="text-xs font-medium mt-2">Paths to extract from above:</p>
+            <p className="text-xs font-medium mt-2">You can extract:</p>
             <ul className="list-none space-y-1 mt-1 text-xs">
               <li>
                 <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">id</code> → Gets 42
@@ -149,9 +145,6 @@ export function OutputMappingGrid({
               </li>
               <li>
                 <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">price</code> → Gets 29.99
-              </li>
-              <li>
-                <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">details.size</code> → Gets "M" (nested field)
               </li>
             </ul>
           </>

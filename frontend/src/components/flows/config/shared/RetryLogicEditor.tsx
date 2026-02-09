@@ -53,15 +53,16 @@ export function RetryLogicEditor({
           <p className="text-sm text-destructive">{errors["maxAttempts"]}</p>
         )}
         <FieldHelp
-          text="Number of validation retries before failing (1-10)"
+          text="How many chances the user gets before giving up (1-10)"
           tooltip={
             <>
               <p className="mb-2">
-                When a user provides invalid input to a PROMPT node, they'll be
-                asked to retry up to this many times before routing to the fail node.
+                If a user enters something invalid (like letters when you asked for a number), they get this many chances to try again before the bot gives up and moves to the "fail" node.
               </p>
-              <p className="text-xs font-medium mt-2">Range:</p>
-              <p className="mt-1 text-xs">1-10 attempts</p>
+              <p className="text-xs font-medium mt-2">Example:</p>
+              <p className="mt-1 text-xs">
+                Set to 3 = user gets 3 tries to enter valid input
+              </p>
             </>
           }
         />
@@ -91,23 +92,26 @@ export function RetryLogicEditor({
           fieldContext="counter_text"
         />
         <FieldHelp
-          text="Message shown during retry attempts"
+          text="Message shown when asking the user to try again"
           tooltip={
             <>
               <p className="mb-2">
-                This text appears along with the validation error message when
-                a user needs to retry their input.
+                This text appears when a user enters invalid input. You can show them how many tries they have left.
               </p>
-              <p className="text-xs font-medium mt-2">Available variables:</p>
+              <p className="text-xs font-medium mt-2">You can use:</p>
               <p className="mt-1 text-xs">
                 <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
                   {"{{current_attempt}}"}
-                </code> - Current attempt number (1, 2, 3...)
+                </code> - Which attempt they're on (1, 2, 3...)
               </p>
               <p className="mt-1 text-xs">
                 <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
                   {"{{max_attempts}}"}
-                </code> - Maximum attempts allowed
+                </code> - Total attempts allowed
+              </p>
+              <p className="text-xs font-medium mt-2">Example result:</p>
+              <p className="mt-1 text-xs">
+                "(Attempt 2 of 3)"
               </p>
             </>
           }
@@ -141,16 +145,18 @@ export function RetryLogicEditor({
           <p className="text-sm text-destructive">{errors["failRoute"]}</p>
         )}
         <FieldHelp
-          text="Node to navigate to when max attempts exceeded"
+          text="Where to go if the user runs out of attempts"
           tooltip={
             <>
               <p className="mb-2">
-                When a user exceeds the maximum retry attempts, the conversation
-                will automatically route to this node.
+                If the user uses all their attempts without entering valid input, the conversation will jump to this node instead of continuing normally.
               </p>
-              <p className="text-xs font-medium mt-2">Tip:</p>
+              <p className="text-xs font-medium mt-2">Common choices:</p>
               <p className="mt-1 text-xs">
-                Usually you'd point this to an END node or an error handling flow.
+                • An END node to end the conversation
+              </p>
+              <p className="mt-1 text-xs">
+                • A MESSAGE node that says "Sorry, I couldn't understand. Please try again later."
               </p>
             </>
           }

@@ -101,14 +101,6 @@ export function LogicExpressionConfigForm({
             <p className="font-medium text-muted-foreground">Keywords</p>
             <div className="space-y-2 ml-2">
               <div className="flex justify-between">
-                <code className="text-foreground">true</code>
-                <span className="text-muted-foreground">always matches (default route)</span>
-              </div>
-              <div className="flex justify-between">
-                <code className="text-foreground">false</code>
-                <span className="text-muted-foreground">never matches</span>
-              </div>
-              <div className="flex justify-between">
                 <code className="text-foreground">success</code>
                 <span className="text-muted-foreground">previous API call succeeded</span>
               </div>
@@ -119,6 +111,10 @@ export function LogicExpressionConfigForm({
               <div className="flex justify-between">
                 <code className="text-foreground">null</code>
                 <span className="text-muted-foreground">value does not exist</span>
+              </div>
+              <div className="flex justify-between">
+                <code className="text-foreground">true</code>
+                <span className="text-muted-foreground">fallback when nothing else matches</span>
               </div>
             </div>
           </div>

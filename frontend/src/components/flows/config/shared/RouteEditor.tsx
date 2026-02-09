@@ -164,16 +164,16 @@ export function RouteEditor({
   return (
     <div className="space-y-2">
       <FieldHelp
-        text="Control where the conversation goes next based on conditions"
+        text="Choose where the conversation goes next"
         tooltip={
           <>
             <p className="mb-2">
-              Routes determine which node to go to next. Each route has a condition (the "if") and a target node (the "then"). The bot checks conditions from top to bottom and goes to the first one that matches.
+              Routes decide which node comes next in the conversation. Think of it like "if this, then go there". The bot checks each route in order and follows the first one that matches.
             </p>
             {getExample()}
-            <p className="text-xs font-medium mt-2">Auto-sorting:</p>
+            <p className="text-xs font-medium mt-2">Good to know:</p>
             <p className="mt-1 text-xs">
-              Routes are automatically reordered so specific conditions are checked before general ones.
+              Routes are automatically ordered so specific choices (like "option 1") are checked before general ones (like "always go here").
             </p>
           </>
         }

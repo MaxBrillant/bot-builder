@@ -115,13 +115,13 @@ export function ResponseMappingEditor({
 
       {/* Help Text */}
       <FieldHelp
-        text="Save data from the API response into variables you can use later"
+        text="Save data from the API response so you can use it later"
         tooltip={
           <>
             <p className="mb-2">
-              After calling the API, you can extract specific pieces of data from the response and store them in variables. This lets you use that data in later nodes.
+              When an API returns data, you can pick out the pieces you need and save them in variables. Then you can use those variables in messages, conditions, or other API calls.
             </p>
-            <p className="text-xs font-medium mt-2">Example API response:</p>
+            <p className="text-xs font-medium mt-2">Example: If the API returns:</p>
             <pre className="mt-1 text-xs bg-primary-foreground text-primary p-2 rounded overflow-x-auto">
               {`{
   "data": {
@@ -133,7 +133,7 @@ export function ResponseMappingEditor({
   ]
 }`}
             </pre>
-            <p className="text-xs font-medium mt-2">Paths to extract:</p>
+            <p className="text-xs font-medium mt-2">You can extract:</p>
             <p className="mt-1 text-xs">
               <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">data.user_id</code> → Gets "123"
             </p>
@@ -141,10 +141,10 @@ export function ResponseMappingEditor({
               <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">data.name</code> → Gets "John"
             </p>
             <p className="mt-1 text-xs">
-              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">items.0.title</code> → Gets "First"
+              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">items.0.title</code> → Gets "First" (first item in the list)
             </p>
             <p className="text-xs mt-3 pt-2 border-t">
-              <span className="font-medium">Array responses:</span> If the API returns an array directly, use <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">*</code> to access it (e.g., <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">*.0.id</code>)
+              <span className="font-medium">Tip:</span> If the API returns a list directly (not inside an object), use <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">*</code> to access it. For example, <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">*.0.id</code> gets the id from the first item.
             </p>
           </>
         }

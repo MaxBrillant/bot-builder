@@ -61,7 +61,8 @@ function MenuNode({ data }: NodeProps<MenuNodeData>) {
           preSelectedType={data?.preSelectedType}
           availableVariables={data?.availableVariables}
         >
-          <div style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
+          {/* Position trigger at right edge of node */}
+          <div style={{ position: 'absolute', left: 220, top: 40, width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
         </NodeTypeSelector>
       )}
 

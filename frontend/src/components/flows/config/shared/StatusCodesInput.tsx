@@ -132,21 +132,21 @@ export function StatusCodesInput({
       )}
 
       <FieldHelp
-        text="Which status codes indicate the API call was successful"
+        text="Which response codes mean the API call worked"
         tooltip={
           <>
             <p className="mb-2">
-              When the API responds with one of these codes, the call is considered successful and the flow continues on the success route. Most APIs use 200 for success.
+              APIs return a number code to indicate success or failure. If the API returns one of these codes, the call counts as successful. If no codes are specified, only 200 is considered success.
             </p>
             <p className="text-xs font-medium mt-2">Common success codes:</p>
             <p className="mt-1 text-xs">
-              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">200</code> - OK (general success)
+              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">200</code> - OK (the most common)
             </p>
             <p className="mt-1 text-xs">
-              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">201</code> - Created (resource created)
+              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">201</code> - Created (something was created)
             </p>
             <p className="mt-1 text-xs">
-              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">204</code> - No Content (success, no data returned)
+              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">204</code> - No Content (worked, but no data returned)
             </p>
           </>
         }

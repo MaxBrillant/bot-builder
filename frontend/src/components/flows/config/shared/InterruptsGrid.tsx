@@ -131,24 +131,27 @@ export function InterruptsGrid({
 
       {/* Help Text */}
       <FieldHelp
-        text="Keywords that jump to specific nodes, bypassing normal flow"
+        text="Special words that let users jump to a different part of the conversation"
         tooltip={
           <>
             <p className="mb-2">
-              When a user types these keywords, they'll immediately jump to the target node—skipping validation and normal routing. Matching is case-insensitive and works with phrases like "go back".
+              If a user types one of these keywords at any time, they'll immediately jump to the node you choose. This lets users exit, go back, or get help without completing the current step.
             </p>
             <p className="text-xs font-medium mt-2">Common uses:</p>
             <ul className="list-none space-y-1 mt-1 text-xs">
               <li>
-                <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">cancel</code> - Exit to main menu
+                <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">cancel</code> - Let users exit to main menu
               </li>
               <li>
-                <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">back</code> - Return to previous step
+                <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">back</code> - Return to a previous step
               </li>
               <li>
-                <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">start over</code> - Restart conversation
+                <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">help</code> - Jump to help information
               </li>
             </ul>
+            <p className="mt-2 text-xs">
+              Matching ignores capitalization (CANCEL = cancel = Cancel).
+            </p>
           </>
         }
       />

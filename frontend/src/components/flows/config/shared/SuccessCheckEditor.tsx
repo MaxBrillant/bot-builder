@@ -96,18 +96,18 @@ export function SuccessCheckEditor({
           availableVariables={availableVariables}
         />
         <FieldHelp
-          text="Optional: Check the response data to verify success"
+          text="Optional: Double-check that the API call actually worked"
           tooltip={
             <>
               <p className="mb-2">
-                Sometimes an API returns status code 200 but includes an error message in the response data. Use this to check the actual response content to ensure the call truly succeeded.
+                Sometimes an API says "OK" (status 200) but the response actually contains an error. This lets you check the response content to make sure it really worked.
               </p>
               <p className="text-xs font-medium mt-2">When to use this:</p>
               <p className="mt-1 text-xs">
-                • API returns 200 but has <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">{`{"error": "something"}`}</code> in the body
+                • The API returns 200 but might have an error message inside the response
               </p>
               <p className="mt-1 text-xs">
-                • You need to verify specific data exists in the response
+                • You want to verify the response contains the data you expect
               </p>
               <p className="text-xs font-medium mt-2">Examples:</p>
               <ul className="list-none space-y-1 mt-1 text-xs">
@@ -118,12 +118,12 @@ export function SuccessCheckEditor({
                   <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">response.body.error == null</code>
                 </li>
                 <li>
-                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">response.body.data.length {">"} 0</code>
+                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">response.body.data.length {">"} 0</code> (has at least one item)
                 </li>
               </ul>
-              <p className="text-xs font-medium mt-2">Important:</p>
+              <p className="text-xs font-medium mt-2">How it works with status codes:</p>
               <p className="mt-1 text-xs">
-                When you set both status codes and an expression, BOTH must be true for success. For example, if you specify status codes [200, 201] and expression "response.body.success == true", the call only succeeds if the status is 200 or 201 AND the body has success=true.
+                If you set both status codes and an expression, BOTH must pass for the API call to count as successful.
               </p>
             </>
           }

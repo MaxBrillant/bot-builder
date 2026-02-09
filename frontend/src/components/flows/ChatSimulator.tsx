@@ -143,14 +143,36 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
         messageText
       );
 
-      // Add bot response to chat
-      const botMessage: Message = {
-        id: `bot-${Date.now()}`,
-        text: response.data.response_text || "No response from bot",
-        isBot: true,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, botMessage]);
+      // Check for error response from webhook
+      if (response.data.status === "error" && response.data.error) {
+        const errorMessage: Message = {
+          id: `bot-${Date.now()}`,
+          text: response.data.error,
+          isBot: true,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+      } else {
+        // Add bot responses to chat (each message as separate bubble)
+        const botMessages = response.data.messages || [];
+        if (botMessages.length === 0) {
+          const noResponseMessage: Message = {
+            id: `bot-${Date.now()}`,
+            text: "No response from bot",
+            isBot: true,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, noResponseMessage]);
+        } else {
+          const newBotMessages: Message[] = botMessages.map((text: string, index: number) => ({
+            id: `bot-${Date.now()}-${index}`,
+            text,
+            isBot: true,
+            timestamp: new Date(),
+          }));
+          setMessages((prev) => [...prev, ...newBotMessages]);
+        }
+      }
     } catch (error: unknown) {
       console.error("Failed to send message:", error);
       const errorMessage = getErrorMessage(error) || "Failed to send message to bot";

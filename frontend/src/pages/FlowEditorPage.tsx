@@ -9,6 +9,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ConditionSelector } from "@/components/flows/config/shared/ConditionSelector";
 import { useParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { FlowEditorProvider, useFlowEditor } from "@/contexts/FlowEditorContext";
@@ -42,6 +48,7 @@ import { FlowCanvas } from "@/components/flows/FlowCanvas";
 import { KeyboardShortcutsHelpDialog } from "@/components/flows/KeyboardShortcutsHelpDialog";
 import { ContextualShortcutsHint } from "@/components/flows/ContextualShortcutsHint";
 import { NotFound } from "@/components/NotFound";
+import { canAddRoute, isBranchingNode } from "@/lib/routeConditionUtils";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
@@ -53,6 +60,7 @@ import {
   ensureLeafNodesRouteToEnd,
   moveNodeLeft,
   moveNodeRight,
+  connectRouteToExistingNode,
 } from "@/lib/flowLayoutUtils";
 import {
   calculateEdgeBounds,
@@ -176,6 +184,7 @@ function FlowEditorContent() {
   const draggedNodeRef = useRef<string | null>(null);
   const filteredEdgeBoundsRef = useRef<any[]>([]);
 
+
   // Per-flow viewport storage (flow_id -> { x, y, zoom })
   const viewportsByFlowRef = useRef<Map<string, { x: number; y: number; zoom: number }>>(new Map());
   const [skipFitView, setSkipFitView] = useState(false);
@@ -197,6 +206,14 @@ function FlowEditorContent() {
 
   // State for pending delete confirmation
   const [pendingDeleteNodeId, setPendingDeleteNodeId] = useState<string | null>(null);
+
+  // State for stub drag-to-connect (creating cycles)
+  const [pendingConnection, setPendingConnection] = useState<{
+    sourceNodeId: string;
+    targetNodeId: string;
+    anchorPosition: { x: number; y: number }; // Screen coordinates for popover positioning
+  } | null>(null);
+  const [pendingCondition, setPendingCondition] = useState("");
 
   // React Query hooks for data fetching
   const { data: bot, isLoading: isBotLoading, isError: isBotError } = useBotQuery(botId);
@@ -412,6 +429,107 @@ function FlowEditorContent() {
   // Ref to store pending action for unsaved changes dialog
   const pendingActionRef = useRef<(() => void) | null>(null);
 
+  // Create route to existing node (called after condition selection or directly)
+  const createRouteToExistingNode = useCallback(
+    (sourceNodeId: string, targetNodeId: string, condition: string) => {
+      if (!activeFlow) return;
+
+      const sourceNode = activeFlow.nodes[sourceNodeId];
+      const originalRouteCount = sourceNode?.routes?.length || 0;
+
+      // Check route limit (but allow if condition already exists - that's a re-route, not add)
+      const conditionExists = sourceNode?.routes?.some(
+        r => r.condition.trim().toLowerCase() === condition.trim().toLowerCase()
+      );
+      if (!conditionExists && sourceNode && !canAddRoute(sourceNode, activeFlow.nodes)) {
+        toast.error("Cannot add more routes to this node (maximum reached)");
+        setPendingConnection(null);
+        setPendingCondition("");
+        return;
+      }
+
+      const updatedFlow = connectRouteToExistingNode(
+        activeFlow,
+        sourceNodeId,
+        targetNodeId,
+        condition
+      );
+
+      if (updatedFlow) {
+        const newRouteCount = updatedFlow.nodes[sourceNodeId]?.routes?.length || 0;
+
+        // Only update if routes actually changed (silently ignore duplicates)
+        if (newRouteCount > originalRouteCount) {
+          const sourceNode = updatedFlow.nodes[sourceNodeId];
+          updateNode(sourceNodeId, { routes: sourceNode.routes });
+          toast.success("Route created");
+        }
+        // If route count unchanged, condition already existed - silently ignore
+      } else {
+        toast.error("Cannot create route: would create invalid cycle (cycles must include a PROMPT or MENU node)");
+      }
+
+      // Clear pending state
+      setPendingConnection(null);
+      setPendingCondition("");
+    },
+    [activeFlow, updateNode]
+  );
+
+  // Handle stub dropped on node (creating route to existing node)
+  const handleStubDropOnNode = useCallback(
+    (sourceNodeId: string, targetNodeId: string, dropPosition?: { x: number; y: number }) => {
+      if (!activeFlow) return;
+
+      const sourceNode = activeFlow.nodes[sourceNodeId];
+      if (!sourceNode) return;
+
+      // Prevent self-routing
+      if (sourceNodeId === targetNodeId) {
+        toast.error("Cannot route a node to itself");
+        return;
+      }
+
+      // For branching nodes, need condition - show selector
+      const needsCondition = isBranchingNode(sourceNode.type, sourceNode.config);
+
+      // Check route limit before showing condition dialog
+      if (!canAddRoute(sourceNode, activeFlow.nodes)) {
+        toast.error("Cannot add more routes to this node (maximum reached)");
+        return;
+      }
+
+      if (needsCondition) {
+        // Calculate anchor position for the popover (below the target node)
+        let anchorPosition = dropPosition || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+
+        // Try to get target node position and convert to screen coordinates
+        const targetNode = reactFlowInstance.getNode(targetNodeId);
+        if (targetNode) {
+          const nodePosition = targetNode.position;
+          const nodeHeight = targetNode.height || 100;
+          const nodeWidth = targetNode.width || 200;
+
+          // Position below the center of the node
+          const flowPosition = {
+            x: nodePosition.x + nodeWidth / 2,
+            y: nodePosition.y + nodeHeight + 10, // 10px below the node
+          };
+
+          anchorPosition = reactFlowInstance.flowToScreenPosition(flowPosition);
+        }
+
+        // Show condition dialog, then create route
+        setPendingConnection({ sourceNodeId, targetNodeId, anchorPosition });
+        setPendingCondition("");
+      } else {
+        // Direct connection (non-branching: PROMPT, MESSAGE use "true")
+        createRouteToExistingNode(sourceNodeId, targetNodeId, "true");
+      }
+    },
+    [activeFlow, createRouteToExistingNode, reactFlowInstance]
+  );
+
   // Convert flow JSON to React Flow format (only depends on flow data, not selection)
   const { nodes: baseNodes, edges } = useMemo(() => {
     if (!activeFlow) {
@@ -431,6 +549,9 @@ function FlowEditorContent() {
         const sourceNodeId = edge.data?.sourceNodeId;
         const sourceNode = activeFlow.nodes[sourceNodeId];
 
+        // Check if this stub has a pending connection awaiting condition input
+        const isPendingSource = pendingConnection?.sourceNodeId === sourceNodeId;
+
         return {
           ...edge,
           data: {
@@ -440,6 +561,10 @@ function FlowEditorContent() {
             onInsertBetween: (nodeType: NodeType, condition?: string) => {
               insertNode("after", sourceNodeId, nodeType, condition);
             },
+            onConnectToNode: (targetNodeId: string, screenPosition: { x: number; y: number }) => {
+              handleStubDropOnNode(sourceNodeId, targetNodeId, screenPosition);
+            },
+            pendingTargetNodeId: isPendingSource ? pendingConnection?.targetNodeId : null,
           },
         };
       }
@@ -450,12 +575,16 @@ function FlowEditorContent() {
       const sourceNodeId = edge.source;
       const sourceNode = activeFlow.nodes[sourceNodeId];
       const condition = sourceNode?.routes?.[routeIndex]?.condition;
+      const handleIndex = edge.data?.handleIndex ?? 0;
+      const cumulativeLabelOffset = edge.data?.cumulativeLabelOffset ?? 0;
 
       return {
         ...edge,
         data: {
           sourceNodeId,
           routeIndex,
+          handleIndex,
+          cumulativeLabelOffset,
           condition,
           sourceNode,
           availableVariables,
@@ -569,11 +698,7 @@ function FlowEditorContent() {
       const canMoveRightVal = moveNodeRight(activeFlow, node.id) !== null;
 
       // Check if this is a branching node type (for condition input)
-      const isBranchingNode = [
-        "MENU",
-        "API_ACTION",
-        "LOGIC_EXPRESSION",
-      ].includes(flowNode?.type || "");
+      const isBranching = flowNode ? isBranchingNode(flowNode.type, flowNode.config) : false;
 
       return {
         ...node,
@@ -582,7 +707,7 @@ function FlowEditorContent() {
           onInsertAfter: (nodeType: NodeType, condition?: string) =>
             insertNode("after", node.id, nodeType, condition),
           // Pass parentNode for branching nodes to show condition selector
-          ...(isBranchingNode && { parentNode: flowNode }),
+          ...(isBranching && { parentNode: flowNode }),
           onDelete: getNodeDeleteHandler(node.id),
           onMoveLeft: getNodeMoveLeftHandler(node.id),
           onMoveRight: getNodeMoveRightHandler(node.id),
@@ -611,7 +736,9 @@ function FlowEditorContent() {
     getNodeMoveRightHandler,
     getNodeSelectorChangeHandler,
     keyboardOpenSelectorNodeId,
-    preSelectedNodeType
+    preSelectedNodeType,
+    handleStubDropOnNode,
+    pendingConnection,
   ]);
 
   // Add selection state to nodes (only recalculates isSelected, not handlers)
@@ -985,12 +1112,9 @@ function FlowEditorContent() {
     if (!nodeToDelete) return [];
 
     // Check if this is a branch node with multiple routes
-    const isBranchNode = ["MENU", "API_ACTION", "LOGIC_EXPRESSION"].includes(
-      nodeToDelete.type
-    );
     const hasMultipleRoutes = (nodeToDelete.routes?.length || 0) > 1;
 
-    if (!isBranchNode || !hasMultipleRoutes) return [];
+    if (!isBranchingNode(nodeToDelete.type, nodeToDelete.config) || !hasMultipleRoutes) return [];
 
     // Find the "true" condition child (will be preserved)
     const trueRoute = nodeToDelete.routes?.find(
@@ -999,21 +1123,52 @@ function FlowEditorContent() {
     if (!trueRoute) return [];
 
     const trueChildId = trueRoute.target_node;
-    const nodesToDeleteList: string[] = [];
+    // Include the node being deleted so parentsInDeleteSet counts correctly
+    const nodesToDeleteSet = new Set<string>([pendingDeleteNodeId]);
+    const visited = new Set<string>();
 
-    // Collect descendants recursively
+    // Count incoming edges to a node
+    const countIncomingEdges = (targetNodeId: string): number => {
+      let count = 0;
+      Object.values(activeFlow!.nodes).forEach((node) => {
+        node.routes?.forEach((route) => {
+          if (route.target_node === targetNodeId) {
+            count++;
+          }
+        });
+      });
+      return count;
+    };
+
+    // Collect descendants recursively (with cycle detection)
+    // Only delete children that have no other parent nodes outside the delete set
     const collectDescendants = (nodeId: string) => {
+      if (visited.has(nodeId)) return; // Prevent infinite recursion on cycles
+      visited.add(nodeId);
+
       const node = activeFlow!.nodes[nodeId];
       if (!node) return;
 
-      nodesToDeleteList.push(nodeId);
+      // Check if this node has parents outside the delete set
+      const incomingEdges = countIncomingEdges(nodeId);
+      const parentsInDeleteSet = Array.from(nodesToDeleteSet).filter(
+        deletedId => activeFlow!.nodes[deletedId]?.routes?.some(r => r.target_node === nodeId)
+      ).length;
+
+      // Only delete if all parents are being deleted
+      if (incomingEdges > parentsInDeleteSet) {
+        return; // Has parents outside delete set, preserve this node
+      }
+
+      nodesToDeleteSet.add(nodeId);
 
       node.routes?.forEach((route) => {
         const childNode = activeFlow!.nodes[route.target_node];
         if (
           childNode &&
           childNode.type !== "END" &&
-          route.target_node !== trueChildId
+          route.target_node !== trueChildId &&
+          route.target_node !== activeFlow!.start_node_id
         ) {
           collectDescendants(route.target_node);
         }
@@ -1025,12 +1180,15 @@ function FlowEditorContent() {
       ?.filter((r) => r.target_node !== trueChildId)
       .forEach((route) => {
         const childNode = activeFlow!.nodes[route.target_node];
-        if (childNode && childNode.type !== "END") {
+        if (childNode && childNode.type !== "END" && route.target_node !== activeFlow!.start_node_id) {
           collectDescendants(route.target_node);
         }
       });
 
-    return nodesToDeleteList.map((id) => activeFlow!.nodes[id].name);
+    // Return only the cascaded children (exclude the node being explicitly deleted)
+    return Array.from(nodesToDeleteSet)
+      .filter((id) => id !== pendingDeleteNodeId)
+      .map((id) => activeFlow!.nodes[id].name);
   }, [pendingDeleteNodeId, activeFlow]);
 
   // Handle delete node confirmation
@@ -1112,18 +1270,18 @@ function FlowEditorContent() {
     const selectedNode = currentActiveFlow.nodes[currentSelectedNodeId];
     if (!selectedNode) return;
 
-    const isBranching = ['MENU', 'API_ACTION', 'LOGIC_EXPRESSION'].includes(selectedNode.type);
+    const needsConditionSelector = isBranchingNode(selectedNode.type, selectedNode.config);
 
     if (nodeType === null) {
       // For generic N key, open selector without pre-selection
       setPreSelectedNodeType(null);
       setKeyboardOpenSelectorNodeId(currentSelectedNodeId);
-    } else if (isBranching) {
-      // For branching nodes with specific type, open selector with pre-selected type
+    } else if (needsConditionSelector) {
+      // For branching nodes (except dynamic menu) with specific type, open selector with pre-selected type
       setPreSelectedNodeType(nodeType);
       setKeyboardOpenSelectorNodeId(currentSelectedNodeId);
     } else {
-      // For non-branching nodes with specific type, directly insert
+      // For non-branching nodes or dynamic menus with specific type, directly insert
       insertNodeRef.current('after', currentSelectedNodeId, nodeType);
     }
   }, []);
@@ -1864,8 +2022,21 @@ function FlowEditorContent() {
                 onNodeDragStart={handleNodeDragStart}
                 onNodeDrag={handleNodeDrag}
                 onNodeDragStop={handleNodeDragStop}
+                onEdgeMouseEnter={(_, edge) => {
+                  // Only set hover if not dragging a node
+                  if (!isDraggingRef.current) {
+                    setHoveredEdgeId(edge.id);
+                  }
+                }}
+                onEdgeMouseLeave={() => {
+                  // Only clear hover if not dragging a node
+                  if (!isDraggingRef.current) {
+                    setHoveredEdgeId(null);
+                  }
+                }}
                 pendingNodeSelection={!!pendingNodeSelectionRef.current}
                 hoveredEdgeId={hoveredEdgeId}
+                isDraggingNode={isDraggingRef.current}
                 skipFitView={skipFitView}
               />
 
@@ -2059,6 +2230,61 @@ function FlowEditorContent() {
         open={showKeyboardHelp}
         onOpenChange={setShowKeyboardHelp}
       />
+
+      {/* Condition Popover for Stub Drag-to-Connect */}
+      <Popover
+        open={!!pendingConnection}
+        onOpenChange={(open) => {
+          if (!open) {
+            // Save on close if condition is valid
+            if (pendingConnection && pendingCondition.trim()) {
+              createRouteToExistingNode(
+                pendingConnection.sourceNodeId,
+                pendingConnection.targetNodeId,
+                pendingCondition.trim()
+              );
+            } else {
+              setPendingConnection(null);
+              setPendingCondition("");
+            }
+          }
+        }}
+      >
+        {/* Invisible anchor positioned below the target node */}
+        <PopoverTrigger asChild>
+          <span
+            className="fixed w-0 h-0"
+            style={{
+              left: pendingConnection?.anchorPosition?.x ?? '50%',
+              top: pendingConnection?.anchorPosition?.y ?? '50%',
+            }}
+            aria-hidden="true"
+          />
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-3">
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-muted-foreground">
+              Route Condition
+            </div>
+            {pendingConnection && activeFlow && (
+              <ConditionSelector
+                nodeType={activeFlow.nodes[pendingConnection.sourceNodeId]?.type || "LOGIC_EXPRESSION"}
+                nodeConfig={activeFlow.nodes[pendingConnection.sourceNodeId]?.config}
+                value={pendingCondition}
+                onChange={setPendingCondition}
+                placeholder={
+                  activeFlow.nodes[pendingConnection.sourceNodeId]?.type === "MENU"
+                    ? "Select menu option"
+                    : activeFlow.nodes[pendingConnection.sourceNodeId]?.type === "API_ACTION"
+                    ? "Select condition"
+                    : "e.g. context.value == true"
+                }
+                availableVariables={availableVariables}
+              />
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

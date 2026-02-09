@@ -215,7 +215,7 @@ export function validateRouteCondition(
   }
 
   // Keywords are always valid
-  if (["true", "false", "success", "error"].includes(trimmed)) {
+  if (["true", "success", "error"].includes(trimmed)) {
     return { isValid: true };
   }
 
@@ -256,12 +256,12 @@ export function validateRouteCondition(
     // MENU should use selection
     if (
       !condition.includes("selection") &&
-      !["true", "false"].includes(trimmed)
+      trimmed !== "true"
     ) {
       return {
         isValid: false,
         error:
-          'Menu routes should use "selection" (e.g., selection == 1) or keywords like "true".',
+          'Menu routes should use "selection" (e.g., selection == 1) or "true" for fallback.',
       };
     }
   }

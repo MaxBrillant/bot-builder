@@ -118,13 +118,8 @@ export function getRouteConditionOptions(
         {
           value: "true",
           label: "Default",
-          description: "Default catch-all route",
+          description: "Fallback when nothing else matches",
           isDefault: true,
-        },
-        {
-          value: "false",
-          label: "False (Never)",
-          description: "Expression evaluates to false",
         },
       ];
     }
@@ -153,14 +148,18 @@ export function getUnassignedConditions(
   existingRoutes: Route[]
 ): RouteConditionOption[] {
   const allOptions = getRouteConditionOptions(node.type, node.config);
-  const assignedConditions = new Set(existingRoutes.map((r) => r.condition));
+  const assignedConditions = new Set(
+    existingRoutes.map((r) => r.condition.trim().toLowerCase())
+  );
 
-  return allOptions.filter((opt) => !assignedConditions.has(opt.value));
+  return allOptions.filter(
+    (opt) => !assignedConditions.has(opt.value.trim().toLowerCase())
+  );
 }
 
 /**
  * Gets the default condition for a node type
- * This is typically the first unassigned condition, or "true" if none available
+ * Prefers first unassigned condition, falls back to first option (for route overtaking)
  */
 export function getDefaultCondition(
   node: FlowNode,
@@ -173,8 +172,13 @@ export function getDefaultCondition(
     return unassigned[0].value;
   }
 
-  // If all conditions are assigned, return "true" as default
-  return "true";
+  // All conditions assigned - return first option to allow route overtaking
+  const allOptions = getRouteConditionOptions(node.type, node.config);
+  if (allOptions.length > 0) {
+    return allOptions[0].value;
+  }
+
+  return "";
 }
 
 /**
@@ -216,9 +220,22 @@ export function getConditionLabel(
 }
 
 /**
- * Determines if a node type supports multiple routes
+ * Determines if a node is a branching node (supports multiple conditional routes).
+ * MENU, API_ACTION, and LOGIC_EXPRESSION are branching nodes,
+ * EXCEPT for DYNAMIC menus which only have a single "true" route.
  */
-export function supportsMultipleRoutes(nodeType: NodeType): boolean {
+export function isBranchingNode(
+  nodeType: NodeType,
+  nodeConfig?: NodeConfig
+): boolean {
+  // Dynamic menus only have a single "true" route - not a branching node
+  if (nodeType === "MENU") {
+    const menuConfig = nodeConfig as any;
+    if (menuConfig?.source_type === "DYNAMIC") {
+      return false;
+    }
+  }
+
   return ["MENU", "API_ACTION", "LOGIC_EXPRESSION"].includes(nodeType);
 }
 
@@ -327,6 +344,38 @@ export function sortRoutes(routes: Route[], nodeType: NodeType): Route[] {
  */
 export function isFallbackRoute(condition: string): boolean {
   return condition.trim().toLowerCase() === "true";
+}
+
+/**
+ * Determines if a node can accept another route based on its type and current routes.
+ * Used by:
+ * - Stub visibility (whether to show the "add route" stub)
+ * - insertNodeInFlow (whether to allow adding a new branch)
+ * - connectRouteToExistingNode (whether to allow connecting to existing node)
+ *
+ * @param node - The node to check
+ * @param allNodes - All nodes in the flow (needed to check if routes point to END)
+ * @returns true if a new route can be added, false otherwise
+ */
+export function canAddRoute(
+  node: FlowNode,
+  allNodes: Record<string, FlowNode>
+): boolean {
+  // LOGIC_EXPRESSION: Allow up to (MAX - 1) non-"true" routes, reserving 1 slot for fallback
+  if (node.type === "LOGIC_EXPRESSION") {
+    const nonTrueRouteCount =
+      node.routes?.filter(
+        (route) => route.condition.trim().toLowerCase() !== "true"
+      ).length || 0;
+    return nonTrueRouteCount < 7; // MAX_ROUTES_PER_NODE (8) - 1 for fallback
+  }
+
+  // For other nodes: count visible routes (exclude END) vs maxRoutes
+  const maxRoutes = getMaxRoutes(node.type, node.config);
+  const visibleRoutes =
+    node.routes?.filter((route) => allNodes[route.target_node]?.type !== "END")
+      .length || 0;
+  return visibleRoutes < maxRoutes;
 }
 
 /**

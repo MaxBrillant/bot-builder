@@ -1,14 +1,19 @@
 import { createContext, useContext } from 'react';
 
-/**
- * Context for tracking which edge is currently being hovered during drag operations.
- * This avoids recreating the entire edges array on every hover state change.
- */
-export const EdgeHoverContext = createContext<string | null>(null);
+interface EdgeHoverState {
+  edgeId: string | null;
+  isDragging: boolean;
+}
 
 /**
- * Hook to access the currently hovered edge ID.
- * Returns null if no edge is hovered.
+ * Context for tracking which edge is currently being hovered.
+ * Includes whether it's from a drag operation or regular hover.
+ */
+export const EdgeHoverContext = createContext<EdgeHoverState>({ edgeId: null, isDragging: false });
+
+/**
+ * Hook to access edge hover state.
+ * Returns { edgeId, isDragging }.
  */
 export function useEdgeHover() {
   return useContext(EdgeHoverContext);

@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath } from 'reactflow';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import NodeTypeSelector from '../NodeTypeSelector';
+import { ConditionSelector } from '../config/shared/ConditionSelector';
 import type { NodeType, FlowNode } from '@/lib/types';
 import { useEdgeHover } from '@/contexts/EdgeHoverContext';
 
@@ -72,6 +74,8 @@ interface CustomEdgeProps {
   data?: {
     sourceNodeId?: string;
     routeIndex?: number;
+    handleIndex?: number;
+    cumulativeLabelOffset?: number;
     condition?: string;
     sourceNode?: FlowNode;
     onInsertBetween?: (nodeType: NodeType, condition?: string) => void;
@@ -81,10 +85,10 @@ interface CustomEdgeProps {
 }
 
 /**
- * Custom edge with inline node insertion capability.
+ * Custom edge with inline node insertion and condition editing.
  * - Uses bezier curves for natural flow
  * - Uses smooth step for backwards/problematic connections
- * - Shows clickable labels with "+" icon on hover for edges with conditions
+ * - Shows clickable labels (click to edit condition) with "+" icon on hover (click to insert node)
  * - Shows persistent "+" button for edges without labels
  */
 export default function CustomEdge({
@@ -102,10 +106,13 @@ export default function CustomEdge({
 }: CustomEdgeProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editCondition, setEditCondition] = useState(data?.condition || '');
 
-  // Check if this edge is being hovered during drag-to-reorder
-  const hoveredEdgeId = useEdgeHover();
-  const isDragHovered = hoveredEdgeId === id;
+  // Check if this edge is being hovered (drag or regular)
+  const { edgeId: hoveredEdgeId, isDragging } = useEdgeHover();
+  const isEdgeHovered = hoveredEdgeId === id;
+  const isDragHovered = isEdgeHovered && isDragging;
 
   // Determine which path type to use
   const useSmoothStep = shouldUseSmoothStep(
@@ -118,6 +125,14 @@ export default function CustomEdge({
   );
 
   // Calculate path using appropriate algorithm
+  // For backward edges, use consistent offset steps based on handle position
+  // cumulativeLabelOffset accounts for labels of edges above this one (lower handle indices)
+  const handleIndex = data?.handleIndex ?? 0;
+  const cumulativeLabelOffset = data?.cumulativeLabelOffset ?? 0;
+
+  const baseOffset = (handleIndex + 1) * 18;
+  const backwardOffset = useSmoothStep ? baseOffset + cumulativeLabelOffset : 0;
+
   const [edgePath, labelX, labelY] = useSmoothStep
     ? getSmoothStepPath({
         sourceX,
@@ -127,6 +142,7 @@ export default function CustomEdge({
         targetY,
         targetPosition,
         borderRadius: 8, // Rounded corners for smooth step
+        offset: backwardOffset,
       })
     : getBezierPath({
         sourceX,
@@ -144,24 +160,42 @@ export default function CustomEdge({
     setSelectorOpen(false);
   };
 
+  // Handle saving edited condition
+  const handleSaveCondition = () => {
+    const trimmed = editCondition.trim();
+    if (trimmed && trimmed !== data?.condition && data?.onUpdateCondition) {
+      data.onUpdateCondition(trimmed);
+    }
+  };
+
+  // Reset edit condition when popover opens, save on close
+  const handleEditOpenChange = (open: boolean) => {
+    if (open) {
+      setEditCondition(data?.condition || '');
+    } else {
+      handleSaveCondition();
+    }
+    setEditOpen(open);
+  };
+
   return (
     <>
       <BaseEdge
         id={id}
         path={edgePath}
         markerEnd={markerEnd}
+        interactionWidth={20}
         style={{
           ...style,
           strokeWidth: isDragHovered ? 4 : 2,
-          stroke: isDragHovered ? 'var(--primary)' : style.stroke || 'var(--muted-foreground)',
-          opacity: isDragHovered ? 0.8 : 1,
+          stroke: isDragHovered ? 'var(--node-prompt)' : isEdgeHovered ? 'var(--primary)' : style.stroke || 'var(--muted-foreground)',
         }}
       />
 
       {data?.onInsertBetween && (
         <EdgeLabelRenderer>
           {label ? (
-            // Edge with label: Clickable label with plus icon on hover
+            // Edge with label: Click label to edit, plus on right to insert
             <div
               style={{
                 position: 'absolute',
@@ -172,25 +206,59 @@ export default function CustomEdge({
               onMouseEnter={() => setIsHovered(true)}
               onMouseLeave={() => setIsHovered(false)}
             >
-              <NodeTypeSelector
-                open={selectorOpen}
-                onOpenChange={setSelectorOpen}
-                onSelectType={handleInsert}
-                onUpdateCondition={data.onUpdateCondition}
-                parentNode={data.sourceNode}
-                preSelectedType={undefined}
-                preFilledCondition={data.condition}
-                availableVariables={data.availableVariables}
+              <div
+                className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium break-words cursor-pointer ${
+                  (isHovered || selectorOpen || editOpen) ? 'max-w-[166px]' : 'max-w-[150px]'
+                }`}
               >
-                <div
-                  className={`flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium break-words cursor-pointer ${
-                    isHovered ? 'max-w-[166px]' : 'max-w-[150px]'
-                  }`}
-                >
-                  {isHovered && <Plus className="w-3 h-3 flex-shrink-0" />}
-                  <span>{label}</span>
-                </div>
-              </NodeTypeSelector>
+                {/* Label - click to edit */}
+                <Popover open={editOpen} onOpenChange={handleEditOpenChange}>
+                  <PopoverTrigger asChild>
+                    <span className="hover:text-foreground line-clamp-3" title={typeof label === 'string' ? label : undefined}>{label}</span>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-3" align="start">
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">
+                        Edit Route Condition
+                      </div>
+                      {data.sourceNode && (
+                        <ConditionSelector
+                          nodeType={data.sourceNode.type}
+                          nodeConfig={data.sourceNode.config}
+                          value={editCondition}
+                          onChange={setEditCondition}
+                          placeholder="Enter condition"
+                          availableVariables={data.availableVariables}
+                        />
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                {/* Add button - on the right with separator, full height clickable */}
+                {(isHovered || selectorOpen || editOpen) && (
+                  <>
+                    <span className="w-px self-stretch bg-border" />
+                    <NodeTypeSelector
+                      open={selectorOpen}
+                      onOpenChange={setSelectorOpen}
+                      onSelectType={handleInsert}
+                      parentNode={data.sourceNode}
+                      preSelectedType={undefined}
+                      preFilledCondition={data.condition}
+                      conditionReadOnly
+                      availableVariables={data.availableVariables}
+                    >
+                      <span
+                        title="Insert node"
+                        className="flex items-center self-stretch hover:bg-accent hover:text-foreground cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4 flex-shrink-0" />
+                      </span>
+                    </NodeTypeSelector>
+                  </>
+                )}
+              </div>
             </div>
           ) : (
             // Edge without label: Always-visible plus button
@@ -206,7 +274,6 @@ export default function CustomEdge({
                 open={selectorOpen}
                 onOpenChange={setSelectorOpen}
                 onSelectType={handleInsert}
-                onUpdateCondition={data.onUpdateCondition}
                 parentNode={data.sourceNode}
                 preSelectedType={undefined}
                 preFilledCondition={data.condition}

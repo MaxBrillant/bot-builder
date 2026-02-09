@@ -1,6 +1,7 @@
 import dagre from "dagre";
 import type { Flow, FlowNode, NodeType, Route } from "./types";
-import { getConditionLabel, getMaxRoutes } from "./routeConditionUtils";
+import { SystemConstraints } from "./types";
+import { getConditionLabel, getMaxRoutes, canAddRoute, isBranchingNode } from "./routeConditionUtils";
 import { getRouteHandleInfo, HANDLE_POSITIONS } from "./handlePositioning";
 import { snapToGrid } from "@/utils/canvasPositioningUtils";
 
@@ -11,9 +12,44 @@ type Edge = any;
 // Constants for layout configuration
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 80;
-const HORIZONTAL_SPACING = 150;
-const VERTICAL_SPACING = 100;
-const STUB_LENGTH = 30; // Length of stub edge extending from handle
+const STUB_LENGTH = 30;
+
+// Spacing constants for node insertion
+const LINEAR_SPACING = 180;      // 380px total gap for linear nodes (PROMPT, MESSAGE, END)
+const BRANCHING_SPACING = 300;   // 500px total gap for branching nodes (MENU, API_ACTION, LOGIC_EXPRESSION)
+const VERTICAL_SPACING = 150;    // Vertical gap between branching routes
+
+// Dagre layout spacing (used for auto-layout)
+const DAGRE_HORIZONTAL_SPACING = 150;
+const DAGRE_VERTICAL_SPACING = 100;
+
+
+/**
+ * Get all descendants of a node via BFS traversal of routes
+ */
+function getDescendants(nodes: Record<string, FlowNode>, startNodeId: string): Set<string> {
+  const descendants = new Set<string>();
+  const queue = [startNodeId];
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    if (visited.has(nodeId)) continue;
+    visited.add(nodeId);
+
+    const node = nodes[nodeId];
+    if (!node?.routes) continue;
+
+    for (const route of node.routes) {
+      if (route.target_node && !visited.has(route.target_node)) {
+        descendants.add(route.target_node);
+        queue.push(route.target_node);
+      }
+    }
+  }
+
+  return descendants;
+}
 
 // Node type display labels for name generation
 const NODE_TYPE_LABELS: Record<NodeType, string> = {
@@ -163,6 +199,27 @@ export function convertFlowToReactFlow(flowJson: Flow): {
 
     // Convert routes to edges (using unified handle calculation if stub exists)
     if (flowNode.routes && flowNode.routes.length > 0) {
+      // Helper to estimate label height based on text length
+      const estimateLabelHeight = (label: string | undefined): number => {
+        if (!label) return 0;
+        const charsPerLine = 25; // ~25 chars per line at 9px font, 150px max-width
+        const lineHeight = 10;
+        const maxLines = 3; // Labels are clamped to 3 lines in UI
+        const lines = Math.min(Math.ceil(label.length / charsPerLine) || 1, maxLines);
+        return (lines - 1) * lineHeight;
+      };
+
+      // First pass: collect route info with handle indices and labels
+      const routeInfos: Array<{
+        index: number;
+        route: typeof flowNode.routes[0];
+        handleInfo: ReturnType<typeof getRouteHandleInfo>;
+        handleIndex: number;
+        handleSide: string;
+        label: string | undefined;
+        shouldShowLabel: boolean;
+      }> = [];
+
       flowNode.routes.forEach((route, index) => {
         // Skip routes targeting END nodes (not rendered)
         if (flowJson.nodes[route.target_node]?.type === "END") {
@@ -175,31 +232,62 @@ export function convertFlowToReactFlow(flowJson: Flow): {
           flowNode.config
         );
 
-        // Check if source node is a branching node type
-        const isBranchingNode = ["MENU", "API_ACTION", "LOGIC_EXPRESSION"].includes(flowNode.type);
+        const isBranching = isBranchingNode(flowNode.type, flowNode.config);
         const isTrueCondition = route.condition.trim().toLowerCase() === "true";
 
-        // Show label for:
-        // - LOGIC_EXPRESSION: all conditions (including "Default" for "true")
-        // - MENU/API_ACTION: specific conditions only (not "true" fallback)
-        // - Other nodes: non-"true" conditions
         const shouldShowLabel =
           flowNode.type === "LOGIC_EXPRESSION" ||
-          (isBranchingNode && !isTrueCondition) ||
+          (isBranching && !isTrueCondition) ||
           (!isTrueCondition && friendlyLabel !== "Next");
 
-        // Use tempNode/tempNodes for handle calculation (includes stub if present)
         const handleInfo = getRouteHandleInfo(tempNode, index, tempNodes);
+        const handleParts = handleInfo.sourceHandle.split('-');
+        const handleSide = handleParts[0];
+        const handleIndex = parseInt(handleParts[1], 10) || 0;
 
-        edges.push({
-          id: `${nodeId}-${route.target_node}-${index}`,
-          source: nodeId,
-          target: route.target_node,
-          sourceHandle: handleInfo.sourceHandle,
-          targetHandle: handleInfo.targetHandle,
-          sourcePosition: handleInfo.sourcePosition,
-          targetPosition: handleInfo.targetPosition,
+        routeInfos.push({
+          index,
+          route,
+          handleInfo,
+          handleIndex,
+          handleSide,
           label: shouldShowLabel ? friendlyLabel : undefined,
+          shouldShowLabel,
+        });
+      });
+
+      // Group by handle side and sort by handle index within each side
+      const bySide: Record<string, typeof routeInfos> = {};
+      for (const info of routeInfos) {
+        if (!bySide[info.handleSide]) bySide[info.handleSide] = [];
+        bySide[info.handleSide].push(info);
+      }
+      for (const side of Object.keys(bySide)) {
+        bySide[side].sort((a, b) => a.handleIndex - b.handleIndex);
+      }
+
+      // Calculate cumulative label offsets per side
+      // Each edge's offset includes its own label height (so long labels push themselves out)
+      const cumulativeOffsets = new Map<number, number>(); // routeIndex -> cumulativeOffset
+      for (const side of Object.keys(bySide)) {
+        let cumulative = 0;
+        for (const info of bySide[side]) {
+          cumulative += estimateLabelHeight(info.label);
+          cumulativeOffsets.set(info.index, cumulative);
+        }
+      }
+
+      // Second pass: create edges with cumulative offsets
+      for (const info of routeInfos) {
+        edges.push({
+          id: `${nodeId}-${info.route.target_node}-${info.index}`,
+          source: nodeId,
+          target: info.route.target_node,
+          sourceHandle: info.handleInfo.sourceHandle,
+          targetHandle: info.handleInfo.targetHandle,
+          sourcePosition: info.handleInfo.sourcePosition,
+          targetPosition: info.handleInfo.targetPosition,
+          label: info.label,
           type: "default",
           animated: false,
           markerEnd: {
@@ -212,8 +300,12 @@ export function convertFlowToReactFlow(flowJson: Flow): {
             strokeWidth: 2,
             stroke: 'var(--muted-foreground)',
           },
+          data: {
+            handleIndex: info.handleIndex,
+            cumulativeLabelOffset: cumulativeOffsets.get(info.index) ?? 0,
+          },
         });
-      });
+      }
     }
 
     // Create stub edge if node has route capacity
@@ -279,8 +371,8 @@ export function calculateLayout(nodes: Node[], edges: Edge[]): Node[] {
   // Configure graph for horizontal left-to-right layout
   dagreGraph.setGraph({
     rankdir: "LR", // Left to Right
-    nodesep: HORIZONTAL_SPACING,
-    ranksep: VERTICAL_SPACING,
+    nodesep: DAGRE_HORIZONTAL_SPACING,
+    ranksep: DAGRE_VERTICAL_SPACING,
     marginx: 50,
     marginy: 50,
   });
@@ -469,50 +561,40 @@ export function insertNodeInFlow(
   if (position === "after" && targetNodeId) {
     const targetNode = updatedFlow.nodes[targetNodeId];
     if (targetNode?.position) {
-      const VERTICAL_SPACING = 150;
       let verticalOffset = 0;
 
-      // Check if this is adding a NEW route (not overtaking existing route)
       const isAddingNewRoute =
         routeIndex === undefined ||
         routeIndex < 0 ||
         !targetNode.routes ||
         routeIndex >= targetNode.routes.length;
 
-      // Check if this is a branching node type that can have multiple routes
-      const isBranchingNodeType = [
-        "MENU",
-        "API_ACTION",
-        "LOGIC_EXPRESSION",
-      ].includes(targetNode.type);
+      const isBranching = isBranchingNode(targetNode.type, targetNode.config);
 
       if (!isAddingNewRoute && targetNode.routes && routeIndex !== undefined) {
-        // OVERTAKING existing route: inherit Y position from the node being overtaken
+        // OVERTAKING existing route: inherit Y position from the node being overtaken (except END nodes)
         const existingRoute = targetNode.routes[routeIndex];
         const existingTargetNode = updatedFlow.nodes[existingRoute.target_node];
-        if (existingTargetNode?.position) {
-          // Use the Y position of the node being replaced
+        if (existingTargetNode?.position && existingTargetNode.type !== "END") {
           verticalOffset = existingTargetNode.position.y - targetNode.position.y;
         }
-        // If existing node has no position, use parent's Y level (verticalOffset = 0)
-      } else if (targetNode.routes && isBranchingNodeType && isAddingNewRoute) {
-        // NEW route on branching node: position below all existing child nodes
+      } else if (targetNode.routes && isBranching && isAddingNewRoute) {
+        // NEW route on branching node: position below all existing child nodes (excluding END nodes)
         const childYPositions = targetNode.routes
+          .filter(route => updatedFlow.nodes[route.target_node]?.type !== "END")
           .map(route => updatedFlow.nodes[route.target_node]?.position?.y)
           .filter(y => y !== undefined) as number[];
 
         if (childYPositions.length > 0) {
-          // Position below the lowest existing child
           const maxY = Math.max(...childYPositions);
           verticalOffset = maxY - targetNode.position.y + VERTICAL_SPACING;
         }
-        // If no children have positions yet, use parent's Y level (verticalOffset = 0)
       }
-      // For non-branching nodes, use parent's Y level (verticalOffset = 0)
 
-      // Place new node to the right of target with vertical offset
+      const horizontalSpacing = isBranching ? BRANCHING_SPACING : LINEAR_SPACING;
+
       initialPosition = {
-        x: targetNode.position.x + NODE_WIDTH + HORIZONTAL_SPACING,
+        x: targetNode.position.x + NODE_WIDTH + horizontalSpacing,
         y: targetNode.position.y + verticalOffset,
       };
     } else {
@@ -523,7 +605,7 @@ export function insertNodeInFlow(
     if (targetNode?.position) {
       // Place new node to the left of target
       initialPosition = {
-        x: targetNode.position.x - NODE_WIDTH - HORIZONTAL_SPACING,
+        x: targetNode.position.x - NODE_WIDTH - LINEAR_SPACING,
         y: targetNode.position.y,
       };
     } else {
@@ -537,7 +619,7 @@ export function insertNodeInFlow(
     ) {
       const existingStart = updatedFlow.nodes[updatedFlow.start_node_id];
       initialPosition = {
-        x: existingStart.position.x - NODE_WIDTH - HORIZONTAL_SPACING,
+        x: existingStart.position.x - NODE_WIDTH - LINEAR_SPACING,
         y: existingStart.position.y,
       };
     } else {
@@ -560,61 +642,85 @@ export function insertNodeInFlow(
     },
   };
 
-  // Shift subsequent nodes to the right to make room for the new node
-  const targetNode = targetNodeId ? updatedFlow.nodes[targetNodeId] : null;
+  // Determine which nodes to shift (only descendants of the specific route, respects graph structure)
+  let nodesToShift = new Set<string>();
 
-  // Always shift nodes to make room
-  if (true) {
-    const shiftAmount = NODE_WIDTH + HORIZONTAL_SPACING;
+  if (position === "after" && targetNodeId) {
+    const targetNode = updatedFlow.nodes[targetNodeId];
+    if (targetNode?.routes && targetNode.routes.length > 0) {
+      // Determine which route we're inserting into
+      let effectiveRouteIndex: number | undefined = routeIndex;
 
-    if (position === "after" && targetNodeId && targetNode?.position) {
-      // Find all nodes to the right of the insertion point and shift them
-      const insertionX = targetNode.position.x + shiftAmount;
-      Object.keys(updatedFlow.nodes).forEach((nodeId) => {
-        const node = updatedFlow.nodes[nodeId];
-        if (node.position && node.position.x >= insertionX && nodeId !== newNodeId) {
-          updatedFlow.nodes[nodeId] = {
-            ...node,
-            position: {
-              x: snapToGrid(node.position.x + shiftAmount),
-              y: snapToGrid(node.position.y),
-            },
-          };
+      // For non-branching nodes, no routeIndex is passed but they implicitly insert into route[0]
+      if (routeIndex === undefined && !isBranchingNode(targetNode.type, targetNode.config)) {
+        effectiveRouteIndex = 0;
+      }
+
+      if (effectiveRouteIndex !== undefined && effectiveRouteIndex >= 0 && effectiveRouteIndex < targetNode.routes.length) {
+        // Inserting into a SPECIFIC route: only shift that route's target and its descendants
+        const specificRoute = targetNode.routes[effectiveRouteIndex];
+        if (specificRoute?.target_node) {
+          nodesToShift.add(specificRoute.target_node);
+          const descendants = getDescendants(updatedFlow.nodes, specificRoute.target_node);
+          descendants.forEach(id => nodesToShift.add(id));
         }
-      });
-    } else if (position === "before" && targetNodeId && targetNode?.position) {
-      // Shift the target and all nodes to the right of it
-      Object.keys(updatedFlow.nodes).forEach((nodeId) => {
-        const node = updatedFlow.nodes[nodeId];
-        if (node.position && node.position.x >= targetNode.position.x && nodeId !== newNodeId) {
-          updatedFlow.nodes[nodeId] = {
-            ...node,
-            position: {
-              x: snapToGrid(node.position.x + shiftAmount),
-              y: snapToGrid(node.position.y),
-            },
-          };
-        }
-      });
-    } else if (position === "start") {
-      // Shift all existing nodes to the right
-      if (
-        updatedFlow.start_node_id &&
-        updatedFlow.nodes[updatedFlow.start_node_id]?.position
-      ) {
-        const existingStart = updatedFlow.nodes[updatedFlow.start_node_id];
-        Object.keys(updatedFlow.nodes).forEach((nodeId) => {
-          const node = updatedFlow.nodes[nodeId];
-          if (node.position && node.position.x >= existingStart.position.x && nodeId !== newNodeId) {
-            updatedFlow.nodes[nodeId] = {
-              ...node,
-              position: {
-                x: snapToGrid(node.position.x + shiftAmount),
-                y: snapToGrid(node.position.y),
-              },
-            };
-          }
-        });
+      }
+      // If no effectiveRouteIndex (adding new branch to branching node), don't shift anything
+    }
+  } else if (position === "before" && targetNodeId) {
+    // For "before": shift the target and all its descendants
+    nodesToShift.add(targetNodeId);
+    const descendants = getDescendants(updatedFlow.nodes, targetNodeId);
+    descendants.forEach(id => nodesToShift.add(id));
+  } else if (position === "start" && updatedFlow.start_node_id) {
+    // For "start": shift existing start and all its descendants
+    nodesToShift.add(updatedFlow.start_node_id);
+    const descendants = getDescendants(updatedFlow.nodes, updatedFlow.start_node_id);
+    descendants.forEach(id => nodesToShift.add(id));
+  }
+
+  // Calculate the minimum shift needed based on new node's position
+  // Gap from new node to its descendants always uses LINEAR_SPACING (branching spacing is only for parent → new node)
+  const minRequiredX = newNode.position.x + NODE_WIDTH + LINEAR_SPACING;
+
+  // Filter out nodes that are to the left of the parent node (e.g., from backward edges)
+  // Only shift nodes that are actually to the right of the parent
+  const parentNode = targetNodeId ? updatedFlow.nodes[targetNodeId] : null;
+  const parentX = parentNode?.position?.x ?? newNode.position.x;
+  const nodesToActuallyShift = new Set<string>();
+  for (const nodeId of nodesToShift) {
+    const node = updatedFlow.nodes[nodeId];
+    if (node?.position && node.position.x >= parentX) {
+      nodesToActuallyShift.add(nodeId);
+    }
+  }
+
+  // Find the leftmost descendant (among those to the right) to determine shift amount
+  let minDescendantX = Infinity;
+  for (const nodeId of nodesToActuallyShift) {
+    const node = updatedFlow.nodes[nodeId];
+    if (node?.position && node.position.x < minDescendantX) {
+      minDescendantX = node.position.x;
+    }
+  }
+
+  // Calculate shift: only shift if descendants are too close to new node
+  const shiftAmount = minDescendantX < Infinity
+    ? Math.max(0, minRequiredX - minDescendantX)
+    : 0;
+
+  // Apply uniform shift to descendants on the right (preserves relative spacing)
+  if (shiftAmount > 0) {
+    for (const nodeId of nodesToActuallyShift) {
+      const node = updatedFlow.nodes[nodeId];
+      if (node?.position) {
+        updatedFlow.nodes[nodeId] = {
+          ...node,
+          position: {
+            x: snapToGrid(node.position.x + shiftAmount),
+            y: snapToGrid(node.position.y),
+          },
+        };
       }
     }
   }
@@ -651,13 +757,9 @@ export function insertNodeInFlow(
       // Insert node after target
       if (targetNode.routes && targetNode.routes.length > 0) {
         // Determine if this is a branching node type
-        const isBranchingNode = [
-          "MENU",
-          "API_ACTION",
-          "LOGIC_EXPRESSION",
-        ].includes(targetNode.type);
+        const isBranching = isBranchingNode(targetNode.type, targetNode.config);
 
-        if (isBranchingNode) {
+        if (isBranching) {
           // Check if we're inserting ON a specific route (universal overtaking)
           if (
             routeIndex !== undefined &&
@@ -683,7 +785,14 @@ export function insertNodeInFlow(
               },
             ];
           } else {
-            // OLD BEHAVIOR: Create new branch (leaf node with empty routes)
+            // Check if we can add another route to this node
+            if (!canAddRoute(targetNode, updatedFlow.nodes)) {
+              throw new Error(
+                `Cannot add more routes to this ${targetNode.type} node (maximum reached)`
+              );
+            }
+
+            // Create new branch (leaf node with empty routes)
             newNode.routes = [];
 
             // For LOGIC_EXPRESSION nodes, generate a unique condition placeholder
@@ -930,12 +1039,9 @@ export function deleteNodeFromFlow(flowJson: Flow, nodeId: string): Flow {
   }
 
   // Check if this is a branch node with multiple routes
-  const isBranchNode = ["MENU", "API_ACTION", "LOGIC_EXPRESSION"].includes(
-    nodeToDelete.type
-  );
   const hasMultipleRoutes = (nodeToDelete.routes?.length || 0) > 1;
 
-  if (isBranchNode && hasMultipleRoutes) {
+  if (isBranchingNode(nodeToDelete.type, nodeToDelete.config) && hasMultipleRoutes) {
     // Handle branch node deletion with cascading
     return deleteBranchNodeWithCascading(updatedFlow, nodeId);
   }
@@ -1043,21 +1149,38 @@ function deleteBranchNodeWithCascading(flow: Flow, branchNodeId: string): Flow {
   }
 
   // Collect all nodes to delete (branch node + non-true children and their descendants)
+  // Only delete children that have no other parent nodes outside the delete set
   const nodesToDelete = new Set<string>([branchNodeId]);
+  const visited = new Set<string>();
 
   const collectDescendants = (nodeId: string) => {
+    if (visited.has(nodeId)) return; // Prevent infinite recursion on cycles
+    visited.add(nodeId);
+
     const node = flow.nodes[nodeId];
     if (!node) return;
 
+    // Check if this node has parents outside the delete set
+    const incomingEdges = countIncomingEdges(flow, nodeId);
+    const parentsInDeleteSet = Array.from(nodesToDelete).filter(
+      deletedId => flow.nodes[deletedId]?.routes?.some(r => r.target_node === nodeId)
+    ).length;
+
+    // Only delete if all parents are being deleted
+    if (incomingEdges > parentsInDeleteSet) {
+      return; // Has parents outside delete set, preserve this node
+    }
+
     nodesToDelete.add(nodeId);
 
-    // Recursively collect all descendants (but stop at END nodes and the true child)
+    // Recursively collect all descendants (but stop at END nodes, start node, and the true child)
     node.routes?.forEach((route) => {
       const childNode = flow.nodes[route.target_node];
       if (
         childNode &&
         childNode.type !== "END" &&
-        route.target_node !== trueChildId
+        route.target_node !== trueChildId &&
+        route.target_node !== flow.start_node_id
       ) {
         collectDescendants(route.target_node);
       }
@@ -1069,8 +1192,8 @@ function deleteBranchNodeWithCascading(flow: Flow, branchNodeId: string): Flow {
     .filter((r) => r.target_node !== trueChildId)
     .forEach((route) => {
       const childNode = flow.nodes[route.target_node];
-      // Only collect if not an END node
-      if (childNode && childNode.type !== "END") {
+      // Only collect if not an END node or start node
+      if (childNode && childNode.type !== "END" && route.target_node !== flow.start_node_id) {
         collectDescendants(route.target_node);
       }
     });
@@ -1151,8 +1274,18 @@ function findParentNode(
   return null;
 }
 
+// Node types that collect user input (break potential infinite loops)
+const INPUT_NODE_TYPES: NodeType[] = ["PROMPT", "MENU"];
+
 /**
- * Check if moving nodeToMove into the path starting at targetNode would create a circular reference.
+ * Check if moving nodeToMove into the path starting at targetNode would create
+ * a problematic circular reference.
+ *
+ * Cycles containing at least one PROMPT or MENU node are allowed since user input
+ * naturally breaks potential infinite loops. Only cycles with exclusively non-input
+ * nodes (MESSAGE, API_ACTION, LOGIC_EXPRESSION) are blocked.
+ *
+ * @returns true if the move should be blocked (creates cycle without input node)
  */
 function wouldCreateCircularReference(
   flow: Flow,
@@ -1160,24 +1293,44 @@ function wouldCreateCircularReference(
   targetNode: string
 ): boolean {
   const visited = new Set<string>();
+  const cyclePath: string[] = [];
 
   function checkPath(currentId: string): boolean {
-    if (currentId === nodeToMove) return true;
+    if (currentId === nodeToMove) {
+      cyclePath.push(currentId);
+      return true;
+    }
     if (visited.has(currentId)) return false;
 
     visited.add(currentId);
+    cyclePath.push(currentId);
 
     const current = flow.nodes[currentId];
-    if (!current?.routes) return false;
+    if (!current?.routes) {
+      cyclePath.pop();
+      return false;
+    }
 
     for (const route of current.routes) {
       if (checkPath(route.target_node)) return true;
     }
 
+    cyclePath.pop();
     return false;
   }
 
-  return checkPath(targetNode);
+  const hasCycle = checkPath(targetNode);
+
+  if (!hasCycle) return false;
+
+  // Check if cycle includes an input node - if so, allow it
+  const hasInputNode = cyclePath.some((nodeId) => {
+    const node = flow.nodes[nodeId];
+    return node && INPUT_NODE_TYPES.includes(node.type);
+  });
+
+  // Block only if NO input node in cycle
+  return !hasInputNode;
 }
 
 /**
@@ -1354,15 +1507,11 @@ export function moveNodeBetween(
 }
 
 /**
- * Determine if node should show stub edge based on visible route capacity
- * Routes to END don't count since END edges are hidden from UI
+ * Determine if node should show stub edge based on route capacity.
+ * Delegates to canAddRoute() for consistent logic across the codebase.
  */
 function shouldShowStub(node: FlowNode, allNodes: Record<string, FlowNode>): boolean {
-  const maxRoutes = getMaxRoutes(node.type, node.config);
-  const visibleRoutes = node.routes?.filter(
-    route => allNodes[route.target_node]?.type !== "END"
-  ).length || 0;
-  return visibleRoutes < maxRoutes;
+  return canAddRoute(node, allNodes);
 }
 
 /**
@@ -1448,4 +1597,66 @@ function calculatePerpendicularStubPosition(
         y: nodeY + NODE_HEIGHT / 2,
       };
   }
+}
+
+/**
+ * Connect a route from source node to an existing target node.
+ * Used for creating cycles by dragging stub to existing node.
+ */
+export function connectRouteToExistingNode(
+  flow: Flow,
+  sourceNodeId: string,
+  targetNodeId: string,
+  condition: string
+): Flow | null {
+  const sourceNode = flow.nodes[sourceNodeId];
+  if (!sourceNode) return null;
+
+  // Validate target node exists
+  if (!flow.nodes[targetNodeId]) return null;
+
+  // If route with this condition already exists, silently ignore (no duplicate condition)
+  const conditionExists = sourceNode.routes?.some(
+    r => r.condition.trim().toLowerCase() === condition.trim().toLowerCase()
+  );
+  if (conditionExists) {
+    return flow;
+  }
+
+  // If route to this target already exists, silently ignore (no duplicate target)
+  const targetExists = sourceNode.routes?.some(
+    r => r.target_node === targetNodeId
+  );
+  if (targetExists) {
+    return flow;
+  }
+
+  // Validate: would this create an invalid cycle?
+  if (wouldCreateCircularReference(flow, sourceNodeId, targetNodeId)) {
+    return null; // Cycle without input node - not allowed
+  }
+
+  // Check if we can add another route to this node
+  if (!canAddRoute(sourceNode, flow.nodes)) {
+    return null; // Max routes reached
+  }
+
+  const updatedRoutes = [...(sourceNode.routes || [])];
+
+  // Add new route
+  updatedRoutes.push({
+    condition,
+    target_node: targetNodeId,
+  });
+
+  return {
+    ...flow,
+    nodes: {
+      ...flow.nodes,
+      [sourceNodeId]: {
+        ...sourceNode,
+        routes: updatedRoutes,
+      },
+    },
+  };
 }

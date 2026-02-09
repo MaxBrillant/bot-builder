@@ -233,21 +233,21 @@ export function MenuConfigForm({
               text="Choose between fixed options or options from data"
               tooltip={
                 <>
-                  <p className="mb-2"><strong>Static menu</strong> - You manually type the menu choices that never change.</p>
+                  <p className="mb-2"><strong>Static menu</strong> - You type the menu choices yourself. They stay the same for everyone.</p>
                   <p className="mt-1 text-xs mb-2">
-                    Use this when your menu is always the same. For example: "1. Contact Support, 2. Check Status, 3. Cancel Order"
+                    Example: "1. Contact Support, 2. Check Status, 3. Cancel Order"
                   </p>
 
-                  <p className="mb-2 mt-3"><strong>Dynamic menu</strong> - Menu options come from data stored in a variable (usually from an API call).</p>
+                  <p className="mb-2 mt-3"><strong>Dynamic menu</strong> - Menu options come from data you fetched earlier (like from an API).</p>
                   <p className="mt-1 text-xs mb-2">
-                    Use this when options change based on data. For example: showing a list of available products, user's orders, or search results from an API.
+                    Example: Showing a user their list of orders, available appointment times, or search results.
                   </p>
 
-                  <p className="text-xs font-medium mt-3">When to use dynamic:</p>
+                  <p className="text-xs font-medium mt-3">Use dynamic when:</p>
                   <p className="mt-1 text-xs">
-                    • Menu items come from an API<br />
-                    • Options are different for each user<br />
-                    • List changes frequently
+                    • The list comes from an API<br />
+                    • Each user sees different options<br />
+                    • The options change over time
                   </p>
                 </>
               }
@@ -326,18 +326,18 @@ export function MenuConfigForm({
                     </p>
                   )}
                   <FieldHelp
-                    text="Variable containing the list of menu items (array type)"
+                    text="Variable that contains the list of options to show"
                     tooltip={
                       <>
                         <p className="mb-2">
-                          This should be a variable that holds a list of items (an array). Each item in the list becomes one menu option that users can select by typing its number.
+                          Choose a variable that holds a list. Each item in the list becomes a menu option the user can choose from.
                         </p>
-                        <p className="text-xs font-medium mt-2">Where does this come from?</p>
+                        <p className="text-xs font-medium mt-2">Where does this list come from?</p>
                         <p className="mt-1 text-xs mb-2">
-                          Typically from an API Action node. For example, if an API returns a list of products, orders, or search results, store that in a variable and use it here.
+                          Usually from an API. For example, you might fetch a list of products, appointments, or orders, save it to a variable, then use it here.
                         </p>
                         <p className="text-xs font-medium mt-2">
-                          Example data in the variable:
+                          Example list in the variable:
                         </p>
                         <pre className="mt-1 text-xs bg-primary-foreground text-primary p-2 rounded overflow-x-auto">
                           {`[
@@ -346,7 +346,7 @@ export function MenuConfigForm({
 ]`}
                         </pre>
                         <p className="text-xs mt-2">
-                          With this data, the menu will show 2 options that users can select.
+                          This would show 2 options that users can pick from.
                         </p>
                       </>
                     }
@@ -395,9 +395,9 @@ export function MenuConfigForm({
                         <p className="mt-1 text-xs">
                           This displays: "1. Pro Plan - $25"
                         </p>
-                        <p className="text-xs font-medium mt-2">Note:</p>
+                        <p className="text-xs font-medium mt-2">Getting list size:</p>
                         <p className="mt-1 text-xs">
-                          Array length ({"{{items.length}}"}) doesn't work in templates. Check the array length using a Logic Expression node instead.
+                          Use {"{{context.items.length}}"} in your message text to show the number of items in the list.
                         </p>
                       </>
                     }
