@@ -1216,18 +1216,41 @@ function FlowEditorContent() {
     );
   }, []);
 
-  // Check if canvas-specific shortcuts should work (only when canvas has focus)
-  const shouldAllowCanvasShortcuts = useCallback(() => {
+  // Check if focus is on an interactive control that needs arrow keys (dropdowns, listboxes, etc.)
+  const isArrowKeyControlFocused = useCallback(() => {
     const activeElement = document.activeElement;
-    if (!activeElement || activeElement === document.body) return true;
+    if (!activeElement || activeElement === document.body) return false;
 
-    // Allow shortcuts when React Flow canvas elements have focus
-    const isReactFlowElement =
-      activeElement.classList.contains('react-flow__pane') ||
-      activeElement.classList.contains('react-flow__node') ||
-      activeElement.closest('.react-flow') !== null;
+    // Check for elements that use arrow keys for their own navigation
+    const role = activeElement.getAttribute('role');
+    const arrowKeyRoles = ['listbox', 'menu', 'menubar', 'tree', 'grid', 'combobox', 'radiogroup', 'tablist'];
+    if (role && arrowKeyRoles.includes(role)) return true;
 
-    return isReactFlowElement;
+    // Check if inside a dropdown/popover that's open (radix uses data-state="open")
+    const isInOpenPopover = activeElement.closest('[data-state="open"]') !== null ||
+                            activeElement.closest('[role="listbox"]') !== null ||
+                            activeElement.closest('[role="menu"]') !== null;
+    if (isInOpenPopover) return true;
+
+    // Check for select elements
+    if (activeElement.tagName === 'SELECT') return true;
+
+    return false;
+  }, []);
+
+  // Check if focus is on an element where Enter key has meaning (buttons, links)
+  const isEnterKeyControlFocused = useCallback(() => {
+    const activeElement = document.activeElement;
+    if (!activeElement || activeElement === document.body) return false;
+
+    const tagName = activeElement.tagName;
+    const role = activeElement.getAttribute('role');
+
+    // Buttons and links use Enter to activate
+    if (tagName === 'BUTTON' || tagName === 'A') return true;
+    if (role === 'button' || role === 'link' || role === 'menuitem') return true;
+
+    return false;
   }, []);
 
   // Check if a shortcut is global (works anywhere)
@@ -1699,12 +1722,7 @@ function FlowEditorContent() {
         }
       }
 
-      // ========== CANVAS-SPECIFIC SHORTCUTS (only when canvas focused) ==========
-
-      // Block canvas shortcuts if focus is not on canvas
-      if (!shouldAllowCanvasShortcuts()) {
-        return;
-      }
+      // ========== EDITOR SHORTCUTS (work throughout the editor) ==========
 
       // Skip if any dialog is open (except for Escape to close)
       // Note: chatSimulator is not included here as it handles its own Escape key
@@ -1752,8 +1770,10 @@ function FlowEditorContent() {
       }
 
       // Arrow key navigation (Figma-style: auto-select start node if nothing selected)
+      // Skip if focus is on a control that uses arrow keys (dropdowns, listboxes, etc.)
       if (!ctrl && !shift && !alt) {
         if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+          if (isArrowKeyControlFocused()) return;
           event.preventDefault();
 
           if (currentSelectedNodeId) {
@@ -1770,6 +1790,7 @@ function FlowEditorContent() {
       // Large node positioning (Shift + Arrow)
       if (!ctrl && shift && !alt && currentSelectedNodeId) {
         if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+          if (isArrowKeyControlFocused()) return;
           event.preventDefault();
           handleNodePositioning(event.key, POSITION_NUDGE_LARGE);
           return;
@@ -1779,6 +1800,7 @@ function FlowEditorContent() {
       // Small node positioning (Ctrl + Arrow)
       if (ctrl && !shift && !alt && currentSelectedNodeId) {
         if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+          if (isArrowKeyControlFocused()) return;
           event.preventDefault();
           handleNodePositioning(event.key);
           return;
@@ -1788,11 +1810,13 @@ function FlowEditorContent() {
       // Node reordering (Ctrl + Shift + Left/Right) - free movement within flow
       if (ctrl && shift && !alt && currentSelectedNodeId) {
         if (event.key === 'ArrowLeft') {
+          if (isArrowKeyControlFocused()) return;
           event.preventDefault();
           moveLeftRef2.current(currentSelectedNodeId);
           return;
         }
         if (event.key === 'ArrowRight') {
+          if (isArrowKeyControlFocused()) return;
           event.preventDefault();
           moveRightRef2.current(currentSelectedNodeId);
           return;
@@ -1815,7 +1839,9 @@ function FlowEditorContent() {
       }
 
       // Focus name input (Enter key when node is selected)
+      // Skip if focus is on a button/link that uses Enter to activate
       if (event.key === "Enter" && !ctrl && !shift && !alt && currentSelectedNodeId) {
+        if (isEnterKeyControlFocused()) return;
         event.preventDefault();
         // Focus the node name input in the configuration panel
         nodeConfigPanelRef.current?.focusNameInput();
@@ -1861,11 +1887,13 @@ function FlowEditorContent() {
       }
 
       // Handle Delete/Backspace key to delete node
+      // Skip if focus is on a button/link to prevent accidental deletion
       if (
         (event.key === "Delete" || event.key === "Backspace") &&
         currentSelectedNodeId &&
         currentActiveFlow
       ) {
+        if (isEnterKeyControlFocused()) return;
         const selectedNode = currentActiveFlow.nodes[currentSelectedNodeId];
         if (selectedNode && selectedNode.type !== "END") {
           event.preventDefault();
@@ -1880,7 +1908,8 @@ function FlowEditorContent() {
   }, [
     // Stable callbacks (all use refs internally, so don't change)
     isTypingInInput,
-    shouldAllowCanvasShortcuts,
+    isArrowKeyControlFocused,
+    isEnterKeyControlFocused,
     isGlobalShortcut,
     handleQuickNodeInsert,
     handleNodeNavigation,
