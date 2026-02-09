@@ -70,7 +70,7 @@ export default function BotCard({ bot, onEdit, onDelete }: BotCardProps) {
             <div className="rounded-lg bg-muted p-2.5">
               <BotIcon className="h-5 w-5" />
             </div>
-            <div className="space-y-1 flex-1 min-w-0">
+            <div className="space-y-3 flex-1 min-w-0">
               <h3 className="text-base font-semibold leading-none truncate">{bot.name}</h3>
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge

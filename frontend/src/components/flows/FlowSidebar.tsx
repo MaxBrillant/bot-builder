@@ -1,4 +1,4 @@
-import { Plus, X } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -115,10 +115,10 @@ export default function FlowSidebar({
                     variant="ghost"
                     size="icon"
                     onClick={(e) => handleDeleteClick(index, e)}
-                    className="ml-2 h-6 w-6 hover:bg-destructive/10 opacity-0 group-hover:opacity-100"
+                    className="ml-2 h-6 w-6 hover:bg-destructive hover:text-destructive-foreground opacity-0 group-hover:opacity-100"
                     title="Delete flow"
                   >
-                    <X className="w-3 h-3 hover:text-destructive" />
+                    <Trash2 className="w-3 h-3" />
                   </Button>
                 </button>
               ))}
