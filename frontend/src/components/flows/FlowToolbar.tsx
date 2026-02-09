@@ -47,7 +47,7 @@ export default function FlowToolbar({
 
   return (
     <div className="bg-background border-b p-4 flex justify-between items-center">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 min-w-0 flex-1">
         <Button
           variant="link"
           size="sm"
@@ -57,7 +57,7 @@ export default function FlowToolbar({
           <ArrowLeft className="w-4 h-4" />
           Back to Bots
         </Button>
-        <h2 className="text-lg font-semibold">{botName}</h2>
+        <h2 className="text-lg font-semibold whitespace-nowrap truncate min-w-0">{botName}</h2>
       </div>
 
       <div className="flex items-center gap-2">
@@ -115,11 +115,10 @@ export default function FlowToolbar({
           variant="outline"
           size="sm"
           onClick={handleBotSettings}
-          className="gap-2"
-          title="Bot Settings"
+          title="Bot Settings (Ctrl+,)"
+          className="h-9 w-9 p-0"
         >
-          <Settings className="w-4 h-4" />
-          Bot Settings
+          <Settings className="h-4 w-4" />
         </Button>
         <ThemeToggle />
         <UserDropdown onBeforeLogout={onBeforeLogout} />
