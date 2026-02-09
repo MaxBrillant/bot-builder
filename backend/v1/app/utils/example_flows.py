@@ -161,7 +161,7 @@ def get_onboarding_form_flow():
                 "routes": [
                     {"condition": "true", "target_node": "ask_email"}
                 ],
-                "position": {"x": 440, "y": 200}
+                "position": {"x": 100, "y": 400}
             },
             "ask_email": {
                 "id": "ask_email",
@@ -180,7 +180,7 @@ def get_onboarding_form_flow():
                 "routes": [
                     {"condition": "true", "target_node": "ask_role"}
                 ],
-                "position": {"x": 780, "y": 200}
+                "position": {"x": 440, "y": 400}
             },
             "ask_role": {
                 "id": "ask_role",
@@ -200,7 +200,7 @@ def get_onboarding_form_flow():
                 "routes": [
                     {"condition": "true", "target_node": "confirmation"}
                 ],
-                "position": {"x": 1120, "y": 200}
+                "position": {"x": 100, "y": 600}
             },
             "confirmation": {
                 "id": "confirmation",
@@ -213,7 +213,7 @@ def get_onboarding_form_flow():
                 "routes": [
                     {"condition": "true", "target_node": "end"}
                 ],
-                "position": {"x": 1460, "y": 200}
+                "position": {"x": 440, "y": 600}
             },
             "end": {
                 "id": "end",
@@ -228,146 +228,15 @@ def get_onboarding_form_flow():
     }
 
 
-def get_weather_lookup_flow():
-    """
-    Example Flow 3: Weather Lookup Bot
-
-    Demonstrates:
-    - MENU with predefined array of cities
-    - output_mapping to extract multiple fields (name, latitude, longitude)
-    - API_ACTION with dynamic URL parameters using template variables
-    - response_map for extracting API data
-    - API_ACTION success/error routing
-
-    Trigger: WEATHER
-    API: Open-Meteo (free, no auth required)
-    """
-    return {
-        "name": "Weather Lookup Bot",
-        "trigger_keywords": ["WEATHER"],
-        "variables": {
-            "available_cities": {"type": "ARRAY", "default": [
-                {"name": "London", "latitude": 51.5074, "longitude": -0.1278},
-                {"name": "New York", "latitude": 40.7128, "longitude": -74.0060},
-                {"name": "Tokyo", "latitude": 35.6762, "longitude": 139.6503},
-                {"name": "Paris", "latitude": 48.8566, "longitude": 2.3522},
-                {"name": "Sydney", "latitude": -33.8688, "longitude": 151.2093},
-                {"name": "Dubai", "latitude": 25.2048, "longitude": 55.2708},
-                {"name": "Singapore", "latitude": 1.3521, "longitude": 103.8198},
-                {"name": "Mumbai", "latitude": 19.0760, "longitude": 72.8777}
-            ]},
-            "city": {"type": "STRING", "default": ""},
-            "latitude": {"type": "NUMBER", "default": 0},
-            "longitude": {"type": "NUMBER", "default": 0},
-            "temperature": {"type": "NUMBER", "default": 0},
-            "weather_description": {"type": "STRING", "default": ""}
-        },
-        "start_node_id": "welcome",
-        "nodes": {
-            "welcome": {
-                "id": "welcome",
-                "name": "Welcome",
-                "type": "MESSAGE",
-                "config": {
-                    "type": "MESSAGE",
-                    "text": "Hello! I can help you check the current weather. Please select a city from the list below."
-                },
-                "routes": [
-                    {"condition": "true", "target_node": "select_city"}
-                ],
-                "position": {"x": 100, "y": 200}
-            },
-            "select_city": {
-                "id": "select_city",
-                "name": "Select City",
-                "type": "MENU",
-                "config": {
-                    "type": "MENU",
-                    "text": "Which city would you like to check?",
-                    "source_type": "DYNAMIC",
-                    "source_variable": "available_cities",
-                    "item_template": "{{item.name}}",
-                    "output_mapping": [
-                        {"source_path": "name", "target_variable": "city"},
-                        {"source_path": "latitude", "target_variable": "latitude"},
-                        {"source_path": "longitude", "target_variable": "longitude"}
-                    ],
-                    "error_message": "Invalid selection. Please enter a number from the list of available cities."
-                },
-                "routes": [
-                    {"condition": "true", "target_node": "fetch_weather"}
-                ],
-                "position": {"x": 440, "y": 200}
-            },
-            "fetch_weather": {
-                "id": "fetch_weather",
-                "name": "Fetch Weather",
-                "type": "API_ACTION",
-                "config": {
-                    "type": "API_ACTION",
-                    "request": {
-                        "method": "GET",
-                        "url": "https://api.open-meteo.com/v1/forecast?latitude={{latitude}}&longitude={{longitude}}&current_weather=true"
-                    },
-                    "response_map": [
-                        {"source_path": "current_weather.temperature", "target_variable": "temperature"},
-                        {"source_path": "current_weather.weathercode", "target_variable": "weather_description"}
-                    ]
-                },
-                "routes": [
-                    {"condition": "success", "target_node": "display_weather"},
-                    {"condition": "error", "target_node": "api_error"}
-                ],
-                "position": {"x": 780, "y": 200}
-            },
-            "display_weather": {
-                "id": "display_weather",
-                "name": "Display Weather",
-                "type": "MESSAGE",
-                "config": {
-                    "type": "MESSAGE",
-                    "text": "Here's the current weather in {{city}}:\n\nTemperature: {{temperature}}°C"
-                },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
-                "position": {"x": 1240, "y": 180}
-            },
-            "api_error": {
-                "id": "api_error",
-                "name": "API Error",
-                "type": "MESSAGE",
-                "config": {
-                    "type": "MESSAGE",
-                    "text": "I'm sorry, I wasn't able to retrieve the weather information right now. Please try again in a moment."
-                },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
-                "position": {"x": 1240, "y": 340}
-            },
-            "end": {
-                "id": "end",
-                "name": "End",
-                "type": "END",
-                "config": {
-                    "type": "END"
-                },
-                "position": {"x": 1650, "y": 200}
-            }
-        }
-    }
-
-
 def get_quiz_flow():
     """
-    Example Flow 4: Simple Quiz
+    Example Flow 3: Simple Quiz
 
     Demonstrates:
-    - Multiple PROMPT nodes for questions
-    - LOGIC_EXPRESSION for answer checking
-    - Conditional routing based on answers
+    - Multiple PROMPT nodes for sequential data collection
     - Input validation with expressions
+    - LOGIC_EXPRESSION for conditional routing based on answers
+    - Template variables to display collected answers
 
     Trigger: QUIZ
     """
@@ -392,7 +261,7 @@ def get_quiz_flow():
                 "routes": [
                     {"condition": "true", "target_node": "question1"}
                 ],
-                "position": {"x": 100, "y": 100}
+                "position": {"x": 100, "y": 200}
             },
             "question1": {
                 "id": "question1",
@@ -404,35 +273,9 @@ def get_quiz_flow():
                     "save_to_variable": "answer1"
                 },
                 "routes": [
-                    {"condition": "true", "target_node": "check_answer1"}
-                ],
-                "position": {"x": 440, "y": 100}
-            },
-            "check_answer1": {
-                "id": "check_answer1",
-                "name": "Check Answer 1",
-                "type": "LOGIC_EXPRESSION",
-                "config": {
-                    "type": "LOGIC_EXPRESSION"
-                },
-                "routes": [
-                    {"condition": "context.answer1 == \"Paris\" || context.answer1 == \"paris\"", "target_node": "correct1"},
                     {"condition": "true", "target_node": "question2"}
                 ],
-                "position": {"x": 780, "y": 100}
-            },
-            "correct1": {
-                "id": "correct1",
-                "name": "Correct 1",
-                "type": "MESSAGE",
-                "config": {
-                    "type": "MESSAGE",
-                    "text": "Correct! Paris is the capital of France."
-                },
-                "routes": [
-                    {"condition": "true", "target_node": "question2"}
-                ],
-                "position": {"x": 1300, "y": 160}
+                "position": {"x": 100, "y": 440}
             },
             "question2": {
                 "id": "question2",
@@ -449,35 +292,9 @@ def get_quiz_flow():
                     }
                 },
                 "routes": [
-                    {"condition": "true", "target_node": "check_answer2"}
-                ],
-                "position": {"x": 100, "y": 400}
-            },
-            "check_answer2": {
-                "id": "check_answer2",
-                "name": "Check Answer 2",
-                "type": "LOGIC_EXPRESSION",
-                "config": {
-                    "type": "LOGIC_EXPRESSION"
-                },
-                "routes": [
-                    {"condition": "context.answer2 == \"7\"", "target_node": "correct2"},
                     {"condition": "true", "target_node": "question3"}
                 ],
-                "position": {"x": 440, "y": 400}
-            },
-            "correct2": {
-                "id": "correct2",
-                "name": "Correct 2",
-                "type": "MESSAGE",
-                "config": {
-                    "type": "MESSAGE",
-                    "text": "That's right! There are 7 continents."
-                },
-                "routes": [
-                    {"condition": "true", "target_node": "question3"}
-                ],
-                "position": {"x": 940, "y": 460}
+                "position": {"x": 440, "y": 440}
             },
             "question3": {
                 "id": "question3",
@@ -489,35 +306,35 @@ def get_quiz_flow():
                     "save_to_variable": "answer3"
                 },
                 "routes": [
-                    {"condition": "true", "target_node": "check_answer3"}
+                    {"condition": "true", "target_node": "check_score"}
                 ],
-                "position": {"x": 100, "y": 680}
+                "position": {"x": 780, "y": 440}
             },
-            "check_answer3": {
-                "id": "check_answer3",
-                "name": "Check Answer 3",
+            "check_score": {
+                "id": "check_score",
+                "name": "Check Score",
                 "type": "LOGIC_EXPRESSION",
                 "config": {
                     "type": "LOGIC_EXPRESSION"
                 },
                 "routes": [
-                    {"condition": "context.answer3 == \"no\" || context.answer3 == \"No\" || context.answer3 == \"NO\"", "target_node": "correct3"},
+                    {"condition": "context.answer1 == \"Paris\" && context.answer2 == \"7\" && context.answer3 == \"no\"", "target_node": "perfect_score"},
                     {"condition": "true", "target_node": "results"}
                 ],
-                "position": {"x": 440, "y": 680}
+                "position": {"x": 100, "y": 680}
             },
-            "correct3": {
-                "id": "correct3",
-                "name": "Correct 3",
+            "perfect_score": {
+                "id": "perfect_score",
+                "name": "Perfect Score",
                 "type": "MESSAGE",
                 "config": {
                     "type": "MESSAGE",
-                    "text": "Correct! The Earth is round, not flat."
+                    "text": "Perfect score! You got all 3 questions correct!\n\n1. Capital of France: {{answer1}} ✓\n2. Number of continents: {{answer2}} ✓\n3. Is Earth flat?: {{answer3}} ✓"
                 },
                 "routes": [
-                    {"condition": "true", "target_node": "results"}
+                    {"condition": "true", "target_node": "end"}
                 ],
-                "position": {"x": 1000, "y": 740}
+                "position": {"x": 780, "y": 680}
             },
             "results": {
                 "id": "results",
@@ -525,12 +342,12 @@ def get_quiz_flow():
                 "type": "MESSAGE",
                 "config": {
                     "type": "MESSAGE",
-                    "text": "Quiz complete! Thank you for playing.\n\nYour Answers:\n1. Capital of France: {{answer1}} (Correct: Paris)\n2. Number of continents: {{answer2}} (Correct: 7)\n3. Is Earth flat?: {{answer3}} (Correct: no)\n\nNote: Automatic score calculation would require an external API call, as the template system does not support arithmetic operations."
+                    "text": "Quiz complete! Here are your answers:\n\n1. Capital of France: {{answer1}} (Correct: Paris)\n2. Number of continents: {{answer2}} (Correct: 7)\n3. Is Earth flat?: {{answer3}} (Correct: no)"
                 },
                 "routes": [
                     {"condition": "true", "target_node": "end"}
                 ],
-                "position": {"x": 100, "y": 960}
+                "position": {"x": 780, "y": 840}
             },
             "end": {
                 "id": "end",
@@ -539,7 +356,7 @@ def get_quiz_flow():
                 "config": {
                     "type": "END"
                 },
-                "position": {"x": 450, "y": 700}
+                "position": {"x": 2140, "y": 200}
             }
         }
     }
@@ -547,13 +364,14 @@ def get_quiz_flow():
 
 def get_appointment_booking_flow():
     """
-    Example Flow 5: Appointment Booking System
+    Example Flow 4: Appointment Booking System
 
     Demonstrates:
     - MENU with dynamic options from array variable
     - output_mapping to extract selected slot details
     - PROMPT with validation for contact info
-    - API_ACTION with POST request (submit booking)
+    - API_ACTION with POST request and Authorization header
+    - response_map to extract data from API response
     - Template variables in API request body
     - Complete end-to-end workflow
 
@@ -563,6 +381,7 @@ def get_appointment_booking_flow():
         "name": "Appointment Booking",
         "trigger_keywords": ["BOOKING"],
         "variables": {
+            "api_token": {"type": "STRING", "default": "demo-token-12345"},
             "available_slots": {"type": "ARRAY", "default": [
                 {"id": "slot1", "day": "Monday", "time": "9:00 AM", "doctor": "Dr. Smith"},
                 {"id": "slot2", "day": "Monday", "time": "2:00 PM", "doctor": "Dr. Johnson"},
@@ -574,7 +393,8 @@ def get_appointment_booking_flow():
             "selected_time": {"type": "STRING", "default": ""},
             "selected_doctor": {"type": "STRING", "default": ""},
             "customer_name": {"type": "STRING", "default": ""},
-            "customer_phone": {"type": "STRING", "default": ""}
+            "customer_phone": {"type": "STRING", "default": ""},
+            "booking_id": {"type": "NUMBER", "default": 0}
         },
         "start_node_id": "welcome",
         "nodes": {
@@ -657,10 +477,14 @@ def get_appointment_booking_flow():
                         "method": "POST",
                         "url": "https://jsonplaceholder.typicode.com/posts",
                         "headers": [
-                            {"name": "Content-Type", "value": "application/json"}
+                            {"name": "Content-Type", "value": "application/json"},
+                            {"name": "Authorization", "value": "Bearer {{api_token}}"}
                         ],
                         "body": "{\"slot_id\": \"{{selected_slot_id}}\", \"day\": \"{{selected_day}}\", \"time\": \"{{selected_time}}\", \"doctor\": \"{{selected_doctor}}\", \"name\": \"{{customer_name}}\", \"phone\": \"{{customer_phone}}\"}"
-                    }
+                    },
+                    "response_map": [
+                        {"source_path": "id", "target_variable": "booking_id"}
+                    ]
                 },
                 "routes": [
                     {"condition": "success", "target_node": "booking_success"},
@@ -674,7 +498,7 @@ def get_appointment_booking_flow():
                 "type": "MESSAGE",
                 "config": {
                     "type": "MESSAGE",
-                    "text": "Excellent! Your appointment has been booked successfully.\n\nAppointment Details:\nDay: {{selected_day}}\nTime: {{selected_time}}\nDoctor: {{selected_doctor}}\nName: {{customer_name}}\nPhone: {{customer_phone}}\n\nYou'll receive a confirmation message shortly."
+                    "text": "Excellent! Your appointment has been booked successfully.\n\nBooking ID: #{{booking_id}}\nDay: {{selected_day}}\nTime: {{selected_time}}\nDoctor: {{selected_doctor}}\nName: {{customer_name}}\nPhone: {{customer_phone}}\n\nYou'll receive a confirmation message shortly."
                 },
                 "routes": [
                     {"condition": "true", "target_node": "end"}
@@ -701,7 +525,48 @@ def get_appointment_booking_flow():
                 "config": {
                     "type": "END"
                 },
-                "position": {"x": 2350, "y": 200}
+                "position": {"x": 1000, "y": 660}
+            }
+        }
+    }
+
+
+def get_help_flow():
+    """
+    Catch-all Help Flow
+
+    Demonstrates:
+    - Wildcard trigger keyword (*)
+    - Simple MESSAGE node for help/guidance
+
+    Trigger: * (matches any unrecognized input)
+    """
+    return {
+        "name": "Help",
+        "trigger_keywords": ["*"],
+        "start_node_id": "help_message",
+        "nodes": {
+            "help_message": {
+                "id": "help_message",
+                "name": "Help Message",
+                "type": "MESSAGE",
+                "config": {
+                    "type": "MESSAGE",
+                    "text": "I didn't recognize that command. Here are the available options:\n\n• MENU - Customer support menu demo\n• ONBOARDING - User registration form demo\n• QUIZ - Interactive trivia quiz\n• BOOKING - Book an appointment\n\nType any of the above keywords to get started."
+                },
+                "routes": [
+                    {"condition": "true", "target_node": "end"}
+                ],
+                "position": {"x": 100, "y": 200}
+            },
+            "end": {
+                "id": "end",
+                "name": "End",
+                "type": "END",
+                "config": {
+                    "type": "END"
+                },
+                "position": {"x": 500, "y": 200}
             }
         }
     }
@@ -709,15 +574,22 @@ def get_appointment_booking_flow():
 
 def get_all_example_flows():
     """
-    Get all example flows
+    Get all example flows ordered by difficulty (easiest first)
 
     Returns:
         List of flow definitions ready to be created
+
+    Order:
+        1. Customer Support Menu - Basic MESSAGE + static MENU
+        2. User Onboarding - PROMPT + regex validation + dynamic MENU
+        3. Simple Quiz - PROMPT + LOGIC_EXPRESSION for conditional routing
+        4. Appointment Booking - API_ACTION POST with response_map + auth headers
+        5. Help - Catch-all (*) for unrecognized commands
     """
     return [
         get_customer_support_menu_flow(),
         get_onboarding_form_flow(),
-        get_weather_lookup_flow(),
         get_quiz_flow(),
-        get_appointment_booking_flow()
+        get_appointment_booking_flow(),
+        get_help_flow()
     ]

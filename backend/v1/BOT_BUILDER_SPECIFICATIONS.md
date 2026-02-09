@@ -537,7 +537,7 @@ This allows nodes to reference other nodes that appear later in the JSON (order-
 - All route target_nodes reference existing nodes
 - **Only start node has no parent** - only the start_node_id should have no parent (not be referenced in any route). All other nodes must have at least one parent (be referenced as target_node in at least one route). Orphan nodes are invalid.
 - **Route conditions unique per node** - no duplicate conditions within a single node's routes array (case-insensitive)
-- No circular references - ALL loops are invalid (strict interpretation: any path that returns to a previously visited node is rejected, even if there's an exit path)
+- **Circular references allowed only if cycle includes input node** - Cycles containing at least one PROMPT or MENU node are allowed (user input breaks potential infinite loops). Cycles with only non-input nodes (MESSAGE, API_ACTION, LOGIC_EXPRESSION) are rejected.
 - Variable types valid (STRING, NUMBER, BOOLEAN, ARRAY)
 - fail_route is required when retry_logic is defined, and must reference existing node
 - Constraints respected:
@@ -565,8 +565,8 @@ This allows nodes to reference other nodes that appear later in the JSON (order-
     },
     {
       "type": "circular_reference",
-      "message": "Circular reference detected: node_a → node_b → node_a",
-      "nodes": ["node_a", "node_b"]
+      "message": "Circular reference without input node detected: node_a → node_b → node_a",
+      "suggestion": "Add a PROMPT or MENU node to the cycle, or remove the circular routing"
     },
     {
       "type": "orphan_nodes",
@@ -2800,8 +2800,7 @@ input.length; // String length
 | ------------- | -------------------------------------- | ----------------------- |
 | Keyword       | `"success"`                            | Checks success flag     |
 | Keyword       | `"error"`                              | Checks error flag       |
-| Keyword       | `"true"`                               | Always true (else case) |
-| Keyword       | `"false"`                              | Never true              |
+| Keyword       | `"true"`                               | Fallback (catches all)  |
 | Comparison    | `"selection == 2"`                     | Integer equality        |
 | Comparison    | `"selection != null"`                  | Null check              |
 | Context check | `"context.trips.length > 0"`           | Array length            |
@@ -3978,9 +3977,10 @@ Before deploying a flow to production, verify:
 2. **Loop Constructs**
 
    ```
-   ❌ No for/while loops (use recursive menu patterns instead)
+   ❌ No for/while loops
    ❌ No iteration over arrays in nodes
-   ❌ No repeat-until patterns
+   ✅ Cycles with input nodes allowed (PROMPT/MENU create natural breakpoints)
+   ✅ Retry patterns supported via cycles back to input nodes
    ```
 
 3. **Complex Computations**
@@ -4187,7 +4187,7 @@ Before deploying a flow to production, verify:
 
 | What You Want      | Why Not Possible           | Alternative                      |
 | ------------------ | -------------------------- | -------------------------------- |
-| For loops          | Not a programming language | Use recursive patterns with MENU |
+| For loops          | Not a programming language | Use cycles with PROMPT/MENU nodes |
 | File uploads       | Not supported              | Use API with upload URL          |
 | Real-time updates  | No push mechanism          | Poll with API_ACTION             |
 | Scheduled messages | No scheduler               | Use external service + API       |

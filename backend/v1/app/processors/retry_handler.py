@@ -97,8 +97,8 @@ class RetryHandler:
         flow_defaults = context.get('_flow_defaults', {})
         retry_logic = flow_defaults.get('retry_logic', {})
         max_attempts = retry_logic.get('max_attempts', 3)
-        fail_route = retry_logic.get('fail_route')
-        counter_text = retry_logic.get('counter_text', '')
+        fail_route = retry_logic.get('fail_route', 'end')
+        counter_text = retry_logic.get('counter_text', '(Attempt {{current_attempt}} of {{max_attempts}})')
 
         # Check if max attempts exceeded
         if new_attempt_count > max_attempts:
@@ -120,7 +120,7 @@ class RetryHandler:
                     error_message=""
                 )
             else:
-                # No fail_route defined, terminate session per spec
+                # No fail_route (shouldn't happen with default 'end'), terminate silently
                 logger.warning(
                     f"Max validation attempts reached, terminating session (no fail_route)",
                     attempts=new_attempt_count,
@@ -131,7 +131,7 @@ class RetryHandler:
                     should_continue=False,
                     next_node=None,
                     terminal=True,
-                    error_message=f"{error_message}\n\nMaximum attempts exceeded."
+                    error_message=""
                 )
 
         # Not at max attempts yet - continue with retry

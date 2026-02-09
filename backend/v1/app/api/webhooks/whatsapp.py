@@ -138,17 +138,16 @@ async def receive_whatsapp_message(
             message=normalized_message["message_text"]
         )
 
-        # Send response
+        # Send each message individually (separate WhatsApp messages)
         messages = result.get("messages", [])
-        response_text = "\n\n".join(messages) if messages else ""
-
-        if response_text:
-            await integration_manager.send_message(
-                platform=IntegrationPlatform.WHATSAPP,
-                bot_id=bot_id,
-                channel_user_id=normalized_message["channel_user_id"],
-                message_text=response_text
-            )
+        for message_text in messages:
+            if message_text:
+                await integration_manager.send_message(
+                    platform=IntegrationPlatform.WHATSAPP,
+                    bot_id=bot_id,
+                    channel_user_id=normalized_message["channel_user_id"],
+                    message_text=message_text
+                )
 
         return {
             "status": "success",

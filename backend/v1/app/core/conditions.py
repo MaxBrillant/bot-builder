@@ -23,7 +23,7 @@ class ConditionEvaluator:
     Evaluate routing conditions against context
 
     Supported:
-    - Keywords: success, error, true, false
+    - Keywords: success, error, true
     - Comparison: ==, !=, >, <, >=, <=
     - Logical: &&, ||
     - Context access: context.variable
@@ -88,9 +88,6 @@ class ConditionEvaluator:
             # Handle keyword conditions
             if condition in ['true', 'True', 'TRUE']:
                 return True
-
-            if condition in ['false', 'False', 'FALSE']:
-                return False
 
             if condition == 'success':
                 return context.get('_api_result') == 'success'

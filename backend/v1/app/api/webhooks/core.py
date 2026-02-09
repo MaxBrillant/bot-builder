@@ -67,7 +67,7 @@ async def process_bot_message(
     ```json
     {
         "status": "success",
-        "response_text": "Bot's response",
+        "messages": ["First message", "Second message"],
         "session_id": "uuid"
     }
     ```
@@ -244,13 +244,12 @@ async def process_bot_message(
             session_id=result.get("session_id")
         )
 
-        # 8. Join multiple messages into single response
+        # 8. Return messages as array (each message rendered separately)
         messages = result.get("messages", [])
-        response_text = "\n\n".join(messages) if messages else ""
 
         return WebhookMessageResponse(
             status="success",
-            response_text=response_text,
+            messages=messages,
             session_id=result.get("session_id")
         )
 

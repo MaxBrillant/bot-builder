@@ -3,7 +3,7 @@ Webhook Message Schemas
 Pydantic models for bot webhook message processing
 """
 
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
@@ -38,7 +38,7 @@ class WebhookMessageRequest(BaseModel):
 class WebhookMessageResponse(BaseModel):
     """Schema for webhook message response"""
     status: str = Field(..., description="Response status: 'success' or 'error'")
-    response_text: Optional[str] = Field(None, description="Text response to send back to user")
+    messages: List[str] = Field(default_factory=list, description="List of messages to send back to user (each rendered as separate message)")
     session_id: Optional[str] = Field(None, description="Session identifier")
     error: Optional[str] = Field(None, description="Error message if status is 'error'")
 

@@ -803,13 +803,16 @@ class FlowValidator:
     5. Node IDs unique within flow
     6. start_node_id exists in nodes
     7. All route target_nodes exist
-    8. No circular references
+    8. No circular references without input nodes
     9. Variable types valid
     10. System constraints respected
     11. Node configs validated by Pydantic
     12. fail_route exists if defined
     13. Trigger keywords format
     """
+
+    # Node types that collect user input (used to allow cycles that include these)
+    INPUT_NODE_TYPES = {NodeType.PROMPT, NodeType.MENU}
 
     def __init__(self, db: Optional[AsyncSession] = None):
         self.db = db
@@ -1431,7 +1434,12 @@ class FlowValidator:
         return None
 
     def _detect_circular_references(self, nodes: Dict[str, FlowNode], start_node_id: str, result: ValidationResult):
-        """Detect circular references in ALL nodes"""
+        """Detect circular references - only reject cycles without input nodes.
+
+        Cycles containing at least one PROMPT or MENU node are allowed since user input
+        naturally breaks potential infinite loops. Cycles with only non-input nodes
+        (MESSAGE, API_ACTION, LOGIC_EXPRESSION) are rejected.
+        """
         checked_nodes = set()
 
         for node_id in nodes.keys():
@@ -1440,14 +1448,21 @@ class FlowValidator:
 
             cycle = self._check_cycle_from_node(node_id, nodes, set())
             if cycle:
-                cycle.append(cycle[0])
-                cycle_str = ' → '.join(cycle)
-                result.add_error(
-                    "circular_reference",
-                    f"Circular reference detected: {cycle_str}",
-                    "nodes",
-                    "Remove circular routing or add exit conditions"
+                # Check if cycle contains at least one input node
+                has_input_node = any(
+                    nodes[nid].type in self.INPUT_NODE_TYPES
+                    for nid in cycle if nid in nodes
                 )
+
+                if not has_input_node:
+                    cycle.append(cycle[0])
+                    cycle_str = ' → '.join(cycle)
+                    result.add_error(
+                        "circular_reference",
+                        f"Circular reference without input node detected: {cycle_str}",
+                        "nodes",
+                        "Add a PROMPT or MENU node to the cycle, or remove the circular routing"
+                    )
                 checked_nodes.update(cycle)
             else:
                 checked_nodes.add(node_id)
