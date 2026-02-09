@@ -27,8 +27,8 @@ const shortcutGroups: ShortcutGroup[] = [
     title: "Node Actions",
     shortcuts: [
       { keys: <Move className="w-3.5 h-3.5" />, description: "Navigate nodes" },
-      { keys: <span className="flex items-center gap-2"><span>Ctrl +</span><Move className="w-3.5 h-3.5" /></span>, description: "Move 10px" },
-      { keys: <span className="flex items-center gap-2"><span>Shift +</span><Move className="w-3.5 h-3.5" /></span>, description: "Move 100px" },
+      { keys: <span className="flex items-center gap-2"><span>Ctrl +</span><Move className="w-3.5 h-3.5" /></span>, description: "Move 20px" },
+      { keys: <span className="flex items-center gap-2"><span>Shift +</span><Move className="w-3.5 h-3.5" /></span>, description: "Move 80px" },
       { keys: <span className="flex items-center gap-2"><span>Ctrl + Shift +</span><MoveHorizontal className="w-3.5 h-3.5" /></span>, description: "Reorder in flow" },
       { keys: "Enter", description: "Edit node" },
       { keys: "Delete", description: "Delete node" },
@@ -46,18 +46,21 @@ const shortcutGroups: ShortcutGroup[] = [
     ],
   },
   {
+    title: "General",
+    shortcuts: [
+      { keys: "Ctrl + S", description: "Save" },
+      { keys: "Ctrl + Z", description: "Undo" },
+      { keys: "Ctrl + Y", description: "Redo" },
+      { keys: "Ctrl + ,", description: "Settings" },
+      { keys: "Ctrl + Shift + T", description: "Test chat" },
+      { keys: "?", description: "Show shortcuts" },
+    ],
+  },
+  {
     title: "Canvas",
     shortcuts: [
       { keys: "+ / -", description: "Zoom in/out" },
       { keys: "Space + Drag", description: "Pan canvas" },
-    ],
-  },
-  {
-    title: "Other",
-    shortcuts: [
-      { keys: "Ctrl + ,", description: "Settings" },
-      { keys: "Ctrl + Shift + T", description: "Test chat" },
-      { keys: "?", description: "Show shortcuts" },
     ],
   },
 ];
