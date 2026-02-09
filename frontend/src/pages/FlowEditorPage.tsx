@@ -2011,6 +2011,10 @@ function FlowEditorContent() {
         checkUnsavedChanges={withUnsavedChangesGuard}
         onBeforeLogout={handleBeforeLogout}
         onTestChat={handleTestChat}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undo}
+        onRedo={redo}
       />
 
       {/* Main Editor */}

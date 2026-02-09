@@ -1,4 +1,4 @@
-import { ArrowLeft, Settings, MessageCircle, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, Settings, MessageCircle, Save, Loader2, Undo2, Redo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UserDropdown } from "@/components/auth/UserDropdown";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -13,6 +13,10 @@ interface FlowToolbarProps {
   isSaving?: boolean;
   checkUnsavedChanges?: (action: () => void) => () => void;
   onBeforeLogout?: () => Promise<boolean>;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 export default function FlowToolbar({
@@ -24,6 +28,10 @@ export default function FlowToolbar({
   isSaving = false,
   checkUnsavedChanges,
   onBeforeLogout,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
 }: FlowToolbarProps) {
   const navigate = useNavigate();
 
@@ -53,6 +61,26 @@ export default function FlowToolbar({
       </div>
 
       <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onUndo}
+          disabled={!canUndo}
+          title="Undo (Ctrl+Z)"
+          className="h-8 w-8"
+        >
+          <Undo2 className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onRedo}
+          disabled={!canRedo}
+          title="Redo (Ctrl+Y)"
+          className="h-8 w-8"
+        >
+          <Redo2 className="w-4 h-4" />
+        </Button>
         <Button
           variant={hasUnsavedChanges ? "default" : "outline"}
           size="sm"
