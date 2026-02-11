@@ -14,7 +14,7 @@ const NODE_HEIGHT = 80;
 const STUB_LENGTH = 30;
 
 // Spacing constants for node insertion
-const LINEAR_SPACING = 180;      // 380px total gap for linear nodes (PROMPT, MESSAGE, END)
+const LINEAR_SPACING = 180;      // 380px total gap for linear nodes (PROMPT, TEXT, END)
 const BRANCHING_SPACING = 300;   // 500px total gap for branching nodes (MENU, API_ACTION, LOGIC_EXPRESSION)
 const VERTICAL_SPACING = 150;    // Vertical gap between branching routes
 
@@ -56,7 +56,7 @@ const NODE_TYPE_LABELS: Record<NodeType, string> = {
   MENU: "Menu",
   API_ACTION: "API Action",
   LOGIC_EXPRESSION: "Logic",
-  MESSAGE: "Message",
+  TEXT: "Text",
   END: "End",
 };
 
@@ -125,9 +125,9 @@ export const DEFAULT_NODE_CONFIGS: Record<NodeType, any> = {
   LOGIC_EXPRESSION: {
     type: "LOGIC_EXPRESSION",
   },
-  MESSAGE: {
-    type: "MESSAGE",
-    text: "Your message here",
+  TEXT: {
+    type: "TEXT",
+    text: "Your text here",
   },
   END: {
     type: "END",
@@ -1282,7 +1282,7 @@ const INPUT_NODE_TYPES: NodeType[] = ["PROMPT", "MENU"];
  *
  * Cycles containing at least one PROMPT or MENU node are allowed since user input
  * naturally breaks potential infinite loops. Only cycles with exclusively non-input
- * nodes (MESSAGE, API_ACTION, LOGIC_EXPRESSION) are blocked.
+ * nodes (TEXT, API_ACTION, LOGIC_EXPRESSION) are blocked.
  *
  * @returns true if the move should be blocked (creates cycle without input node)
  */

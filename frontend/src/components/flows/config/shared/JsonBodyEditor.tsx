@@ -8,7 +8,7 @@ interface JsonBodyEditorProps {
   onChange: (value: any) => void;
   error?: string;
   availableVariables?: string[];
-  nodeType?: "MESSAGE" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "END";
+  nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "END";
   fieldContext?: "item_template" | "counter_text" | "default";
 }
 

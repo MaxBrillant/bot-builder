@@ -44,11 +44,11 @@ const nodeTypes: NodeTypeItem[] = [
     color: "text-node-logic",
   },
   {
-    type: "MESSAGE",
-    label: "Message",
+    type: "TEXT",
+    label: "Text",
     icon: MessageCircle,
-    description: "Display message",
-    color: "text-node-message",
+    description: "Display text",
+    color: "text-node-text",
   },
 ];
 

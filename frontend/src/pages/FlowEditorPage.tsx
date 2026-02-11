@@ -29,7 +29,7 @@ import PromptNode from "@/components/flows/nodes/PromptNode";
 import MenuNode from "@/components/flows/nodes/MenuNode";
 import ApiActionNode from "@/components/flows/nodes/ApiActionNode";
 import LogicExpressionNode from "@/components/flows/nodes/LogicExpressionNode";
-import MessageNode from "@/components/flows/nodes/MessageNode";
+import TextNode from "@/components/flows/nodes/TextNode";
 
 // Custom edge components
 import CustomEdge from "@/components/flows/edges/CustomEdge";
@@ -90,7 +90,7 @@ const nodeTypes = {
   MENU: MenuNode,
   API_ACTION: ApiActionNode,
   LOGIC_EXPRESSION: LogicExpressionNode,
-  MESSAGE: MessageNode,
+  TEXT: TextNode,
 };
 
 const edgeTypes = {
@@ -523,7 +523,7 @@ function FlowEditorContent() {
         setPendingConnection({ sourceNodeId, targetNodeId, anchorPosition });
         setPendingCondition("");
       } else {
-        // Direct connection (non-branching: PROMPT, MESSAGE use "true")
+        // Direct connection (non-branching: PROMPT, TEXT use "true")
         createRouteToExistingNode(sourceNodeId, targetNodeId, "true");
       }
     },
@@ -1755,7 +1755,7 @@ function FlowEditorContent() {
         const nodeTypeMap: Record<string, NodeType | null> = {
           'p': 'PROMPT',
           'm': 'MENU',
-          't': 'MESSAGE',
+          't': 'TEXT',
           'a': 'API_ACTION',
           'l': 'LOGIC_EXPRESSION',
           'n': null, // Generic palette

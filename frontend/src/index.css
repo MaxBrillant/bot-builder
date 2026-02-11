@@ -39,7 +39,7 @@
   --node-menu: oklch(0.626 0.249 301.799); /* Purple */
   --node-api: oklch(0.657 0.191 145.469); /* Green */
   --node-logic: oklch(0.675 0.241 43.068); /* Orange */
-  --node-message: oklch(0.685 0.161 210.514); /* Cyan */
+  --node-text: oklch(0.685 0.161 210.514); /* Cyan */
   --node-end: oklch(0.577 0.245 27.325); /* Red */
 }
 
@@ -82,7 +82,7 @@
   --node-menu: oklch(0.626 0.249 301.799); /* Purple */
   --node-api: oklch(0.657 0.191 145.469); /* Green */
   --node-logic: oklch(0.675 0.241 43.068); /* Orange */
-  --node-message: oklch(0.685 0.161 210.514); /* Cyan */
+  --node-text: oklch(0.685 0.161 210.514); /* Cyan */
   --node-end: oklch(0.577 0.245 27.325); /* Red */
 }
 
@@ -112,7 +112,7 @@
   --color-node-menu: var(--node-menu);
   --color-node-api: var(--node-api);
   --color-node-logic: var(--node-logic);
-  --color-node-message: var(--node-message);
+  --color-node-text: var(--node-text);
   --color-node-end: var(--node-end);
 }
 

@@ -7,7 +7,7 @@ import type { NodeType, FlowNode } from "@/lib/types";
 // Type aliases for reactflow (v11 export issues)
 type NodeProps<T = any> = { data: T; id: string; selected?: boolean };
 
-interface MessageNodeData {
+interface TextNodeData {
   name?: string;
   nodeId?: string;
   flowNode?: FlowNode;
@@ -28,11 +28,11 @@ interface MessageNodeData {
   outputHandleIds?: string[];
 }
 
-function MessageNode({
+function TextNode({
   data,
-}: NodeProps<MessageNodeData>) {
-  const name = data?.name || "Message";
-  const text = data?.config?.text || "Your message here";
+}: NodeProps<TextNodeData>) {
+  const name = data?.name || "Text";
+  const text = data?.config?.text || "Your text here";
   const truncatedText = text.length > 30 ? text.substring(0, 30) + "..." : text;
 
   return (
@@ -46,7 +46,7 @@ function MessageNode({
       data={data}
     >
       <div
-        className={`bg-card rounded-md border-2 border-border hover:border-node-message/50 w-[200px] h-[80px] transition-all cursor-pointer hover:shadow-lg`}
+        className={`bg-card rounded-md border-2 border-border hover:border-node-text/50 w-[200px] h-[80px] transition-all cursor-pointer hover:shadow-lg`}
       >
         {/* New handle system: single left input + dynamic outputs */}
         {data?.flowNode && data?.allNodes && (
@@ -56,7 +56,7 @@ function MessageNode({
         <div className="h-full flex items-center gap-3 p-4">
           {/* Large icon on the left */}
           <div className="flex-shrink-0">
-            <MessageCircle className="w-8 h-8 text-node-message" />
+            <MessageCircle className="w-8 h-8 text-node-text" />
           </div>
 
           {/* Two-line text on the right */}
@@ -70,4 +70,4 @@ function MessageNode({
   );
 }
 
-export default memo(MessageNode);
+export default memo(TextNode);

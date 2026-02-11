@@ -18,7 +18,7 @@ export function getConditionInputType(nodeType: NodeType): "dropdown" | "text" {
     case "MENU":
     case "API_ACTION":
     case "PROMPT":
-    case "MESSAGE":
+    case "TEXT":
       return "dropdown";
     case "LOGIC_EXPRESSION":
       return "text";
@@ -101,7 +101,7 @@ export function getRouteConditionOptions(
     }
 
     case "PROMPT":
-    case "MESSAGE": {
+    case "TEXT": {
       return [
         {
           value: "true",
@@ -268,7 +268,7 @@ export function getMaxRoutes(
       return 8;
     }
     case "PROMPT":
-    case "MESSAGE": {
+    case "TEXT": {
       // Single route only
       return 1;
     }

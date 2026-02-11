@@ -114,7 +114,7 @@ export function RouteEditor({
   const getExample = () => {
     switch (nodeType) {
       case "PROMPT":
-      case "MESSAGE":
+      case "TEXT":
         return (
           <>
             <p className="text-xs font-medium mt-2">How it works:</p>
@@ -206,7 +206,7 @@ export function RouteEditor({
             <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
               <div className="min-w-0">
                 <ConditionSelector
-                  nodeType={nodeType || "MESSAGE"}
+                  nodeType={nodeType || "TEXT"}
                   nodeConfig={nodeConfig}
                   value={route.condition}
                   onChange={(value) =>

@@ -15,7 +15,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { AlertCircle, ChevronRight } from "lucide-react";
-import { MessageConfigForm } from "./forms/MessageConfigForm";
+import { TextConfigForm } from "./forms/TextConfigForm";
 import { LogicExpressionConfigForm } from "./forms/LogicExpressionConfigForm";
 import { PromptConfigForm } from "./forms/PromptConfigForm";
 import { MenuConfigForm } from "./forms/MenuConfigForm";
@@ -29,7 +29,7 @@ import { sortRoutes } from "@/lib/routeConditionUtils";
 import type {
   NodeType,
   NodeConfig,
-  MessageNodeConfig,
+  TextNodeConfig,
   LogicExpressionNodeConfig,
   PromptNodeConfig,
   MenuNodeConfig,
@@ -327,10 +327,10 @@ export const NodeConfigurationPanel = forwardRef<
 
   const renderForm = () => {
     switch (nodeType) {
-      case "MESSAGE":
+      case "TEXT":
         return (
-          <MessageConfigForm
-            config={config as MessageNodeConfig}
+          <TextConfigForm
+            config={config as TextNodeConfig}
             onChange={handleConfigChange}
             errors={errors}
             availableVariables={safeAvailableVariables}

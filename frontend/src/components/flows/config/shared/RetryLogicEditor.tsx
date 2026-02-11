@@ -156,7 +156,7 @@ export function RetryLogicEditor({
                 • An END node to end the conversation
               </p>
               <p className="mt-1 text-xs">
-                • A MESSAGE node that says "Sorry, I couldn't understand. Please try again later."
+                • A TEXT node that says "Sorry, I couldn't understand. Please try again later."
               </p>
             </>
           }

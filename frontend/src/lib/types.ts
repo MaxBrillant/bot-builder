@@ -72,7 +72,7 @@ export type NodeType =
   | "MENU"
   | "API_ACTION"
   | "LOGIC_EXPRESSION"
-  | "MESSAGE"
+  | "TEXT"
   | "END";
 
 export type ValidationType = "REGEX" | "EXPRESSION";
@@ -102,9 +102,9 @@ export interface Interrupt {
 // NODE CONFIGURATION TYPES
 // ============================================
 
-// MESSAGE Node Configuration
-export interface MessageNodeConfig {
-  type: "MESSAGE";
+// TEXT Node Configuration
+export interface TextNodeConfig {
+  type: "TEXT";
   text: string; // Required, max 1024 chars
 }
 
@@ -189,7 +189,7 @@ export interface EndNodeConfig {
 
 // Union type for all configurations
 export type NodeConfig =
-  | MessageNodeConfig
+  | TextNodeConfig
   | PromptNodeConfig
   | MenuNodeConfig
   | APIActionNodeConfig

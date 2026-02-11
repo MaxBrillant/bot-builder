@@ -55,11 +55,11 @@ const nodeTypeOptions: NodeTypeOption[] = [
     color: "text-node-logic hover:bg-accent",
   },
   {
-    type: "MESSAGE",
-    label: "Message",
+    type: "TEXT",
+    label: "Text",
     icon: MessageCircle,
-    description: "Display message",
-    color: "text-node-message hover:bg-accent",
+    description: "Display text",
+    color: "text-node-text hover:bg-accent",
   },
 ];
 

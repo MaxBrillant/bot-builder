@@ -10,7 +10,7 @@ interface HeadersEditorProps {
   onChange: (value: APIHeader[]) => void;
   errors?: Record<string, string>;
   availableVariables?: string[];
-  nodeType?: "MESSAGE" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "END";
+  nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "END";
 }
 
 export function HeadersEditor({

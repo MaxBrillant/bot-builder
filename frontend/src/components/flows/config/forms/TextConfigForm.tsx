@@ -2,13 +2,13 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { TemplateInput } from "../shared/TemplateInput";
 import { FieldHelp } from "../shared/FieldHelp";
-import type { MessageNodeConfig, ValidationError } from "@/lib/types";
+import type { TextNodeConfig, ValidationError } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-interface MessageConfigFormProps {
-  config: MessageNodeConfig;
-  onChange: (config: MessageNodeConfig) => void;
+interface TextConfigFormProps {
+  config: TextNodeConfig;
+  onChange: (config: TextNodeConfig) => void;
   errors: ValidationError[];
   availableVariables?: string[];
   nodeName?: string;
@@ -17,7 +17,7 @@ interface MessageConfigFormProps {
   nodeNameInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
-export function MessageConfigForm({
+export function TextConfigForm({
   config,
   onChange,
   errors,
@@ -26,7 +26,7 @@ export function MessageConfigForm({
   onNodeNameChange,
   nodeNameError,
   nodeNameInputRef,
-}: MessageConfigFormProps) {
+}: TextConfigFormProps) {
   const safeAvailableVariables = availableVariables ?? [];
 
   const getFieldError = (field: string) => {
@@ -34,7 +34,7 @@ export function MessageConfigForm({
   };
 
   const handleTextChange = (text: string) => {
-    onChange({ ...config, type: "MESSAGE", text });
+    onChange({ ...config, type: "TEXT", text });
   };
 
   return (
@@ -70,25 +70,25 @@ export function MessageConfigForm({
         )}
 
         <div className="space-y-3">
-          {/* Message Text */}
+          {/* Text Message */}
           <div className="space-y-1">
             <TemplateInput
               value={config.text ?? ""}
               onChange={handleTextChange}
               error={getFieldError("text")}
               maxLength={SystemConstraints.MAX_MESSAGE_LENGTH}
-              placeholder="Enter message text"
+              placeholder="Enter text message"
               rows={8}
               maxRows={20}
               availableVariables={safeAvailableVariables}
-              nodeType="MESSAGE"
+              nodeType="TEXT"
             />
             <FieldHelp
               text="Use {{variable_name}} to insert variable values"
               tooltip={
                 <>
                   <p className="mb-2">
-                    Insert any flow variable into your message using double curly braces.
+                    Insert any flow variable into your text message using double curly braces.
                   </p>
                   <p className="text-xs font-medium mt-2">Example:</p>
                   <p className="mt-1 text-xs">
