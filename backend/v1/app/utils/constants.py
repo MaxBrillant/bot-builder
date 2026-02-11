@@ -12,7 +12,7 @@ class NodeType(str, Enum):
     MENU = "MENU"
     API_ACTION = "API_ACTION"
     LOGIC_EXPRESSION = "LOGIC_EXPRESSION"
-    MESSAGE = "MESSAGE"
+    TEXT = "TEXT"
     END = "END"
 
 

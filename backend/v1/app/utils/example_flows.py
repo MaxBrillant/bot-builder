@@ -8,7 +8,7 @@ def get_customer_support_menu_flow():
     Example Flow 1: Customer Support Menu
 
     Demonstrates:
-    - MESSAGE nodes for information display
+    - TEXT nodes for information display
     - MENU nodes with static options
     - Basic routing and navigation
 
@@ -22,9 +22,9 @@ def get_customer_support_menu_flow():
             "welcome": {
                 "id": "welcome",
                 "name": "Welcome Message",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "Hello! Welcome to our support center. I'm here to help you today."
                 },
                 "routes": [
@@ -58,9 +58,9 @@ def get_customer_support_menu_flow():
             "technical_response": {
                 "id": "technical_response",
                 "name": "Technical Response",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "You've reached Technical Support. Please describe the issue you're experiencing and I'll do my best to help you resolve it."
                 },
                 "routes": [
@@ -71,9 +71,9 @@ def get_customer_support_menu_flow():
             "billing_response": {
                 "id": "billing_response",
                 "name": "Billing Response",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "You've reached Billing and Payments. Please provide your account details and I'll help you with your billing inquiry."
                 },
                 "routes": [
@@ -84,9 +84,9 @@ def get_customer_support_menu_flow():
             "general_response": {
                 "id": "general_response",
                 "name": "General Response",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "I'm here to help with any questions you might have. What can I assist you with today?"
                 },
                 "routes": [
@@ -139,9 +139,9 @@ def get_onboarding_form_flow():
             "welcome": {
                 "id": "welcome",
                 "name": "Welcome",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "Welcome! I'll help you get set up with your account. This will only take a minute."
                 },
                 "routes": [
@@ -205,9 +205,9 @@ def get_onboarding_form_flow():
             "confirmation": {
                 "id": "confirmation",
                 "name": "Confirmation",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "Thank you! Your account has been set up with the following information:\n\nName: {{user_name}}\nEmail: {{user_email}}\nRole: {{user_role}}\n\nYou're all ready to go."
                 },
                 "routes": [
@@ -253,9 +253,9 @@ def get_quiz_flow():
             "welcome": {
                 "id": "welcome",
                 "name": "Welcome",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "Welcome to the quick trivia quiz! I'll ask you 3 questions. Let's see how well you do."
                 },
                 "routes": [
@@ -326,9 +326,9 @@ def get_quiz_flow():
             "perfect_score": {
                 "id": "perfect_score",
                 "name": "Perfect Score",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "Perfect score! You got all 3 questions correct!\n\n1. Capital of France: {{answer1}} ✓\n2. Number of continents: {{answer2}} ✓\n3. Is Earth flat?: {{answer3}} ✓"
                 },
                 "routes": [
@@ -339,9 +339,9 @@ def get_quiz_flow():
             "results": {
                 "id": "results",
                 "name": "Results",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "Quiz complete! Here are your answers:\n\n1. Capital of France: {{answer1}} (Correct: Paris)\n2. Number of continents: {{answer2}} (Correct: 7)\n3. Is Earth flat?: {{answer3}} (Correct: no)"
                 },
                 "routes": [
@@ -401,9 +401,9 @@ def get_appointment_booking_flow():
             "welcome": {
                 "id": "welcome",
                 "name": "Welcome",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "Hello! I can help you book an appointment. Here are the available time slots."
                 },
                 "routes": [
@@ -495,9 +495,9 @@ def get_appointment_booking_flow():
             "booking_success": {
                 "id": "booking_success",
                 "name": "Booking Success",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "Excellent! Your appointment has been booked successfully.\n\nBooking ID: #{{booking_id}}\nDay: {{selected_day}}\nTime: {{selected_time}}\nDoctor: {{selected_doctor}}\nName: {{customer_name}}\nPhone: {{customer_phone}}\n\nYou'll receive a confirmation message shortly."
                 },
                 "routes": [
@@ -508,9 +508,9 @@ def get_appointment_booking_flow():
             "booking_failed": {
                 "id": "booking_failed",
                 "name": "Booking Failed",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "I'm sorry, but I wasn't able to complete your booking at this time. Please try again later or contact us directly."
                 },
                 "routes": [
@@ -537,7 +537,7 @@ def get_help_flow():
 
     Demonstrates:
     - Wildcard trigger keyword (*)
-    - Simple MESSAGE node for help/guidance
+    - Simple TEXT node for help/guidance
 
     Trigger: * (matches any unrecognized input)
     """
@@ -549,9 +549,9 @@ def get_help_flow():
             "help_message": {
                 "id": "help_message",
                 "name": "Help Message",
-                "type": "MESSAGE",
+                "type": "TEXT",
                 "config": {
-                    "type": "MESSAGE",
+                    "type": "TEXT",
                     "text": "I didn't recognize that command. Here are the available options:\n\n• MENU - Customer support menu demo\n• ONBOARDING - User registration form demo\n• QUIZ - Interactive trivia quiz\n• BOOKING - Book an appointment\n\nType any of the above keywords to get started."
                 },
                 "routes": [
@@ -580,7 +580,7 @@ def get_all_example_flows():
         List of flow definitions ready to be created
 
     Order:
-        1. Customer Support Menu - Basic MESSAGE + static MENU
+        1. Customer Support Menu - Basic TEXT + static MENU
         2. User Onboarding - PROMPT + regex validation + dynamic MENU
         3. Simple Quiz - PROMPT + LOGIC_EXPRESSION for conditional routing
         4. Appointment Booking - API_ACTION POST with response_map + auth headers

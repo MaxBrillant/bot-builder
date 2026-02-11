@@ -6,7 +6,7 @@ A production-ready conversational bot framework with multi-tenant support, built
 
 ### Core Capabilities
 
-- **6 Node Types**: PROMPT, MENU, API_ACTION, LOGIC_EXPRESSION, MESSAGE, END
+- **6 Node Types**: PROMPT, MENU, API_ACTION, LOGIC_EXPRESSION, TEXT, END
 - **Multi-Tenant**: Complete user isolation with database-level security
 - **Template System**: Variable substitution with `{{variable}}` syntax
 - **Validation**: REGEX and EXPRESSION-based input validation
@@ -184,7 +184,7 @@ curl -X POST http://localhost:8000/bots/YOUR_BOT_ID/flows \
     "nodes": {
       "node_welcome": {
         "id": "node_welcome",
-        "type": "MESSAGE",
+        "type": "TEXT",
         "config": {"text": "Welcome! 👋"},
         "routes": [{"condition": "true", "target_node": "node_end"}]
       },
@@ -306,7 +306,7 @@ MAX_AUTO_PROGRESSION=10
 2. **MENU** - Present options (static or dynamic)
 3. **API_ACTION** - Call external APIs
 4. **LOGIC_EXPRESSION** - Conditional routing
-5. **MESSAGE** - Display information
+5. **TEXT** - Display information
 6. **END** - Terminate conversation
 
 ### Example Flow
@@ -351,7 +351,7 @@ MAX_AUTO_PROGRESSION=10
     },
     "node_confirm": {
       "id": "node_confirm",
-      "type": "MESSAGE",
+      "type": "TEXT",
       "config": {
         "text": "Thanks {{context.name}}! You are {{context.age}} years old."
       },

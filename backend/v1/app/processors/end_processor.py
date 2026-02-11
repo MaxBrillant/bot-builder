@@ -18,7 +18,7 @@ class EndProcessor(BaseProcessor):
     
     Features:
     - Mark session as COMPLETED
-    - No message (use MESSAGE before END if needed)
+    - No message (use TEXT before END if needed)
     - Session cleanup
     - Terminal node (no further execution)
     

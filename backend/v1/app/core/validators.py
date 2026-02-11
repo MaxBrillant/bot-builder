@@ -637,7 +637,7 @@ class RouteConditionValidator:
             return 3
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return 8
-        elif node_type in [NodeType.PROMPT.value, NodeType.MESSAGE.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return 1
         elif node_type == NodeType.END.value:
             return 0
@@ -653,7 +653,7 @@ class RouteConditionValidator:
             return ["true"]
         elif node_type == NodeType.API_ACTION.value:
             return ["success", "error", "true"]
-        elif node_type in [NodeType.PROMPT.value, NodeType.MESSAGE.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return ["true"]
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return []
@@ -681,7 +681,7 @@ class RouteConditionValidator:
             return f"API_ACTION nodes can have at most {max_routes} routes (success, error, fallback). Currently has {current_count} routes"
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return f"LOGIC_EXPRESSION nodes can have at most {max_routes} routes. Currently has {current_count} routes"
-        elif node_type in [NodeType.PROMPT.value, NodeType.MESSAGE.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return f"{node_type} nodes can only have 1 route. Currently has {current_count} routes"
         else:
             return f"Node type {node_type} can have at most {max_routes} routes. Currently has {current_count} routes"
@@ -701,7 +701,7 @@ class RouteConditionValidator:
                 return f"Remove extra routes or add more menu options. Maximum {max_routes} routes allowed"
         elif node_type == NodeType.API_ACTION.value:
             return "API_ACTION nodes support 'success', 'error', and 'true' (fallback) conditions only"
-        elif node_type in [NodeType.PROMPT.value, NodeType.MESSAGE.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return f"{node_type} nodes only support a single route with condition 'true'"
         else:
             return f"Reduce the number of routes to {max_routes} or fewer"
@@ -722,7 +722,7 @@ class RouteConditionValidator:
                 return f"STATIC MENU nodes only allow 'selection == N' (where N is 1-{num_options}) or 'true'. Got: '{condition}'"
         elif node_type == NodeType.API_ACTION.value:
             return f"API_ACTION nodes only allow conditions: 'success', 'error', or 'true'. Got: '{condition}'"
-        elif node_type in [NodeType.PROMPT.value, NodeType.MESSAGE.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return f"{node_type} nodes only allow condition 'true'. Got: '{condition}'"
         else:
             return f"Invalid condition '{condition}' for node type {node_type}"
@@ -742,7 +742,7 @@ class RouteConditionValidator:
                 return f"Use 'selection == 1' through 'selection == {num_options}' for specific options, or 'true' for fallback"
         elif node_type == NodeType.API_ACTION.value:
             return "Use 'success' for successful API calls, 'error' for failures, or 'true' for any outcome"
-        elif node_type in [NodeType.PROMPT.value, NodeType.MESSAGE.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return "Use condition 'true' (the only valid condition for this node type)"
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return "Use any valid expression as a condition (non-empty string)"
@@ -1278,7 +1278,7 @@ class FlowValidator:
                     "required_field",
                     "fail_route is REQUIRED when retry_logic is defined. Specify the node to route to when max validation attempts are exceeded.",
                     "defaults.retry_logic.fail_route",
-                    "Add a fail_route field with a valid node ID (typically a MESSAGE or END node)"
+                    "Add a fail_route field with a valid node ID (typically a TEXT or END node)"
                 )
             elif fail_route not in nodes:
                 result.add_error(
@@ -1438,7 +1438,7 @@ class FlowValidator:
 
         Cycles containing at least one PROMPT or MENU node are allowed since user input
         naturally breaks potential infinite loops. Cycles with only non-input nodes
-        (MESSAGE, API_ACTION, LOGIC_EXPRESSION) are rejected.
+        (TEXT, API_ACTION, LOGIC_EXPRESSION) are rejected.
         """
         checked_nodes = set()
 

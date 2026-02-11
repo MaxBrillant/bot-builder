@@ -658,20 +658,20 @@ class Route(BaseModel):
 # NODE CONFIGURATION MODELS
 # ============================================================================
 
-class MessageNodeConfig(BaseModel):
+class TextNodeConfig(BaseModel):
     """
-    Configuration for MESSAGE nodes.
-    
-    Sends a message to the user without waiting for input.
+    Configuration for TEXT nodes.
+
+    Sends a text message to the user without waiting for input.
     """
-    type: Literal["MESSAGE"] = Field(default="MESSAGE", frozen=True)
+    type: Literal["TEXT"] = Field(default="TEXT", frozen=True)
     text: str = Field(
         ...,
         min_length=1,
         max_length=SystemConstraints.MAX_MESSAGE_LENGTH,
-        description="Message text to display (supports template variables)"
+        description="Text message to display (supports template variables)"
     )
-    
+
     model_config = {"frozen": True, "extra": "forbid"}
 
 
@@ -859,7 +859,7 @@ class EndNodeConfig(BaseModel):
 # ============================================================================
 
 NodeConfig = Union[
-    MessageNodeConfig,
+    TextNodeConfig,
     PromptNodeConfig,
     MenuNodeConfig,
     APIActionNodeConfig,
@@ -891,7 +891,7 @@ class FlowNode(BaseModel):
         max_length=50,
         description="Human-readable node name"
     )
-    type: Literal["MESSAGE", "PROMPT", "MENU", "API_ACTION", "LOGIC_EXPRESSION", "END"] = Field(
+    type: Literal["TEXT", "PROMPT", "MENU", "API_ACTION", "LOGIC_EXPRESSION", "END"] = Field(
         ...,
         description="Node type"
     )
@@ -989,7 +989,7 @@ __all__ = [
     'Route',
     
     # Node configs
-    'MessageNodeConfig',
+    'TextNodeConfig',
     'PromptNodeConfig',
     'MenuNodeConfig',
     'APIActionNodeConfig',

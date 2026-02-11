@@ -537,7 +537,7 @@ This allows nodes to reference other nodes that appear later in the JSON (order-
 - All route target_nodes reference existing nodes
 - **Only start node has no parent** - only the start_node_id should have no parent (not be referenced in any route). All other nodes must have at least one parent (be referenced as target_node in at least one route). Orphan nodes are invalid.
 - **Route conditions unique per node** - no duplicate conditions within a single node's routes array (case-insensitive)
-- **Circular references allowed only if cycle includes input node** - Cycles containing at least one PROMPT or MENU node are allowed (user input breaks potential infinite loops). Cycles with only non-input nodes (MESSAGE, API_ACTION, LOGIC_EXPRESSION) are rejected.
+- **Circular references allowed only if cycle includes input node** - Cycles containing at least one PROMPT or MENU node are allowed (user input breaks potential infinite loops). Cycles with only non-input nodes (TEXT, API_ACTION, LOGIC_EXPRESSION) are rejected.
 - Variable types valid (STRING, NUMBER, BOOLEAN, ARRAY)
 - fail_route is required when retry_logic is defined, and must reference existing node
 - Constraints respected:
@@ -679,7 +679,7 @@ Bot Builder Instance 3 ←
 - **Fields**:
   - `max_attempts`: Maximum validation retry attempts (default: 3, valid range: 1-10)
   - `counter_text`: Template for retry counter display (default: "(Attempt {{current_attempt}} of {{max_attempts}})", max 512 characters)
-  - `fail_route`: Node to redirect to after max attempts exceeded (**REQUIRED** - must always be specified when retry_logic is defined; must reference existing node ID in the flow, typically MESSAGE or END node; validated during two-pass validation)
+  - `fail_route`: Node to redirect to after max attempts exceeded (**REQUIRED** - must always be specified when retry_logic is defined; must reference existing node ID in the flow, typically TEXT or END node; validated during two-pass validation)
 
 #### `start_node_id` (required)
 
@@ -708,7 +708,7 @@ Every node has this base structure:
 {
   "id": "string (required)",
   "name": "string (required)",
-  "type": "PROMPT|MENU|API_ACTION|LOGIC_EXPRESSION|MESSAGE|END (required)",
+  "type": "PROMPT|MENU|API_ACTION|LOGIC_EXPRESSION|TEXT|END (required)",
   "config": { "object (required)" },
   "routes": [ "array (optional)" ],
   "position": { "object (required)" }
@@ -741,7 +741,7 @@ Every node has this base structure:
 
 - **Type**: `string enum`
 - **Description**: Node type determining behavior
-- **Values**: `PROMPT`, `MENU`, `API_ACTION`, `LOGIC_EXPRESSION`, `MESSAGE`, `END`
+- **Values**: `PROMPT`, `MENU`, `API_ACTION`, `LOGIC_EXPRESSION`, `TEXT`, `END`
 - **Example**: `"PROMPT"`
 
 ##### `config` (required)
@@ -1523,11 +1523,11 @@ This design allows flows to continue gracefully when external data is malformed,
 
 **Note**: LOGIC_EXPRESSION nodes perform internal conditional routing based on the `routes` array. All logic is defined in the route conditions, not in the node config.
 
-#### MESSAGE Node Config
+#### Text Node Config
 
 ```json
 {
-  "type": "MESSAGE",
+  "type": "TEXT",
   "text": "string (required)"
 }
 ```
@@ -2034,7 +2034,7 @@ See the Tujane driver flow in [`flows/tujane_driver_flow_v1.json`](flows/tujane_
 
 **When NOT to Use**:
 
-- Displaying information only (use MESSAGE)
+- Displaying information only (use TEXT)
 - Branching logic without input (use LOGIC_EXPRESSION)
 - Selecting from options (use MENU)
 
@@ -2395,13 +2395,13 @@ Query parameters can be added using template syntax in the URL:
 
 **When NOT to Use**:
 
-- Displaying messages (use MESSAGE)
+- Displaying messages (use TEXT)
 - Getting user input (use PROMPT)
 - Complex calculations (do in API)
 
 ---
 
-### MESSAGE Node
+### Text Node
 
 **Purpose**: Display information and auto-progress
 
@@ -2428,7 +2428,7 @@ Query parameters can be added using template syntax in the URL:
 **When NOT to Use**:
 
 - Collecting input (use PROMPT)
-- Ending conversation (use END with MESSAGE before it)
+- Ending conversation (use END with TEXT before it)
 - Waiting for user acknowledgment
 
 ---
@@ -2445,7 +2445,7 @@ Query parameters can be added using template syntax in the URL:
 
 **Constraints**:
 
-- ❌ Cannot show message (use MESSAGE before END)
+- ❌ Cannot show message (use TEXT before END)
 - ❌ Cannot route to other nodes
 - ❌ Cannot be bypassed once reached
 - ❌ Cannot restart flow automatically
@@ -2569,7 +2569,7 @@ The variable name in flow definitions must match the **last segment** of the tem
   - **Workaround**: Initialize variables with defaults in flow definition
   - **Example**: `"variables": {"name": {"type": "STRING", "default": "Guest"}}`
 - **Array `.length` property**: `{{items.length}}`
-  - **Important**: `.length` does NOT work in templates (MESSAGE, MENU, PROMPT text)
+  - **Important**: `.length` does NOT work in templates (TEXT, MENU, PROMPT text)
   - **Where it DOES work**: LOGIC_EXPRESSION route conditions, PROMPT validation expressions
   - **Workaround**: Store array length as separate variable first
 
@@ -2580,7 +2580,7 @@ The variable name in flow definitions must match the **last segment** of the tem
 **❌ Does NOT Work in Templates**:
 ```json
 {
-  "type": "MESSAGE",
+  "type": "TEXT",
   "config": {
     "text": "You have {{items.length}} items."
   }
@@ -2625,7 +2625,7 @@ The variable name in flow definitions must match the **last segment** of the tem
 
 // Then use in template:
 {
-  "type": "MESSAGE",
+  "type": "TEXT",
   "config": {
     "text": "You have {{items_count}} items."  // ✓ Works
   }
@@ -2675,7 +2675,7 @@ When a template references a variable that doesn't exist in context:
 | MENU             | `{{variable}}`, `{{item.*}}`, `{{index}}` | `item` and `index` only in `item_template`                                                                                                     |
 | API_ACTION       | `{{variable}}`, `{{user.channel_id}}` | `user.channel_id` is the platform-specific user identifier (e.g., phone number for WhatsApp). Other user data should be fetched via API calls. |
 | LOGIC_EXPRESSION | N/A (no templates)                    | Routes use expressions, not templates                                                                                                          |
-| MESSAGE          | `{{variable}}`                        | All flow variables available                                                                                                                   |
+| TEXT          | `{{variable}}`                        | All flow variables available                                                                                                                   |
 
 **Special Variables**:
 
@@ -2817,7 +2817,7 @@ The system validates route conditions and counts based on node type to prevent i
 | Node Type            | Allowed Conditions                             | Max Routes      | Notes                                          |
 | -------------------- | ---------------------------------------------- | --------------- | ---------------------------------------------- |
 | **PROMPT**           | `"true"` only                                  | 1               | Single progression route                       |
-| **MESSAGE**          | `"true"` only                                  | 1               | Single progression route                       |
+| **TEXT**          | `"true"` only                                  | 1               | Single progression route                       |
 | **MENU (STATIC)**    | `"selection == N"` (N ≤ num_options), `"true"` | num_options + 1 | N must be within 1 to number of options        |
 | **MENU (DYNAMIC)**   | `"true"` only                                  | 1               | **Critical: Only single "true" route allowed** |
 | **API_ACTION**       | `"success"`, `"error"`, `"true"`               | 3               | All conditions optional                        |
@@ -3327,7 +3327,7 @@ Session expires after 30min or explicit delete
 
 **User Notification**:
 
-- END node: No message (use MESSAGE node before END for final message)
+- END node: No message (use TEXT node before END for final message)
 - Timeout: "Session expired. Please start again."
 - No route match: "An error occurred. Please try again."
 - Max auto-progression: "System error. Please contact support."
@@ -3371,7 +3371,7 @@ Session expires after 30min or explicit delete
   },
   "nodes": {
     "node_validation_failed": {
-      "type": "MESSAGE",
+      "type": "TEXT",
       "config": {
         "text": "We couldn't process your input. Please contact support at +254..."
       },
@@ -3385,7 +3385,7 @@ Session expires after 30min or explicit delete
 
 ```json
 {
-  "type": "MESSAGE",
+  "type": "TEXT",
   "config": {
     "text": "❌ We couldn't process your request.\n\nPlease try again or contact support at +254700123456."
   }
@@ -3439,7 +3439,7 @@ Session expires after 30min or explicit delete
     ]
   },
   "node_offer_alternative": {
-    "type": "MESSAGE",
+    "type": "TEXT",
     "config": {
       "text": "We couldn't complete that action. Would you like to try a different option?"
     },
@@ -3474,7 +3474,7 @@ Session expires after 30min or explicit delete
 ```json
 {
   "node_critical_error": {
-    "type": "MESSAGE",
+    "type": "TEXT",
     "config": {
       "text": "We encountered an error processing your request.\n\n📞 Call support: +254700123456\n💬 WhatsApp: +254700123456\n⏰ Available 24/7"
     },
@@ -3486,7 +3486,7 @@ Session expires after 30min or explicit delete
 ### Debugging Tips
 
 1. **Use missing variable behavior**: Undefined variables show as `{{variable}}` in output
-2. **Add debug nodes**: Insert MESSAGE nodes to display context state
+2. **Add debug nodes**: Insert TEXT nodes to display context state
 3. **Check route order**: First matching route wins, order matters
 4. **Verify type conversions**: Use response_map with explicit types
 5. **Test error paths**: Manually trigger error conditions during development
@@ -3764,7 +3764,7 @@ async def create_trip(request: TripRequest):
 ```json
 // ✅ SAFE - User input stored in variable, used in message
 {
-  "type": "MESSAGE",
+  "type": "TEXT",
   "config": {
     "text": "Hello {{user_name}}! Your request has been received."
   }
@@ -3919,7 +3919,7 @@ Before deploying a flow to production, verify:
 1. **Sequential Data Collection**
 
    ```
-   PROMPT (name) → PROMPT (email) → PROMPT (phone) → API_ACTION (save) → MESSAGE (confirm) → END
+   PROMPT (name) → PROMPT (email) → PROMPT (phone) → API_ACTION (save) → TEXT (confirm) → END
    ```
 
 2. **Conditional Branching**
@@ -4035,7 +4035,7 @@ Before deploying a flow to production, verify:
 
    // ✅ GOOD
    "node_confirm": {
-     "type": "MESSAGE",
+     "type": "TEXT",
      "config": {
        "text": "Order confirmed!"
      }
@@ -4095,7 +4095,7 @@ Before deploying a flow to production, verify:
 4. **Use Appropriate Node Types**
    - PROMPT: Input collection only
    - MENU: Selection from options
-   - MESSAGE: Information display
+   - TEXT: Information display
    - API_ACTION: External operations
    - LOGIC_EXPRESSION: Conditional routing
 

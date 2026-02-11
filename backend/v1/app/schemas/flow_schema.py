@@ -94,7 +94,7 @@ class FlowCreate(BaseModel):
                 "nodes": {
                     "node_welcome": {
                         "id": "node_welcome",
-                        "type": "MESSAGE",
+                        "type": "TEXT",
                         "config": {"text": "Welcome!"},
                         "routes": [{"condition": "true", "target_node": "node_end"}]
                     },

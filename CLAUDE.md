@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Bot Builder is a conversational bot framework with a FastAPI backend and React/TypeScript frontend. The system supports multi-tenant bot creation with a visual flow editor for building conversation flows using 6 node types: PROMPT, MENU, API_ACTION, LOGIC_EXPRESSION, MESSAGE, and END.
+Bot Builder is a conversational bot framework with a FastAPI backend and React/TypeScript frontend. The system supports multi-tenant bot creation with a visual flow editor for building conversation flows using 6 node types: PROMPT, MENU, API_ACTION, LOGIC_EXPRESSION, TEXT, and END.
 
 ## Code Guidelines & Working Principles
 
@@ -249,7 +249,7 @@ Each node type has a dedicated processor inheriting from `BaseProcessor`:
 - **MenuProcessor**: Displays options (static or dynamic)
 - **APIActionProcessor**: Calls external APIs, stores responses
 - **LogicProcessor**: Conditional routing only
-- **MessageProcessor**: Displays information
+- **TextProcessor**: Displays text information
 - **EndProcessor**: Terminates conversation
 
 Processors return `ProcessResult` containing:
