@@ -215,8 +215,29 @@ export function getConditionLabel(
     return option.label;
   }
 
-  // For custom conditions (e.g., logic expressions), return the condition itself
+  // For LOGIC_EXPRESSION, format the condition nicely
+  if (nodeType === "LOGIC_EXPRESSION") {
+    return formatLogicCondition(condition);
+  }
+
+  // For other custom conditions, return the condition itself
   return condition;
+}
+
+/**
+ * Format a logic expression condition for display
+ */
+function formatLogicCondition(condition: string): string {
+  const trimmed = condition.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed
+    .replace(/context\./g, "")
+    .replace(/\s*&&\s*/g, " AND ")
+    .replace(/\s*\|\|\s*/g, " OR ");
 }
 
 /**

@@ -8,6 +8,7 @@ interface TemplateInputProps {
   value: string;
   onChange: (value: string) => void;
   error?: string;
+  showErrorText?: boolean;
   maxLength: number;
   placeholder?: string;
   rows?: number;
@@ -22,6 +23,7 @@ export function TemplateInput({
   value,
   onChange,
   error,
+  showErrorText = true,
   maxLength,
   placeholder,
   rows = 1,
@@ -293,7 +295,7 @@ export function TemplateInput({
           />
         </PopoverAnchor>
 
-        {hasError && <p className="text-sm text-destructive mt-1">{error}</p>}
+        {hasError && showErrorText && <p className="text-sm text-destructive mt-1">{error}</p>}
       </div>
 
       <PopoverContent

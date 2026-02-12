@@ -32,6 +32,40 @@ import {
 } from '@/lib/history';
 
 // ============================================
+// Helpers
+// ============================================
+
+/**
+ * Normalizes an object for comparison by treating empty arrays and empty objects
+ * as undefined. This ensures that `[]` and `undefined` are considered equal,
+ * which is important for dirty-checking when list items are added then removed.
+ */
+function normalizeForComparison(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return undefined;
+
+  if (Array.isArray(obj)) {
+    const normalized = obj.map(normalizeForComparison);
+    return normalized.length === 0 ? undefined : normalized;
+  }
+
+  if (typeof obj === 'object') {
+    const cleaned: Record<string, unknown> = {};
+    let hasKeys = false;
+    for (const key in obj as Record<string, unknown>) {
+      const value = (obj as Record<string, unknown>)[key];
+      const normalized = normalizeForComparison(value);
+      if (normalized !== undefined) {
+        cleaned[key] = normalized;
+        hasKeys = true;
+      }
+    }
+    return hasKeys ? cleaned : undefined;
+  }
+
+  return obj;
+}
+
+// ============================================
 // Types
 // ============================================
 
@@ -380,7 +414,8 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
 
   const isDirty = useMemo(() => {
     if (!serverState || !draftState) return false;
-    return !isEqual(serverState, draftState);
+    // Normalize both states so that empty arrays/objects compare equal to undefined
+    return !isEqual(normalizeForComparison(serverState), normalizeForComparison(draftState));
   }, [serverState, draftState]);
 
   const selectedNode = useMemo(() => {
