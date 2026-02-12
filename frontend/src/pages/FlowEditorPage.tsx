@@ -578,6 +578,11 @@ function FlowEditorContent() {
       const handleIndex = edge.data?.handleIndex ?? 0;
       const cumulativeLabelOffset = edge.data?.cumulativeLabelOffset ?? 0;
 
+      // Only allow route deletion for branching nodes with multiple routes
+      const canDeleteRoute = sourceNode &&
+        isBranchingNode(sourceNode.type, sourceNode.config) &&
+        (sourceNode.routes?.length || 0) > 1;
+
       return {
         ...edge,
         data: {
@@ -640,20 +645,23 @@ function FlowEditorContent() {
 
             updateNode(sourceNodeId, { routes: updatedRoutes });
           },
-          onDeleteRoute: () => {
-            // Use ref to get fresh state (avoid stale closure)
-            const currentFlow = activeFlowRef.current;
-            if (!currentFlow) return;
+          // Only add delete handler for branching nodes with multiple routes
+          ...(canDeleteRoute && {
+            onDeleteRoute: () => {
+              // Use ref to get fresh state (avoid stale closure)
+              const currentFlow = activeFlowRef.current;
+              if (!currentFlow) return;
 
-            const node = currentFlow.nodes[sourceNodeId];
-            if (!node?.routes || routeIndex >= node.routes.length) return;
+              const node = currentFlow.nodes[sourceNodeId];
+              if (!node?.routes || routeIndex >= node.routes.length) return;
 
-            // Filter out the route at this index
-            const updatedRoutes = node.routes.filter((_, i) => i !== routeIndex);
+              // Filter out the route at this index
+              const updatedRoutes = node.routes.filter((_, i) => i !== routeIndex);
 
-            updateNode(sourceNodeId, { routes: updatedRoutes });
-            toast.success("Route deleted");
-          },
+              updateNode(sourceNodeId, { routes: updatedRoutes });
+              toast.success("Route deleted");
+            },
+          }),
         },
       };
     });
