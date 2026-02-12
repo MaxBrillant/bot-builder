@@ -108,21 +108,58 @@ const FlowEditorContext = createContext<FlowEditorContextType | undefined>(undef
 // ============================================
 
 function getErrorMessage(error: unknown): string {
+  // Check for axios errors FIRST (before Error check, since AxiosError extends Error)
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const axiosError = error as any;
+    const response = axiosError.response;
+    const data = response?.data;
+
+    // Our custom validation errors (status 400)
+    // Format: { error: "...", error_code: "...", errors: [{type, message, location}] }
+    if (data?.errors && Array.isArray(data.errors)) {
+      return data.errors
+        .map((err: any) => err.message || 'Unknown error')
+        .join('\n\n');
+    }
+
+    // FastAPI validation errors (422) - array of detailed errors
+    if (data?.detail && Array.isArray(data.detail)) {
+      return data.detail
+        .map((err: any) => {
+          const location = err.loc?.slice(1).join('.') || 'unknown';
+          const message = err.msg || 'Validation error';
+          return `${location}: ${message}`;
+        })
+        .join('\n');
+    }
+
+    // Single error detail (string)
+    if (data?.detail && typeof data.detail === 'string') {
+      return data.detail;
+    }
+
+    // Generic error message
+    if (data?.error) {
+      return data.error;
+    }
+
+    // Generic message field
+    if (data?.message) {
+      return data.message;
+    }
+
+    // Provide context with status code
+    const status = response?.status;
+    if (status) {
+      return `Request failed with status ${status}`;
+    }
+  }
+
+  // Fallback to Error message (for non-axios errors)
   if (error instanceof Error) {
     return error.message;
   }
-  if (typeof error === 'object' && error !== null && 'response' in error) {
-    const axiosError = error as any;
-    if (axiosError.response?.data?.detail) {
-      const details = axiosError.response.data.detail;
-      if (Array.isArray(details)) {
-        return details
-          .map((err: any) => `${err.loc?.join('.')}: ${err.msg}`)
-          .join(', ');
-      }
-      return details;
-    }
-  }
+
   return 'An unexpected error occurred';
 }
 
@@ -843,7 +880,11 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
       return true;
     } catch (error) {
       console.error('Failed to save flow:', error);
-      toast.error(`Failed to save flow: ${getErrorMessage(error)}`);
+      const errorMessage = getErrorMessage(error);
+
+      toast.error('Failed to save flow', {
+        description: errorMessage,
+      });
       return false;
     } finally {
       setIsSaving(false);
