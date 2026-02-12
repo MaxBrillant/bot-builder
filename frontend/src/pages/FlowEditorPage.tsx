@@ -688,6 +688,7 @@ function FlowEditorContent() {
             openSelector: keyboardOpenSelectorNodeId === node.id,
             onSelectorOpenChange: getNodeSelectorChangeHandler(node.id),
             preSelectedType: keyboardOpenSelectorNodeId === node.id ? preSelectedNodeType : undefined,
+            availableVariables,
           },
         };
       }

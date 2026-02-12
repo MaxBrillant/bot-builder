@@ -2,6 +2,7 @@ import { memo } from "react";
 import { MessageCircle } from "lucide-react";
 import NodeWrapper from "./NodeWrapper";
 import NodeHandles from "./NodeHandles";
+import NodeTypeSelector from "../NodeTypeSelector";
 import type { NodeType, FlowNode } from "@/lib/types";
 
 // Type aliases for reactflow (v11 export issues)
@@ -25,6 +26,8 @@ interface TextNodeData {
   onNodeClick?: () => void;
   openSelector?: boolean;
   onSelectorOpenChange?: (open: boolean) => void;
+  preSelectedType?: NodeType;
+  availableVariables?: string[];
   outputHandleIds?: string[];
 }
 
@@ -45,6 +48,20 @@ function TextNode({
       onNodeClick={data?.onNodeClick}
       data={data}
     >
+      {data?.openSelector && (
+        <NodeTypeSelector
+          open={data.openSelector}
+          onOpenChange={data?.onSelectorOpenChange || (() => {})}
+          onSelectType={(type, condition) => data?.onInsertAfter?.(type, condition)}
+          parentNode={data?.flowNode}
+          preSelectedType={data?.preSelectedType}
+          availableVariables={data?.availableVariables}
+        >
+          {/* Position trigger at right edge of node */}
+          <div style={{ position: 'absolute', left: 220, top: 40, width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
+        </NodeTypeSelector>
+      )}
+
       <div
         className={`bg-card rounded-md border-2 border-border hover:border-node-text/50 w-[200px] h-[80px] transition-all cursor-pointer hover:shadow-lg`}
       >
