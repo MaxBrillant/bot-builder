@@ -217,7 +217,13 @@ export default function CustomEdge({
                   <PopoverTrigger asChild>
                     <span className="hover:text-foreground line-clamp-3" title={typeof label === 'string' ? label : undefined}>{label}</span>
                   </PopoverTrigger>
-                  <PopoverContent className="w-64 p-3" align="start">
+                  <PopoverContent
+                    className="w-64 p-3 max-h-[90vh] overflow-y-auto"
+                    align="start"
+                    collisionPadding={16}
+                    side="bottom"
+                    sideOffset={8}
+                  >
                     <div className="space-y-2">
                       <div className="text-xs font-medium text-muted-foreground">
                         Edit Route Condition

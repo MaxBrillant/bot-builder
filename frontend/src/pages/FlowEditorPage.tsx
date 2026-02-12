@@ -2317,7 +2317,14 @@ function FlowEditorContent() {
             aria-hidden="true"
           />
         </PopoverTrigger>
-        <PopoverContent className="w-64 p-3">
+        <PopoverContent
+          className="w-80 p-3 bg-background max-h-[60vh] overflow-y-auto"
+          align="start"
+          side="right"
+          sideOffset={8}
+          collisionPadding={16}
+          avoidCollisions={true}
+        >
           <div className="space-y-2">
             <div className="text-xs font-medium text-muted-foreground">
               Route Condition

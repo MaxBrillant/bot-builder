@@ -189,7 +189,14 @@ export default function NodeTypeSelector({
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent className="w-80 p-2 bg-background" align="start">
+      <PopoverContent
+        className="w-80 p-2 bg-background max-h-[90vh] overflow-y-auto"
+        align="start"
+        side="right"
+        sideOffset={8}
+        collisionPadding={16}
+        avoidCollisions={true}
+      >
         <div className="space-y-2">
           <div className="px-2 py-2 text-xs font-semibold text-muted-foreground uppercase">
             Select Node Type
@@ -197,7 +204,7 @@ export default function NodeTypeSelector({
 
           {/* Condition Selector - only show for branching nodes */}
           {needsCondition && parentNode && (
-            <div className="px-2 pb-2 border-b border-border space-y-1">
+            <div className="px-2 pb-2 border-b border-border space-y-1 max-h-[40vh] overflow-y-auto">
               {conditionReadOnly && (
                 <div className="text-xs text-muted-foreground mb-1">
                   Inserting on route:
@@ -253,39 +260,6 @@ export default function NodeTypeSelector({
                       <div className="space-y-1 mt-1">
                         <p className="text-xs"><strong>Success</strong> - API returned expected status code</p>
                         <p className="text-xs"><strong>Error</strong> - API failed or returned unexpected status</p>
-                      </div>
-                    </>
-                  }
-                />
-              )}
-              {!conditionReadOnly && parentNode.type === "LOGIC_EXPRESSION" && (
-                <FieldHelp
-                  text="Use context. to access your variables"
-                  tooltip={
-                    <>
-                      <p className="text-xs font-medium">Keywords:</p>
-                      <div className="space-y-1 mt-1 mb-3">
-                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">success</code> - previous API call succeeded</p>
-                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">error</code> - previous API call failed</p>
-                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">null</code> - value does not exist</p>
-                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">true</code> - fallback when nothing else matches</p>
-                      </div>
-                      <p className="text-xs font-medium">Operators:</p>
-                      <p className="text-xs mt-1 mb-3">
-                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">==</code>{" "}
-                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">!=</code>{" "}
-                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">&gt;</code>{" "}
-                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">&lt;</code>{" "}
-                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">&gt;=</code>{" "}
-                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">&lt;=</code>{" "}
-                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">&&</code>{" "}
-                        <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">||</code>
-                      </p>
-                      <p className="text-xs font-medium">Examples:</p>
-                      <div className="space-y-1 mt-1">
-                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">context.age &gt; 18</code> - over 18</p>
-                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">context.items.length &gt; 0</code> - list not empty</p>
-                        <p className="text-xs"><code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">context.verified && context.premium</code> - both true</p>
                       </div>
                     </>
                   }

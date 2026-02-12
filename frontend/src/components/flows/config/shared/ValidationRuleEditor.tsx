@@ -1,6 +1,6 @@
 import { Label } from "@/components/ui/label";
 import { FieldHelp } from "./FieldHelp";
-import { ExpressionInput } from "./ExpressionInput";
+import { ExpressionBuilder } from "./ExpressionBuilder";
 import { TemplateInput } from "./TemplateInput";
 import type { ValidationRule } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
@@ -44,44 +44,30 @@ export function ValidationRuleEditor({
               <Label htmlFor="validation-rule" className="text-xs">
                 Validation Rule
               </Label>
-              <ExpressionInput
+              <ExpressionBuilder
                 value={value.rule}
                 onChange={handleRuleChange}
                 error={errors["validation.rule"]}
-                maxLength={maxRuleLength}
-                placeholder="e.g., input.isAlpha() && input.length >= 3"
-                rows={3}
                 context="validation_expression"
                 availableVariables={availableVariables}
               />
               <FieldHelp
-                text="Write rules to check the user's input"
+                text="Build rules to check the user's input"
                 tooltip={
                   <>
                     <p className="mb-2">
-                      Create rules using these checks:
+                      Select what to check from the dropdown and set the expected value.
                     </p>
-                    <p className="text-xs font-medium mt-2">What you can check:</p>
-                    <p className="mt-1 text-xs">
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.isAlpha()</code> - Only letters (A-Z)
-                    </p>
-                    <p className="mt-1 text-xs">
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.isNumeric()</code> - A number (like 42 or -3.5)
-                    </p>
-                    <p className="mt-1 text-xs">
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.isDigit()</code> - Only digits 0-9
-                    </p>
-                    <p className="mt-1 text-xs">
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">input.length</code> - How many characters
-                    </p>
+                    <p className="text-xs font-medium mt-2">Available checks:</p>
+                    <ul className="list-none space-y-1 mt-1 text-xs">
+                      <li>• <strong>Input contains only letters</strong> - A-Z only</li>
+                      <li>• <strong>Input is a number</strong> - Like 42 or -3.5</li>
+                      <li>• <strong>Input contains only digits</strong> - 0-9 only</li>
+                      <li>• <strong>Input length</strong> - Number of characters</li>
+                    </ul>
                     <p className="text-xs font-medium mt-2">Example:</p>
                     <p className="mt-1 text-xs">
-                      <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
-                        input.isAlpha() && input.length {">="}3
-                      </code>
-                    </p>
-                    <p className="mt-1 text-xs">
-                      (Letters only AND at least 3 characters)
+                      "Input contains only letters" AND "Input length" is at least 3
                     </p>
                   </>
                 }

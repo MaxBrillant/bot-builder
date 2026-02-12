@@ -1,9 +1,8 @@
 import { Label } from "@/components/ui/label";
-import { ExpressionInput } from "./ExpressionInput";
+import { ExpressionBuilder } from "./ExpressionBuilder";
 import { FieldHelp } from "./FieldHelp";
 import { StatusCodesInput } from "./StatusCodesInput";
 import type { APISuccessCheck } from "@/lib/types";
-import { SystemConstraints } from "@/lib/types";
 
 interface SuccessCheckEditorProps {
   value: APISuccessCheck | undefined;
@@ -86,14 +85,10 @@ export function SuccessCheckEditor({
         <Label htmlFor="success-expression" className="text-xs">
           Expression (Optional)
         </Label>
-        <ExpressionInput
+        <ExpressionBuilder
           value={expression}
           onChange={handleExpressionChange}
           error={errors["success_check.expression"]}
-          maxLength={SystemConstraints.MAX_EXPRESSION_LENGTH}
-          placeholder="response.body.status == 'success'"
-          rows={2}
-          maxRows={8}
           context="success_expression"
           availableVariables={availableVariables}
         />
@@ -107,34 +102,20 @@ export function SuccessCheckEditor({
                 content to make sure it really worked.
               </p>
               <p className="text-xs font-medium mt-2">When to use this:</p>
-              <p className="mt-1 text-xs">
-                • The API returns 200 but might have an error message inside the
-                response
-              </p>
-              <p className="mt-1 text-xs">
-                • You want to verify the response contains the data you expect
-              </p>
-              <p className="text-xs font-medium mt-2">Examples:</p>
               <ul className="list-none space-y-1 mt-1 text-xs">
-                <li>
-                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
-                    response.body.status == "success"
-                  </code>
-                </li>
-                <li>
-                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
-                    response.body.error == null
-                  </code>
-                </li>
-                <li>
-                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
-                    response.body.data.length {">"} 0
-                  </code>{" "}
-                  (has at least one item)
-                </li>
+                <li>• The API returns 200 but might have an error inside</li>
+                <li>• You want to verify the response contains expected data</li>
               </ul>
+              <p className="text-xs font-medium mt-2">Example:</p>
+              <p className="mt-1 text-xs">
+                "Response body status" equals "success"
+              </p>
+              <p className="text-xs font-medium mt-2">Tip:</p>
+              <p className="mt-1 text-xs">
+                Select <strong>Custom field</strong> for other response values (e.g. response.body.error)
+              </p>
               <p className="text-xs font-medium mt-2">
-                How it works with status codes:
+                With status codes:
               </p>
               <p className="mt-1 text-xs">
                 If you set both status codes and an expression, BOTH must pass

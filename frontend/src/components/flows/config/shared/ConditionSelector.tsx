@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
 import type { NodeType, NodeConfig } from "@/lib/types";
-import { SystemConstraints } from "@/lib/types";
 import {
   getConditionInputType,
   getRouteConditionOptions,
   type RouteConditionOption,
 } from "@/lib/routeConditionUtils";
-import { ExpressionInput, type ExpressionContext } from "./ExpressionInput";
+import { ExpressionBuilder } from "./ExpressionBuilder";
 import {
   Select,
   SelectContent,
@@ -79,34 +78,62 @@ export function ConditionSelector({
   }
 
   // For text input-based node types (LOGIC_EXPRESSION)
-  // Map node type to expression context for better autocomplete
-  const getExpressionContext = (): ExpressionContext => {
-    switch (nodeType) {
-      case "API_ACTION":
-        return "route_api_action";
-      case "MENU":
-        return "route_menu";
-      case "LOGIC_EXPRESSION":
-        return "route_logic";
-      case "PROMPT":
-        return "route_prompt";
-      default:
-        return "route_logic";
+  const isFallback = value.trim().toLowerCase() === "true";
+
+  // Store previous expression when switching to fallback
+  const [previousExpression, setPreviousExpression] = useState("");
+
+  const handleFallbackToggle = (checked: boolean) => {
+    if (checked) {
+      // Save current expression before switching to fallback
+      if (!isFallback && value.trim()) {
+        setPreviousExpression(value);
+      }
+      onChange("true");
+    } else {
+      // Restore previous expression
+      onChange(previousExpression);
+    }
+  };
+
+  const handleExpressionChange = (expression: string) => {
+    // Don't allow setting to "true" via expression builder
+    if (expression.trim().toLowerCase() === "true") {
+      onChange("");
+    } else {
+      onChange(expression);
     }
   };
 
   return (
-    <ExpressionInput
-      value={value}
-      onChange={onChange}
-      placeholder={
-        placeholder || "Enter boolean expression (e.g., context.age > 18)"
-      }
-      maxLength={SystemConstraints.MAX_ROUTE_CONDITION_LENGTH}
-      error={error}
-      context={getExpressionContext()}
-      availableVariables={availableVariables}
-      onKeyDown={onKeyDown}
-    />
+    <div className="space-y-3" onKeyDown={onKeyDown}>
+      {/* Fallback toggle */}
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={isFallback}
+          onChange={(e) => handleFallbackToggle(e.target.checked)}
+          disabled={disabled}
+          className="h-4 w-4 rounded border-input"
+        />
+        <span className="text-sm">Always match (fallback)</span>
+      </label>
+
+      {/* Expression builder - hidden when fallback is enabled */}
+      {!isFallback && (
+        <ExpressionBuilder
+          value={value}
+          onChange={handleExpressionChange}
+          context="route_logic"
+          availableVariables={availableVariables}
+          error={error}
+        />
+      )}
+
+      {/* Show error only when not using expression builder (it shows its own) */}
+      {isFallback && error && (
+        <p className="text-sm text-destructive">{error}</p>
+      )}
+    </div>
   );
 }

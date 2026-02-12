@@ -123,7 +123,7 @@ export function RouteEditor({
             </p>
             <p className="text-xs font-medium mt-2">For conditional routing:</p>
             <p className="mt-1 text-xs">
-              If you need to route based on the user's input (e.g., "if they said yes, go here; if no, go there"), place a Logic Expression node after this {nodeType === "PROMPT" ? "prompt" : "message"}.
+              If you need to route based on the user's input, place a Logic node after this {nodeType === "PROMPT" ? "prompt" : "message"}.
             </p>
           </>
         );
@@ -132,20 +132,13 @@ export function RouteEditor({
           <>
             <p className="text-xs font-medium mt-2">How it works:</p>
             <p className="mt-1 text-xs mb-2">
-              Write expressions that evaluate to true or false. The bot checks each route from top to bottom and goes to the first one where the expression is true.
+              Build conditions using the dropdowns. The bot checks each route and follows the first one where the condition is true.
             </p>
             <p className="text-xs font-medium mt-2">Example:</p>
             <ul className="list-none space-y-1 mt-1 text-xs">
-              <li>• Route: context.is_member == true → Go to "Member Benefits"</li>
-              <li>• Route: context.is_member == false → Go to "Sign Up"</li>
+              <li>• If "is_member" equals "true" → Go to "Member Benefits"</li>
+              <li>• Always match (fallback) → Go to "Sign Up"</li>
             </ul>
-            <p className="text-xs font-medium mt-2">What you can use:</p>
-            <p className="mt-1 text-xs">
-              • <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">context.variable_name</code> - Any variable from your flow
-            </p>
-            <p className="mt-2 text-xs">
-              All answers you collected from users are available as variables.
-            </p>
           </>
         );
       default:
