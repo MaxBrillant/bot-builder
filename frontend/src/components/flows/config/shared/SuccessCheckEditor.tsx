@@ -27,7 +27,8 @@ export function SuccessCheckEditor({
       delete newValue.status_codes;
 
       // Check if there are any meaningful values left
-      const hasExpression = newValue.expression && newValue.expression.trim() !== "";
+      const hasExpression =
+        newValue.expression && newValue.expression.trim() !== "";
       if (!hasExpression) {
         onChange(undefined);
       } else {
@@ -54,7 +55,8 @@ export function SuccessCheckEditor({
       delete newValue.expression;
 
       // Check if there are any meaningful values left
-      const hasStatusCodes = newValue.status_codes && newValue.status_codes.length > 0;
+      const hasStatusCodes =
+        newValue.status_codes && newValue.status_codes.length > 0;
       if (!hasStatusCodes) {
         onChange(undefined);
       } else {
@@ -96,15 +98,18 @@ export function SuccessCheckEditor({
           availableVariables={availableVariables}
         />
         <FieldHelp
-          text="Optional: Double-check that the API call actually worked"
+          text="Double-check that the API call actually worked"
           tooltip={
             <>
               <p className="mb-2">
-                Sometimes an API says "OK" (status 200) but the response actually contains an error. This lets you check the response content to make sure it really worked.
+                Sometimes an API says "OK" (status 200) but the response
+                actually contains an error. This lets you check the response
+                content to make sure it really worked.
               </p>
               <p className="text-xs font-medium mt-2">When to use this:</p>
               <p className="mt-1 text-xs">
-                • The API returns 200 but might have an error message inside the response
+                • The API returns 200 but might have an error message inside the
+                response
               </p>
               <p className="mt-1 text-xs">
                 • You want to verify the response contains the data you expect
@@ -112,18 +117,28 @@ export function SuccessCheckEditor({
               <p className="text-xs font-medium mt-2">Examples:</p>
               <ul className="list-none space-y-1 mt-1 text-xs">
                 <li>
-                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">response.body.status == "success"</code>
+                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
+                    response.body.status == "success"
+                  </code>
                 </li>
                 <li>
-                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">response.body.error == null</code>
+                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
+                    response.body.error == null
+                  </code>
                 </li>
                 <li>
-                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">response.body.data.length {">"} 0</code> (has at least one item)
+                  <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">
+                    response.body.data.length {">"} 0
+                  </code>{" "}
+                  (has at least one item)
                 </li>
               </ul>
-              <p className="text-xs font-medium mt-2">How it works with status codes:</p>
+              <p className="text-xs font-medium mt-2">
+                How it works with status codes:
+              </p>
               <p className="mt-1 text-xs">
-                If you set both status codes and an expression, BOTH must pass for the API call to count as successful.
+                If you set both status codes and an expression, BOTH must pass
+                for the API call to count as successful.
               </p>
             </>
           }
