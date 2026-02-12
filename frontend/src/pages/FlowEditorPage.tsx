@@ -640,6 +640,20 @@ function FlowEditorContent() {
 
             updateNode(sourceNodeId, { routes: updatedRoutes });
           },
+          onDeleteRoute: () => {
+            // Use ref to get fresh state (avoid stale closure)
+            const currentFlow = activeFlowRef.current;
+            if (!currentFlow) return;
+
+            const node = currentFlow.nodes[sourceNodeId];
+            if (!node?.routes || routeIndex >= node.routes.length) return;
+
+            // Filter out the route at this index
+            const updatedRoutes = node.routes.filter((_, i) => i !== routeIndex);
+
+            updateNode(sourceNodeId, { routes: updatedRoutes });
+            toast.success("Route deleted");
+          },
         },
       };
     });

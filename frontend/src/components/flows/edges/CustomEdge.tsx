@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath } from 'reactflow';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import NodeTypeSelector from '../NodeTypeSelector';
 import { ConditionSelector } from '../config/shared/ConditionSelector';
@@ -80,6 +80,7 @@ interface CustomEdgeProps {
     sourceNode?: FlowNode;
     onInsertBetween?: (nodeType: NodeType, condition?: string) => void;
     onUpdateCondition?: (newCondition: string) => void;
+    onDeleteRoute?: () => void;
     availableVariables?: string[];
   };
 }
@@ -256,6 +257,22 @@ export default function CustomEdge({
                         <Plus className="w-4 h-4 flex-shrink-0" />
                       </span>
                     </NodeTypeSelector>
+                    {/* Delete button - only show if handler exists */}
+                    {data?.onDeleteRoute && (
+                      <>
+                        <span className="w-px self-stretch bg-border" />
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            data.onDeleteRoute?.();
+                          }}
+                          title="Delete route"
+                          className="flex items-center self-stretch hover:bg-destructive/10 hover:text-destructive cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4 flex-shrink-0" />
+                        </span>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -268,7 +285,9 @@ export default function CustomEdge({
                 transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
                 pointerEvents: 'all',
               }}
-              className="nodrag nopan flex items-center justify-center"
+              className="nodrag nopan flex items-center gap-1"
+              onMouseEnter={() => setIsHovered(true)}
+              onMouseLeave={() => setIsHovered(false)}
             >
               <NodeTypeSelector
                 open={selectorOpen}
@@ -292,6 +311,21 @@ export default function CustomEdge({
                   <Plus className="w-3.5 h-3.5" />
                 </Button>
               </NodeTypeSelector>
+              {/* Delete button - show on hover */}
+              {isHovered && data?.onDeleteRoute && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    data.onDeleteRoute?.();
+                  }}
+                  className="w-6 h-6 rounded-full bg-background border-2 border-destructive text-destructive shadow-md hover:shadow-lg hover:scale-110 transition-all flex items-center justify-center"
+                  title="Delete route"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              )}
             </div>
           )}
         </EdgeLabelRenderer>
