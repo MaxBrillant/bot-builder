@@ -119,7 +119,7 @@ export const DEFAULT_NODE_CONFIGS: Record<NodeType, any> = {
     type: "API_ACTION",
     request: {
       method: "GET",
-      url: "https://api.example.com/endpoint",
+      url: "",
     },
   },
   LOGIC_EXPRESSION: {
