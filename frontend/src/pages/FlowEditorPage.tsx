@@ -15,8 +15,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ConditionSelector } from "@/components/flows/config/shared/ConditionSelector";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { getLastOpenedFlowId, setLastOpenedFlowId } from "@/lib/flowStorage";
 import { FlowEditorProvider, useFlowEditor } from "@/contexts/FlowEditorContext";
 import { ReactFlowProvider, useReactFlow, applyNodeChanges } from "reactflow";
 import "reactflow/dist/style.css";
@@ -132,8 +133,9 @@ function migrateFlowNodeNames(flow: Flow): Flow {
 }
 
 function FlowEditorContent() {
-  const { botId } = useParams();
+  const { botId, flowId } = useParams<{ botId: string; flowId?: string }>();
   useAuth(); // For auth state
+  const navigate = useNavigate();
   const reactFlowInstance = useReactFlow();
   const queryClient = useQueryClient();
 
@@ -382,6 +384,54 @@ function FlowEditorContent() {
       setFlows(migratedFlows);
     }
   }, [rawFlows, isFlowsLoading, setFlows]);
+
+  // Sync activeFlowIndex with URL flowId (URL is source of truth)
+  useEffect(() => {
+    if (isFlowsLoading || !botId || flows.length === 0) return;
+
+    // Case 1: No flowId in URL - redirect to appropriate flow
+    if (!flowId) {
+      const lastFlowId = getLastOpenedFlowId(botId);
+
+      // Try last opened flow first
+      if (lastFlowId) {
+        const flowIndex = flows.findIndex(f => f.flow_id === lastFlowId);
+        if (flowIndex !== -1) {
+          navigate(`/bots/${botId}/flows/${lastFlowId}`, { replace: true });
+          return;
+        }
+      }
+
+      // Fallback to first flow
+      const firstFlow = flows[0];
+      if (firstFlow?.flow_id) {
+        navigate(`/bots/${botId}/flows/${firstFlow.flow_id}`, { replace: true });
+      }
+      return;
+    }
+
+    // Case 2: flowId in URL - find and set corresponding index
+    const targetIndex = flows.findIndex(f => f.flow_id === flowId);
+
+    if (targetIndex === -1) {
+      // Invalid flowId - redirect to first flow
+      toast.error("Flow not found, redirected to first available flow");
+      const firstFlow = flows[0];
+      if (firstFlow?.flow_id) {
+        navigate(`/bots/${botId}/flows/${firstFlow.flow_id}`, { replace: true });
+      }
+      return;
+    }
+
+    // Valid flowId - update activeFlowIndex and localStorage
+    const currentFlow = flows[activeFlowIndex];
+    const isAlreadyOnCorrectFlow = currentFlow?.flow_id === flowId;
+
+    if (!isAlreadyOnCorrectFlow) {
+      setActiveFlowIndex(targetIndex);
+      setLastOpenedFlowId(botId, flowId);
+    }
+  }, [flowId, flows, botId, isFlowsLoading, navigate, setActiveFlowIndex]);
 
   // Warn user before closing/refreshing tab with unsaved changes
   useEffect(() => {
@@ -1524,41 +1574,50 @@ function FlowEditorContent() {
     updateNodePositionRef.current(currentSelectedNodeId, newPosition);
   }, []);
 
+  // Flow switching handler - uses navigation to update URL
+  const handleFlowSwitch = useCallback((index: number) => {
+    const targetFlow = flows[index];
+    if (targetFlow?.flow_id && botId) {
+      navigate(`/bots/${botId}/flows/${targetFlow.flow_id}`, { replace: true });
+      // URL change triggers useEffect which updates activeFlowIndex and localStorage
+    }
+  }, [flows, botId, navigate]);
+
   // Flow navigation handlers
   const handleNextFlow = useCallback(() => {
     if (activeFlowIndex < flows.length - 1) {
       const nextIndex = activeFlowIndex + 1;
       if (hasUnsavedChangesRef.current) {
-        pendingActionRef.current = () => setActiveFlowIndex(nextIndex);
+        pendingActionRef.current = () => handleFlowSwitch(nextIndex);
         dialogStateRef2.current.openDialog('unsavedWarning');
       } else {
-        setActiveFlowIndex(nextIndex);
+        handleFlowSwitch(nextIndex);
       }
     }
-  }, [activeFlowIndex, flows.length, setActiveFlowIndex]);
+  }, [activeFlowIndex, flows.length, handleFlowSwitch]);
 
   const handlePreviousFlow = useCallback(() => {
     if (activeFlowIndex > 0) {
       const prevIndex = activeFlowIndex - 1;
       if (hasUnsavedChangesRef.current) {
-        pendingActionRef.current = () => setActiveFlowIndex(prevIndex);
+        pendingActionRef.current = () => handleFlowSwitch(prevIndex);
         dialogStateRef2.current.openDialog('unsavedWarning');
       } else {
-        setActiveFlowIndex(prevIndex);
+        handleFlowSwitch(prevIndex);
       }
     }
-  }, [activeFlowIndex, setActiveFlowIndex]);
+  }, [activeFlowIndex, handleFlowSwitch]);
 
   const handleJumpToFlow = useCallback((index: number) => {
     if (index >= 0 && index < flows.length) {
       if (hasUnsavedChangesRef.current) {
-        pendingActionRef.current = () => setActiveFlowIndex(index);
+        pendingActionRef.current = () => handleFlowSwitch(index);
         dialogStateRef2.current.openDialog('unsavedWarning');
       } else {
-        setActiveFlowIndex(index);
+        handleFlowSwitch(index);
       }
     }
-  }, [flows.length, setActiveFlowIndex]);
+  }, [flows.length, handleFlowSwitch]);
 
   // Test chat handler
   const handleTestChat = useCallback(async () => {
@@ -2046,7 +2105,7 @@ function FlowEditorContent() {
         <FlowSidebar
           flows={flows}
           activeIndex={activeFlowIndex}
-          onSelectFlow={setActiveFlowIndex}
+          onSelectFlow={handleFlowSwitch}
           onCreateFlow={() => dialogState.openDialog("createFlow")}
           onDeleteFlow={handleDeleteFlow}
           botId={botId}
@@ -2181,7 +2240,10 @@ function FlowEditorContent() {
         onOpenChange={dialogState.setCreateFlowDialogOpen}
         onSuccess={async (newFlow) => {
           setFlows([...flows, newFlow]);
-          setActiveFlowIndex(flows.length);
+          // Navigate to the newly created flow
+          if (newFlow.flow_id && botId) {
+            navigate(`/bots/${botId}/flows/${newFlow.flow_id}`, { replace: true });
+          }
         }}
         botId={botId!}
         existingFlowNames={flows.map((f) => f.name)}

@@ -114,7 +114,15 @@ function App() {
                 }
               />
               <Route
-                path="/bots/:botId/:flowId?"
+                path="/bots/:botId/flows/:flowId"
+                element={
+                  <ProtectedRoute>
+                    <FlowEditorPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/bots/:botId"
                 element={
                   <ProtectedRoute>
                     <FlowEditorPage />

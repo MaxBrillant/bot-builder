@@ -15,6 +15,7 @@ import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { activateBot, deactivateBot } from "@/lib/api";
+import { getLastOpenedFlowId } from "@/lib/flowStorage";
 import WhatsAppStatusBadge from "./WhatsAppStatusBadge";
 import type { Bot } from "@/lib/types";
 
@@ -32,7 +33,17 @@ export default function BotCard({ bot, onEdit, onDelete }: BotCardProps) {
   const handleCardClick = () => {
     // Don't navigate if clicking on the dropdown menu
     if (isMenuOpen) return;
-    navigate(`/bots/${bot.bot_id}`);
+
+    // Check if there's a last opened flow in localStorage
+    const lastFlowId = getLastOpenedFlowId(bot.bot_id);
+
+    if (lastFlowId) {
+      // Navigate to last opened flow
+      navigate(`/bots/${bot.bot_id}/flows/${lastFlowId}`);
+    } else {
+      // Navigate to bot page (will redirect to first flow)
+      navigate(`/bots/${bot.bot_id}`);
+    }
   };
 
   const handleMenuAction = (action: () => void) => {
@@ -104,9 +115,7 @@ export default function BotCard({ bot, onEdit, onDelete }: BotCardProps) {
                 Edit Bot
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() =>
-                  handleMenuAction(() => navigate(`/bots/${bot.bot_id}`))
-                }
+                onClick={() => handleMenuAction(handleCardClick)}
               >
                 <ArrowRight className="mr-2 h-4 w-4" />
                 View Flows
