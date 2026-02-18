@@ -67,12 +67,12 @@ export function ConditionRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="==">equals (=)</SelectItem>
-            <SelectItem value="!=">not equal (≠)</SelectItem>
-            <SelectItem value=">">more than (&gt;)</SelectItem>
-            <SelectItem value="<">less than (&lt;)</SelectItem>
-            <SelectItem value=">=">at least (≥)</SelectItem>
-            <SelectItem value="<=">at most (≤)</SelectItem>
+            <SelectItem value="==">is equal to (=)</SelectItem>
+            <SelectItem value="!=">is not equal to (≠)</SelectItem>
+            <SelectItem value=">">is more than (&gt;)</SelectItem>
+            <SelectItem value="<">is less than (&lt;)</SelectItem>
+            <SelectItem value=">=">is at least (≥)</SelectItem>
+            <SelectItem value="<=">is at most (≤)</SelectItem>
           </SelectContent>
         </Select>
       )}

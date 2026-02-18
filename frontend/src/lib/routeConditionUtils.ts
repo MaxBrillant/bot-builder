@@ -225,7 +225,31 @@ export function getConditionLabel(
 }
 
 /**
+ * Human-readable labels for comparison operators
+ * Must match labels in ConditionRow.tsx for consistency
+ */
+const OPERATOR_LABELS: Record<string, string> = {
+  "==": "is equal to",
+  "!=": "is not equal to",
+  ">": "is more than",
+  "<": "is less than",
+  ">=": "is at least",
+  "<=": "is at most",
+};
+
+/**
+ * Human-readable labels for boolean methods
+ * Must match labels in expressionBuilderTypes.ts CONTEXT_CONFIGS for consistency
+ */
+const BOOLEAN_METHOD_LABELS: Record<string, string> = {
+  "input.isAlpha()": "Input contains only letters",
+  "input.isNumeric()": "Input is a number",
+  "input.isDigit()": "Input contains only digits",
+};
+
+/**
  * Format a logic expression condition for display
+ * Converts expressions like "context.age > 18" to "age greater than 18"
  */
 function formatLogicCondition(condition: string): string {
   const trimmed = condition.trim();
@@ -234,10 +258,113 @@ function formatLogicCondition(condition: string): string {
     return "";
   }
 
-  return trimmed
-    .replace(/context\./g, "")
-    .replace(/\s*&&\s*/g, " AND ")
-    .replace(/\s*\|\|\s*/g, " OR ");
+  // Split by logical operators while preserving them
+  const parts: string[] = [];
+  let current = "";
+  let i = 0;
+
+  while (i < trimmed.length) {
+    if (trimmed[i] === "&" && trimmed[i + 1] === "&") {
+      if (current.trim()) {
+        parts.push(formatSingleCondition(current.trim()));
+      }
+      parts.push("AND");
+      current = "";
+      i += 2;
+      continue;
+    }
+    if (trimmed[i] === "|" && trimmed[i + 1] === "|") {
+      if (current.trim()) {
+        parts.push(formatSingleCondition(current.trim()));
+      }
+      parts.push("OR");
+      current = "";
+      i += 2;
+      continue;
+    }
+    current += trimmed[i];
+    i++;
+  }
+
+  if (current.trim()) {
+    parts.push(formatSingleCondition(current.trim()));
+  }
+
+  return parts.join(" ");
+}
+
+/**
+ * Format a single condition (no logical operators)
+ */
+function formatSingleCondition(text: string): string {
+  // Check for boolean methods
+  if (BOOLEAN_METHOD_LABELS[text]) {
+    return BOOLEAN_METHOD_LABELS[text];
+  }
+
+  // Parse comparison operators (check longer ones first)
+  const operators = [">=", "<=", "==", "!=", ">", "<"];
+  for (const op of operators) {
+    const index = text.indexOf(op);
+    if (index !== -1) {
+      const left = text.substring(0, index).trim();
+      const right = text.substring(index + op.length).trim();
+
+      const leftFormatted = formatOperand(left);
+      const rightFormatted = formatValue(right);
+      const opLabel = OPERATOR_LABELS[op] || op;
+
+      return `${leftFormatted} ${opLabel} ${rightFormatted}`;
+    }
+  }
+
+  // No operator - treat as variable name
+  return formatOperand(text);
+}
+
+/**
+ * Human-readable labels for known properties
+ * Must match labels in expressionBuilderTypes.ts CONTEXT_CONFIGS for consistency
+ */
+const PROPERTY_LABELS: Record<string, string> = {
+  "input.length": "Input length",
+  "response.status": "Response status code",
+  "response.body.status": "Response body status",
+  "response.body.data": "Response body data",
+};
+
+/**
+ * Format a left operand (variable or property)
+ */
+function formatOperand(text: string): string {
+  // Check for known properties first
+  if (PROPERTY_LABELS[text]) {
+    return PROPERTY_LABELS[text];
+  }
+
+  // Strip context. prefix for variables
+  if (text.startsWith("context.")) {
+    return text.replace(/^context\./, "");
+  }
+
+  // For other input/response properties, keep as-is but clean up
+  return text;
+}
+
+/**
+ * Format a right-side value
+ */
+function formatValue(text: string): string {
+  // Remove quotes from strings
+  if ((text.startsWith('"') && text.endsWith('"')) ||
+      (text.startsWith("'") && text.endsWith("'"))) {
+    return text.slice(1, -1);
+  }
+  // Format context variables
+  if (text.startsWith("context.")) {
+    return text.replace(/^context\./, "");
+  }
+  return text;
 }
 
 /**
