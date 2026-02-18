@@ -216,6 +216,8 @@ function FlowEditorContent() {
     anchorPosition: { x: number; y: number }; // Screen coordinates for popover positioning
   } | null>(null);
   const [pendingCondition, setPendingCondition] = useState("");
+  const [simulatorKey, setSimulatorKey] = useState(0);
+  const [simulatorInitialMessage, setSimulatorInitialMessage] = useState<string | null>(null);
 
   // React Query hooks for data fetching
   const { data: bot, isLoading: isBotLoading, isError: isBotError } = useBotQuery(botId);
@@ -580,6 +582,66 @@ function FlowEditorContent() {
     [activeFlow, createRouteToExistingNode, reactFlowInstance]
   );
 
+  // Open chat simulator (toolbar button)
+  const handleTestChat = useCallback(() => {
+    if (!bot || !activeFlow) {
+      toast.error("No active flow selected");
+      return;
+    }
+
+    if (!bot.webhook_secret) {
+      toast.info("Generating webhook secret...");
+      regenerateSecretMutation.mutate(bot.bot_id, {
+        onSuccess: () => {
+          setTimeout(() => {
+            setSimulatorInitialMessage(null);
+            dialogState.openDialog("chatSimulator");
+          }, 500);
+        },
+      });
+    } else {
+      setSimulatorInitialMessage(null);
+      dialogState.openDialog("chatSimulator");
+    }
+  }, [bot, activeFlow, regenerateSecretMutation, dialogState]);
+
+  // Test flow from start node - opens fresh simulator and auto-sends trigger
+  const handleTestFlowFromNode = useCallback(() => {
+    if (!bot || !activeFlow) {
+      toast.error("No active flow selected");
+      return;
+    }
+
+    const firstTrigger = activeFlow.trigger_keywords?.[0];
+    if (!firstTrigger) {
+      toast.error("No trigger keyword configured for this flow");
+      return;
+    }
+
+    if (!bot.webhook_secret) {
+      toast.info("Generating webhook secret...");
+      regenerateSecretMutation.mutate(bot.bot_id, {
+        onSuccess: () => {
+          setTimeout(() => {
+            setSimulatorKey(k => k + 1); // Force fresh mount
+            setSimulatorInitialMessage(firstTrigger);
+            dialogState.openDialog("chatSimulator");
+          }, 500);
+        },
+      });
+    } else {
+      setSimulatorKey(k => k + 1); // Force fresh mount
+      setSimulatorInitialMessage(firstTrigger);
+      dialogState.openDialog("chatSimulator");
+    }
+  }, [bot, activeFlow, regenerateSecretMutation, dialogState]);
+
+  // Ref to avoid circular dependency in useMemo
+  const handleTestFlowFromNodeRef = useRef(handleTestFlowFromNode);
+  useEffect(() => {
+    handleTestFlowFromNodeRef.current = handleTestFlowFromNode;
+  }, [handleTestFlowFromNode]);
+
   // Convert flow JSON to React Flow format (only depends on flow data, not selection)
   const { nodes: baseNodes, edges } = useMemo(() => {
     if (!activeFlow) {
@@ -740,6 +802,8 @@ function FlowEditorContent() {
         flowNode: flowNode,
         allNodes: activeFlow.nodes,
         outputHandleIds: outputHandlesByNode.get(node.id),
+        isStartNode: node.id === activeFlow.start_node_id,
+        onTestFlow: () => handleTestFlowFromNodeRef.current?.(),
       };
 
       // Multi-route parent nodes (nodes with 2+ routes) cannot move at all
@@ -1619,26 +1683,6 @@ function FlowEditorContent() {
     }
   }, [flows.length, handleFlowSwitch]);
 
-  // Test chat handler
-  const handleTestChat = useCallback(async () => {
-    if (!bot || !activeFlow) {
-      toast.error("No active flow selected");
-      return;
-    }
-
-    // Check if webhook secret exists
-    if (!bot.webhook_secret) {
-      toast.info("Generating webhook secret...");
-      regenerateSecretMutation.mutate(bot.bot_id, {
-        onSuccess: () => {
-          setTimeout(() => dialogState.openDialog("chatSimulator"), 500);
-        },
-      });
-    } else {
-      dialogState.openDialog("chatSimulator");
-    }
-  }, [bot, activeFlow, regenerateSecretMutation, dialogState]);
-
   // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
@@ -2267,11 +2311,13 @@ function FlowEditorContent() {
       />
 
       <ChatSimulator
+        key={simulatorKey}
         open={dialogState.chatSimulatorOpen}
         onOpenChange={dialogState.setChatSimulatorOpen}
         bot={bot}
         flow={activeFlow}
         flows={flows}
+        initialMessage={simulatorInitialMessage}
       />
 
       {/* Unsaved Changes Warning */}

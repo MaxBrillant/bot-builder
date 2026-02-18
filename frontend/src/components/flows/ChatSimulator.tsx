@@ -30,7 +30,8 @@ interface ChatSimulatorProps {
   bot?: any;
   flow?: any;
   flows?: any[];
-  flowUpdateTimestamp?: number; // Track when flow was last updated
+  flowUpdateTimestamp?: number;
+  initialMessage?: string | null; // Auto-send this message on open
 }
 
 export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
@@ -44,6 +45,7 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
   flow,
   flows = [],
   flowUpdateTimestamp,
+  initialMessage,
 }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -52,18 +54,14 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
   const [isTriggersOpen, setIsTriggersOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
+  const initialMessageSent = useRef(false);
 
-  // Derive actual values from either direct props or bot/flow objects
   const botId = propBotId || bot?.bot_id;
   const flowId = propFlowId || flow?.flow_id;
   const webhookSecret = propWebhookSecret || bot?.webhook_secret;
   const onClose = propOnClose || (() => onOpenChange?.(false));
-
-  // Generate unique channel_user_id for this test session with timestamp
-  // This ensures each restart creates a fresh session with latest flow changes
   const channelUserId = `test:${user?.user_id}at${sessionTimestamp}:${botId}:${flowId}`;
 
-  // Auto-scroll to latest message
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -117,13 +115,11 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
   }, [open, onOpenChange]);
 
   const handleSendMessage = async (messageText: string) => {
-    // Check if webhook secret exists
     if (!webhookSecret) {
       toast.error("Bot has no webhook secret configured");
       return;
     }
 
-    // Add user message to chat
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       text: messageText,
@@ -131,11 +127,9 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, userMessage]);
-
     setIsLoading(true);
 
     try {
-      // Send message to bot webhook
       const response = await sendTestMessage(
         botId,
         webhookSecret,
@@ -143,7 +137,6 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
         messageText
       );
 
-      // Check for error response from webhook
       if (response.data.status === "error" && response.data.error) {
         const errorMessage: Message = {
           id: `bot-${Date.now()}`,
@@ -153,7 +146,6 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
         };
         setMessages((prev) => [...prev, errorMessage]);
       } else {
-        // Add bot responses to chat (each message as separate bubble)
         const botMessages = response.data.messages || [];
         if (botMessages.length === 0) {
           const noResponseMessage: Message = {
@@ -178,7 +170,6 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
       const errorMessage = getErrorMessage(error) || "Failed to send message to bot";
       toast.error(errorMessage);
 
-      // Add error message to chat
       const errorMsg: Message = {
         id: `error-${Date.now()}`,
         text: `Error: ${errorMessage}`,
@@ -191,24 +182,36 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
     }
   };
 
+  // Auto-send initial message on mount (when key changes, component remounts)
+  useEffect(() => {
+    if (open && initialMessage && !initialMessageSent.current && webhookSecret) {
+      initialMessageSent.current = true;
+      handleSendMessage(initialMessage);
+    }
+  }, [open, initialMessage, webhookSecret]);
+
   const handleRestart = () => {
     setMessages([]);
-    setSessionTimestamp(Date.now()); // Generate new session ID for fresh session
+    setSessionTimestamp(Date.now());
     toast.success("Conversation restarted");
-
-    // Focus input after restart
     setTimeout(() => {
       chatInputRef.current?.focus();
     }, 100);
   };
 
-  // Don't render if not open
   if (!open) {
     return null;
   }
 
   return (
-    <div className="fixed right-0 top-0 h-screen w-[400px] z-40 border-l border-border bg-background shadow-xl">
+    <>
+      {/* Invisible overlay to capture clicks outside */}
+      <div
+        className="fixed inset-0 z-30"
+        onClick={() => onOpenChange?.(false)}
+        aria-hidden="true"
+      />
+      <div className="fixed right-0 top-0 h-screen w-[400px] z-40 border-l border-border bg-background shadow-xl">
       <Card className="flex flex-col h-full w-full bg-background border-0 rounded-none shadow-none">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <CardTitle>Chat Simulator</CardTitle>
@@ -232,7 +235,6 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
           </div>
         </CardHeader>
 
-        {/* Available Trigger Keywords */}
         <div className="px-6 pb-3">
           <Collapsible open={isTriggersOpen} onOpenChange={setIsTriggersOpen}>
             <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors w-full">
@@ -282,9 +284,7 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
           </Collapsible>
         </div>
 
-        {/* Edge-to-edge chat messages - intentional p-0 for full-width UX */}
         <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
-          {/* Messages Area */}
           <div className="flex-1 overflow-y-auto px-4 py-2">
             {messages.length === 0 && (
               <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
@@ -311,10 +311,10 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input Area */}
           <ChatInput ref={chatInputRef} onSend={handleSendMessage} disabled={isLoading} />
         </CardContent>
       </Card>
     </div>
+    </>
   );
 };

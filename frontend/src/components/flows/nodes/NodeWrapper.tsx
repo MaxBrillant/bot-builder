@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, Play } from "lucide-react";
 import type { NodeType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -21,6 +21,8 @@ interface NodeWrapperProps {
     nodeType?: NodeType;
     onDelete?: () => void;
     name?: string;
+    isStartNode?: boolean;
+    onTestFlow?: () => void;
   };
 }
 
@@ -42,6 +44,14 @@ export default function NodeWrapper({
     data?.onDelete?.();
   };
 
+  const isStartNode = data?.isStartNode;
+  const onTestFlow = data?.onTestFlow;
+
+  const handleTestClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onTestFlow?.();
+  };
+
   const nodeContent = (
     <div
       className={cn(
@@ -53,6 +63,16 @@ export default function NodeWrapper({
         onNodeClick?.();
       }}
     >
+      {isStartNode && onTestFlow && (
+        <button
+          onClick={handleTestClick}
+          className="absolute -top-8 left-0 z-10 flex items-center gap-1 px-2 py-1 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors shadow-md"
+          title="Test this flow"
+        >
+          <Play className="w-3 h-3" />
+          Test
+        </button>
+      )}
       {children}
     </div>
   );
