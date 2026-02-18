@@ -427,7 +427,7 @@ export function MenuConfigForm({
                 )}
               />
               <span className="text-sm font-semibold text-foreground">
-                Extract Data
+                Extract Data to Variable
               </span>
               {config.output_mapping && config.output_mapping.length > 0 && (
                 <Badge variant="secondary" className="text-xs">

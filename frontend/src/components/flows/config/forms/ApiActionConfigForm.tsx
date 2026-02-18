@@ -417,7 +417,7 @@ export function ApiActionConfigForm({
                 isResponseMappingOpen && "rotate-90"
               )}
             />
-            <span className="text-sm font-semibold text-foreground">Extract Data</span>
+            <span className="text-sm font-semibold text-foreground">Extract Data to Variable</span>
             {config.response_map && config.response_map.length > 0 && (
               <Badge variant="secondary" className="text-xs">
                 {config.response_map.length}
