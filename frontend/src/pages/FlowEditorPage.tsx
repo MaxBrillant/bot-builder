@@ -1380,6 +1380,13 @@ function FlowEditorContent() {
     const activeElement = document.activeElement;
     if (!activeElement || activeElement === document.body) return false;
 
+    // Allow Enter when focused on React Flow nodes (after clicking to select)
+    // React Flow sets role="button" on nodes, but we still want Enter to focus the name input
+    if (activeElement.classList.contains('react-flow__node') ||
+        activeElement.closest('.react-flow__node')) {
+      return false;
+    }
+
     const tagName = activeElement.tagName;
     const role = activeElement.getAttribute('role');
 

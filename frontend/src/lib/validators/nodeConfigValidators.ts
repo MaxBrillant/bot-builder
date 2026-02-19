@@ -1055,7 +1055,14 @@ export function validateRoutes(
 
   // Max routes based on node type and configuration
   const maxRoutes = getMaxRoutes(nodeType, nodeConfig);
-  if (routes && routes.length > maxRoutes) {
+
+  // For MENU and API_ACTION, exclude auto-generated fallback "true" routes from the count
+  // These are added automatically to route to END and shouldn't count against the max
+  const routesToCount = (nodeType === "MENU" || nodeType === "API_ACTION")
+    ? routes?.filter(r => r.condition.trim().toLowerCase() !== "true") || []
+    : routes || [];
+
+  if (routesToCount.length > maxRoutes) {
     errors.push({
       field: "routes",
       message: `Maximum ${maxRoutes} routes allowed for this node type`,

@@ -196,6 +196,13 @@ export default function NodeTypeSelector({
         sideOffset={8}
         collisionPadding={16}
         avoidCollisions={true}
+        onKeyDown={(e) => {
+          // Stop propagation to prevent global keyboard handler from intercepting
+          // Allow Escape to bubble so the popover can close
+          if (e.key !== 'Escape') {
+            e.stopPropagation();
+          }
+        }}
       >
         <div className="space-y-2">
           <div className="px-2 py-2 text-xs font-semibold text-muted-foreground uppercase">
