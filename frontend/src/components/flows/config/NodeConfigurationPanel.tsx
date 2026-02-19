@@ -50,8 +50,8 @@ interface NodeConfigurationPanelProps {
   nodeName: string;
   initialConfig: NodeConfig;
   initialRoutes?: Route[];
-  // onChange is called immediately when any field changes (for local state updates)
-  // Validation errors are passed back but changes still applied
+  // onChange is debounced (500ms) to prevent cascade re-renders on every keystroke
+  // Validation errors update immediately in local state, context updates are batched
   onChange?: (data: {
     nodeId: string;
     nodeName: string;
@@ -129,6 +129,9 @@ export const NodeConfigurationPanel = forwardRef<
   // Ref for node name input to enable auto-focus
   const nodeNameInputRef = useRef<HTMLInputElement>(null);
 
+  // Debounce timer for context propagation (prevents re-renders on every keystroke)
+  const debounceTimerRef = useRef<number | null>(null);
+
   // Expose imperative handle for parent to focus name input
   useImperativeHandle(ref, () => ({
     focusNameInput: () => {
@@ -139,8 +142,23 @@ export const NodeConfigurationPanel = forwardRef<
     },
   }));
 
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        window.clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
   // Reset when switching to a different node (nodeId changes)
   useEffect(() => {
+    // Clear any pending debounced changes for the previous node
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+
     setConfig(initialConfig);
     // Pre-sort routes to avoid triggering dirty state from auto-sort
     const sortedRoutes = initialRoutes.length > 1 ? sortRoutes(initialRoutes, nodeType) : initialRoutes;
@@ -177,6 +195,12 @@ export const NodeConfigurationPanel = forwardRef<
   useEffect(() => {
     if (syncKey === undefined || syncKey === 0) return;
 
+    // Clear any pending debounced changes - critical to prevent stale updates after undo/redo
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+
     // Force re-initialization from props
     setConfig(initialConfig);
     // Pre-sort routes to avoid triggering dirty state from auto-sort
@@ -190,33 +214,6 @@ export const NodeConfigurationPanel = forwardRef<
     hasLocalEditsRef.current = false;
     lastSentValuesRef.current = null;
   }, [syncKey]); // Only depend on syncKey, not props (to avoid conflicts)
-
-  // Helper function to normalize config for comparison
-  // This ensures that undefined, null, and empty arrays/objects are treated consistently
-  const normalizeForComparison = (obj: any): any => {
-    if (obj === null || obj === undefined) return undefined;
-
-    if (Array.isArray(obj)) {
-      // Recursively normalize array elements
-      const normalized = obj.map(normalizeForComparison);
-      // Treat empty arrays as undefined for optional fields
-      return normalized.length === 0 ? undefined : normalized;
-    }
-
-    if (typeof obj !== 'object') return obj;
-
-    const cleaned: any = {};
-    for (const key in obj) {
-      const value = obj[key];
-      const normalized = normalizeForComparison(value);
-      // Only include the key if the normalized value is not undefined
-      if (normalized !== undefined) {
-        cleaned[key] = normalized;
-      }
-    }
-    return cleaned;
-  };
-
 
   // Note: Dirty state tracking removed - using unified onChange approach
 
@@ -251,6 +248,7 @@ export const NodeConfigurationPanel = forwardRef<
   }, [onChange]);
 
   // Validate and notify parent of changes whenever local state changes
+  // Context propagation is debounced to prevent re-renders on every keystroke
   useEffect(() => {
     if (!hasLocalEditsRef.current) return; // Skip validation on initial mount
 
@@ -265,7 +263,7 @@ export const NodeConfigurationPanel = forwardRef<
       return; // Already sent these exact values
     }
 
-    // Validate name
+    // Validate name (synchronous - shows errors immediately)
     const trimmedName = editedNodeName.trim();
     let nameErrors: string[] = [];
 
@@ -300,20 +298,29 @@ export const NodeConfigurationPanel = forwardRef<
 
     setErrors(allErrors);
 
-    // Store current values as last sent
-    lastSentValuesRef.current = currentValues;
-
-    // Notify parent of changes (even if invalid)
-    if (onChangeRef.current) {
-      onChangeRef.current({
-        nodeId,
-        nodeName: trimmedName,
-        config,
-        routes,
-        isValid: allErrors.length === 0,
-        errors: allErrors,
-      });
+    // Clear any pending debounce timer
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
     }
+
+    // Debounce context propagation (500ms) to prevent cascade re-renders on every keystroke
+    // Local state and validation errors update immediately, but context updates are batched
+    debounceTimerRef.current = window.setTimeout(() => {
+      // Store current values as last sent
+      lastSentValuesRef.current = currentValues;
+
+      // Notify parent of changes (even if invalid)
+      if (onChangeRef.current) {
+        onChangeRef.current({
+          nodeId,
+          nodeName: trimmedName,
+          config,
+          routes,
+          isValid: allErrors.length === 0,
+          errors: allErrors,
+        });
+      }
+    }, 500);
   }, [
     editedNodeName,
     config,

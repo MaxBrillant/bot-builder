@@ -84,9 +84,27 @@ export function FlowSettingsPanel({
     failRoute: string;
   } | null>(null);
 
+  // Debounce timer for context propagation (prevents re-renders on every keystroke)
+  const debounceTimerRef = useRef<number | null>(null);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        window.clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
   // Initialize form when flow changes
   useEffect(() => {
     if (flow && flow.flow_id !== lastFlowIdRef.current) {
+      // Clear any pending debounced changes for the previous flow
+      if (debounceTimerRef.current) {
+        window.clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+
       lastFlowIdRef.current = flow.flow_id;
 
       const flowName = flow.name || "";
@@ -139,6 +157,12 @@ export function FlowSettingsPanel({
   // Reset local state when syncKey changes (undo/redo happened)
   useEffect(() => {
     if (syncKey === undefined || syncKey === 0) return;
+
+    // Clear any pending debounced changes - critical to prevent stale updates after undo/redo
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
 
     // Force re-initialization from flow props
     if (flow) {
@@ -306,6 +330,7 @@ export function FlowSettingsPanel({
   }, [onChange]);
 
   // Validate and notify parent of changes whenever state changes
+  // Context propagation is debounced to prevent re-renders on every keystroke
   useEffect(() => {
     if (!initialValues) return;
     if (!hasLocalEditsRef.current) return; // Skip notification on initial mount
@@ -324,48 +349,57 @@ export function FlowSettingsPanel({
       return; // Already sent these exact values
     }
 
-    const variablesObj = variables.reduce((acc, variable) => {
-      if (variable.name.trim()) {
-        acc[variable.name.trim()] = {
-          type: variable.type,
-          default: processDefaultValue(variable.type, variable.default),
-        };
-      }
-      return acc;
-    }, {} as Record<string, { type: string; default: any }>);
-
-    const defaultsObj = {
-      retry_logic: {
-        max_attempts: maxAttempts,
-        counter_text: counterText,
-        fail_route: failRoute,
-      },
-    };
-
-    // Check if valid
-    const valid =
-      !nameError &&
-      name.trim() !== "" &&
-      triggerKeywords.length > 0 &&
-      variables.every(v => v.name.trim() && !v.defaultError) &&
-      maxAttempts >= 1 &&
-      maxAttempts <= 10 &&
-      failRoute &&
-      failRoute.trim() !== "";
-
-    // Store current values as last sent
-    lastSentValuesRef.current = currentValues;
-
-    // Notify parent of changes
-    if (onChangeRef.current) {
-      onChangeRef.current({
-        name: name.trim(),
-        triggerKeywords,
-        variables: variablesObj,
-        defaults: defaultsObj,
-        isValid: valid as boolean,
-      });
+    // Clear any pending debounce timer
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
     }
+
+    // Debounce context propagation (500ms) to prevent cascade re-renders on every keystroke
+    // Local state updates immediately, but context updates are batched
+    debounceTimerRef.current = window.setTimeout(() => {
+      const variablesObj = variables.reduce((acc, variable) => {
+        if (variable.name.trim()) {
+          acc[variable.name.trim()] = {
+            type: variable.type,
+            default: processDefaultValue(variable.type, variable.default),
+          };
+        }
+        return acc;
+      }, {} as Record<string, { type: string; default: any }>);
+
+      const defaultsObj = {
+        retry_logic: {
+          max_attempts: maxAttempts,
+          counter_text: counterText,
+          fail_route: failRoute,
+        },
+      };
+
+      // Check if valid
+      const valid =
+        !nameError &&
+        name.trim() !== "" &&
+        triggerKeywords.length > 0 &&
+        variables.every(v => v.name.trim() && !v.defaultError) &&
+        maxAttempts >= 1 &&
+        maxAttempts <= 10 &&
+        failRoute &&
+        failRoute.trim() !== "";
+
+      // Store current values as last sent
+      lastSentValuesRef.current = currentValues;
+
+      // Notify parent of changes
+      if (onChangeRef.current) {
+        onChangeRef.current({
+          name: name.trim(),
+          triggerKeywords,
+          variables: variablesObj,
+          defaults: defaultsObj,
+          isValid: valid as boolean,
+        });
+      }
+    }, 500);
   }, [name, nameError, triggerKeywords, variables, maxAttempts, counterText, failRoute, initialValues]);
 
   // Process default value for submission (convert empty strings to null)
