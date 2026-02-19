@@ -1,5 +1,4 @@
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 import { Popover, PopoverContent, PopoverAnchor } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useState, useRef, useEffect } from "react";
@@ -60,7 +59,7 @@ export function TemplateInput({
   const safeAvailableVariables = [...contextSpecialVariables, ...baseVariables];
   const hasError = !!error;
 
-  const textareaRef = useRef<HTMLTextAreaElement | HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightedItemRef = useRef<HTMLDivElement>(null);
 
   const [autocompleteState, setAutocompleteState] = useState({
@@ -89,28 +88,10 @@ export function TemplateInput({
     : [];
 
   const getCursorCoordinates = (
-    element: HTMLTextAreaElement | HTMLInputElement,
+    element: HTMLTextAreaElement,
     position: number
   ): { top: number; left: number } => {
     const { offsetTop, offsetLeft, scrollLeft } = element;
-
-    if (element instanceof HTMLInputElement) {
-      const style = getComputedStyle(element);
-      const paddingLeft = parseInt(style.paddingLeft);
-      const textBeforeCursor = element.value.substring(0, position);
-
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      if (context) {
-        context.font = `${style.fontSize} ${style.fontFamily}`;
-        const textWidth = context.measureText(textBeforeCursor).width;
-
-        return {
-          top: offsetTop + element.offsetHeight + 2,
-          left: offsetLeft + paddingLeft + textWidth - scrollLeft,
-        };
-      }
-    }
 
     const div = document.createElement("div");
     const style = getComputedStyle(element);
@@ -235,53 +216,24 @@ export function TemplateInput({
     }
   };
 
-  useEffect(() => {
-    if (rows > 1 && textareaRef.current instanceof HTMLTextAreaElement) {
-      const textarea = textareaRef.current;
-      textarea.style.height = 'auto';
-
-      const lineHeight = parseInt(getComputedStyle(textarea).lineHeight);
-      const minHeight = lineHeight * rows;
-      const maxHeight = lineHeight * maxRows;
-      const newHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight));
-
-      textarea.style.height = `${newHeight}px`;
-    }
-  }, [value, rows, maxRows]);
-
   return (
     <Popover open={autocompleteState.isOpen && filteredVariables.length > 0}>
       <div className="relative">
-        {rows === 1 ? (
-          <Input
-            ref={textareaRef as any}
-            value={value}
-            onChange={handleTextChange as any}
-            onKeyDown={handleKeyDown as any}
-            placeholder={placeholder}
-            maxLength={maxLength}
-            className={cn(
-              "font-mono text-sm",
-              hasError && "border-destructive focus-visible:ring-destructive"
-            )}
-            aria-invalid={hasError}
-          />
-        ) : (
-          <Textarea
-            ref={textareaRef as React.RefObject<HTMLTextAreaElement>}
-            value={value}
-            onChange={handleTextChange}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            maxLength={maxLength}
-            style={{ overflow: 'hidden' }}
-            className={cn(
-              "font-mono text-sm resize-none",
-              hasError && "border-destructive focus-visible:ring-destructive"
-            )}
-            aria-invalid={hasError}
-          />
-        )}
+        <AutoResizeTextarea
+          ref={textareaRef}
+          value={value}
+          onChange={handleTextChange}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          maxLength={maxLength}
+          minRows={rows}
+          maxRows={maxRows}
+          className={cn(
+            "font-mono text-sm",
+            hasError && "border-destructive focus-visible:ring-destructive"
+          )}
+          aria-invalid={hasError}
+        />
 
         <PopoverAnchor asChild>
           <span

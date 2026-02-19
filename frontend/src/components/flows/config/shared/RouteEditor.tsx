@@ -1,18 +1,8 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Plus, X } from "lucide-react";
+import { ListEditor, type FieldDefinition, type CustomFieldProps } from "./list-editor";
 import { ConditionSelector } from "./ConditionSelector";
-import { FieldHelp } from "./FieldHelp";
 import { SystemConstraints } from "@/lib/types";
 import type { Route, NodeType, NodeConfig, ValidationError } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 interface RouteEditorProps {
   routes: Route[];
@@ -20,8 +10,28 @@ interface RouteEditorProps {
   onChange: (routes: Route[]) => void;
   errors?: ValidationError[];
   nodeType?: NodeType;
-  nodeConfig?: NodeConfig; // Node configuration for context-aware conditions
+  nodeConfig?: NodeConfig;
   availableVariables?: string[];
+}
+
+function formatCondition(condition: string): string {
+  if (!condition) return "";
+  if (condition === "true" || condition === "default") return "Always";
+  if (condition === "next") return "Next";
+  // For menu options like "option_1", "option_2"
+  if (condition.startsWith("option_")) {
+    const num = condition.replace("option_", "");
+    return `Option ${num}`;
+  }
+  // For API status codes
+  if (condition.startsWith("status_")) {
+    return condition.replace("status_", "Status ");
+  }
+  // Truncate long conditions
+  if (condition.length > 30) {
+    return condition.substring(0, 27) + "...";
+  }
+  return condition;
 }
 
 export function RouteEditor({
@@ -35,83 +45,99 @@ export function RouteEditor({
 }: RouteEditorProps) {
   const [inlineErrors, setInlineErrors] = useState<Record<number, string>>({});
 
-  // Check for duplicate conditions (case-insensitive, whitespace-trimmed)
+  // Check for duplicate conditions
   const checkDuplicateCondition = (
     currentIndex: number,
     condition: string
   ): string | null => {
     const trimmedCondition = condition.trim();
-    if (!trimmedCondition) {
-      return null; // Empty conditions will be caught by required field validation
-    }
+    if (!trimmedCondition) return null;
 
     const normalizedCondition = trimmedCondition.toLowerCase();
-
-    // Check against all other routes
     for (let i = 0; i < routes.length; i++) {
-      if (i === currentIndex) continue; // Skip the current route
-
+      if (i === currentIndex) continue;
       const otherCondition = routes[i].condition?.trim().toLowerCase() || "";
       if (otherCondition === normalizedCondition) {
         return "This condition already exists. Each route must have a unique condition.";
       }
     }
-
     return null;
   };
 
-  const handleAddRoute = () => {
-    if (routes.length >= SystemConstraints.MAX_ROUTES_PER_NODE) return;
+  // Convert ValidationError[] to Record<string, string> for ListEditor
+  const errorsRecord: Record<string, string> = {};
+  errors.forEach((error) => {
+    errorsRecord[error.field] = error.message;
+  });
+  // Merge inline errors
+  Object.entries(inlineErrors).forEach(([index, msg]) => {
+    errorsRecord[`routes[${index}].condition`] = msg;
+  });
 
-    const newRoute: Route = {
-      condition: "",
-      target_node: "",
-    };
-    onChange([...routes, newRoute]);
-  };
-
-  const handleDeleteRoute = (index: number) => {
-    const newRoutes = routes.filter((_, i) => i !== index);
+  const handleChange = (newRoutes: Route[]) => {
+    // Check for duplicate conditions
+    const newInlineErrors: Record<number, string> = {};
+    newRoutes.forEach((route, index) => {
+      const duplicateError = checkDuplicateCondition(index, route.condition);
+      if (duplicateError) {
+        newInlineErrors[index] = duplicateError;
+      }
+    });
+    setInlineErrors(newInlineErrors);
     onChange(newRoutes);
   };
 
-  const handleUpdateRoute = (
-    index: number,
-    field: keyof Route,
-    value: string
-  ) => {
-    // If updating condition, check for duplicates
-    if (field === "condition") {
-      const duplicateError = checkDuplicateCondition(index, value);
-
-      // Update inline errors state
-      setInlineErrors((prev) => {
-        const newErrors = { ...prev };
-        if (duplicateError) {
-          newErrors[index] = duplicateError;
-        } else {
-          delete newErrors[index];
-        }
-        return newErrors;
-      });
-    }
-
-    const newRoutes = [...routes];
-    newRoutes[index] = { ...newRoutes[index], [field]: value };
-    onChange(newRoutes);
-  };
-
-  const getRouteErrors = (index: number): ValidationError[] => {
-    return errors.filter(
-      (error) =>
-        error.field === `routes[${index}].condition` ||
-        error.field === `routes[${index}].target_node`
+  // Dynamic options function that filters out already-used target nodes
+  const getAvailableTargetNodes = (currentRoute: Route, context: Record<string, unknown>) => {
+    const allRoutes = context.routes as Route[];
+    const usedTargets = new Set(
+      allRoutes
+        .filter((r) => r.target_node && r.target_node !== currentRoute.target_node)
+        .map((r) => r.target_node)
     );
+
+    return availableNodes
+      .filter((node) => node.id === currentRoute.target_node || !usedTargets.has(node.id))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((node) => ({ value: node.id, label: node.name }));
   };
 
+  const fields: FieldDefinition<Route>[] = [
+    {
+      key: "condition",
+      label: "Condition",
+      type: "custom",
+      render: ({ value, onChange, error }: CustomFieldProps<Route>) => (
+        <ConditionSelector
+          nodeType={nodeType || "TEXT"}
+          nodeConfig={nodeConfig}
+          value={(value as string) ?? ""}
+          onChange={onChange}
+          error={error}
+          placeholder={
+            nodeType === "MENU"
+              ? "Select menu option"
+              : nodeType === "API_ACTION"
+              ? "Select condition"
+              : nodeType === "LOGIC_EXPRESSION"
+              ? "Enter expression"
+              : "Select condition"
+          }
+          availableVariables={availableVariables}
+        />
+      ),
+    },
+    {
+      key: "target_node",
+      label: "Target Node",
+      type: "select",
+      placeholder: "Select node",
+      options: getAvailableTargetNodes,
+    },
+  ];
 
-  // Get context-specific example based on node type
-  const getExample = () => {
+  // Get context-specific help
+  const getHelpContent = () => {
     switch (nodeType) {
       case "PROMPT":
       case "TEXT":
@@ -155,151 +181,46 @@ export function RouteEditor({
   };
 
   return (
-    <div className="space-y-2">
-      <FieldHelp
-        text="Choose where the conversation goes next"
-        tooltip={
-          <>
-            <p className="mb-2">
-              Routes decide which node comes next in the conversation. Think of it like "if this, then go there". The bot checks each route in order and follows the first one that matches.
-            </p>
-            {getExample()}
-            <p className="text-xs font-medium mt-2">Good to know:</p>
-            <p className="mt-1 text-xs">
-              Routes are automatically ordered so specific choices (like "option 1") are checked before general ones (like "always go here").
-            </p>
-          </>
-        }
-      />
-
-      {routes.length > 0 && (
-        <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start px-1">
-          <div className="text-xs font-medium text-muted-foreground">
-            Condition
-          </div>
-          <div className="text-xs font-medium text-muted-foreground">
-            Target Node
-          </div>
-          <div className="w-9" />
-        </div>
-      )}
-      {routes.map((route, index) => {
-        const routeErrors = getRouteErrors(index);
-        const inlineError = inlineErrors[index];
-        const conditionError =
-          inlineError ||
-          routeErrors.find((e) => e.field === `routes[${index}].condition`)
-            ?.message;
-        const targetError = routeErrors.find(
-          (e) => e.field === `routes[${index}].target_node`
-        )?.message;
-
-        return (
-          <div key={index} className="space-y-1">
-            <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
-              <div className="min-w-0">
-                <ConditionSelector
-                  nodeType={nodeType || "TEXT"}
-                  nodeConfig={nodeConfig}
-                  value={route.condition}
-                  onChange={(value) =>
-                    handleUpdateRoute(index, "condition", value)
-                  }
-                  error={conditionError}
-                  placeholder={
-                    nodeType === "MENU"
-                      ? "Select menu option"
-                      : nodeType === "API_ACTION"
-                      ? "Select condition"
-                      : nodeType === "LOGIC_EXPRESSION"
-                      ? "Enter expression"
-                      : "Select condition"
-                  }
-                  availableVariables={availableVariables}
-                />
-              </div>
-              <div className="min-w-0">
-                <Select
-                  value={route.target_node}
-                  onValueChange={(value) =>
-                    handleUpdateRoute(index, "target_node", value)
-                  }
-                >
-                  <SelectTrigger
-                    className={cn(
-                      "text-sm",
-                      targetError && "border-destructive"
-                    )}
-                  >
-                    <SelectValue placeholder="Select node" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableNodes.length === 0 ? (
-                      <div className="px-2 py-2 text-sm text-muted-foreground">
-                        No nodes available
-                      </div>
-                    ) : (
-                      (() => {
-                        const usedTargets = new Set(
-                          routes
-                            .map((r, i) => (i !== index ? r.target_node : null))
-                            .filter(Boolean)
-                        );
-
-                        const availableTargets = availableNodes.filter(
-                          (node) =>
-                            node.id === route.target_node ||
-                            !usedTargets.has(node.id)
-                        );
-
-                        if (availableTargets.length === 0) {
-                          return (
-                            <div className="px-2 py-2 text-sm text-muted-foreground">
-                              All nodes used
-                            </div>
-                          );
-                        }
-
-                        return availableTargets
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map((node) => (
-                            <SelectItem key={node.id} value={node.id}>
-                              {node.name}
-                            </SelectItem>
-                          ));
-                      })()
-                    )}
-                  </SelectContent>
-                </Select>
-                {targetError && (
-                  <p className="text-sm text-destructive mt-1">{targetError}</p>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => handleDeleteRoute(index)}
-                className="h-9 w-9 p-0 text-muted-foreground hover:text-destructive"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-        );
-      })}
-
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={handleAddRoute}
-        disabled={routes.length >= SystemConstraints.MAX_ROUTES_PER_NODE}
-        className="w-full"
-      >
-        <Plus className="h-4 w-4 mr-2" />
-        Add Route ({routes.length}/{SystemConstraints.MAX_ROUTES_PER_NODE})
-      </Button>
-    </div>
+    <ListEditor
+      items={routes}
+      onChange={handleChange}
+      fields={fields}
+      createEmpty={() => ({ condition: "", target_node: "" })}
+      renderColumns={(route) => {
+        const nodeName = availableNodes.find(
+          (n) => n.id === route.target_node
+        )?.name;
+        return [
+          <span key="condition" className="text-xs">
+            {formatCondition(route.condition) || (
+              <span className="text-muted-foreground">condition</span>
+            )}
+          </span>,
+          <span key="node" className="text-xs">
+            {nodeName || <span className="text-muted-foreground">node</span>}
+          </span>,
+        ];
+      }}
+      listHeaders={["Condition", "Target Node"]}
+      maxItems={SystemConstraints.MAX_ROUTES_PER_NODE}
+      addLabel="Add Route"
+      errorPrefix="routes"
+      errors={errorsRecord}
+      helpText="Choose where the conversation goes next"
+      helpTooltip={
+        <>
+          <p className="mb-2">
+            Routes decide which node comes next in the conversation. Think of it like "if this, then go there". The bot checks each route in order and follows the first one that matches.
+          </p>
+          {getHelpContent()}
+          <p className="text-xs font-medium mt-2">Good to know:</p>
+          <p className="mt-1 text-xs">
+            Routes are automatically ordered so specific choices (like "option 1") are checked before general ones (like "always go here").
+          </p>
+        </>
+      }
+      editorSide="left"
+      context={{ routes }}
+    />
   );
 }

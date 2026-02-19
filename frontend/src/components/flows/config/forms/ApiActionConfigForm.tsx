@@ -339,7 +339,7 @@ export function ApiActionConfigForm({
           maxLength={SystemConstraints.MAX_REQUEST_URL_LENGTH}
           placeholder="https://api.example.com/{{user_id}}"
           rows={1}
-          maxRows={10}
+          maxRows={1}
           availableVariables={safeAvailableVariables}
           nodeType="API_ACTION"
         />

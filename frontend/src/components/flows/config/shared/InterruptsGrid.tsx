@@ -1,17 +1,6 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Plus, X } from "lucide-react";
-import { FieldHelp } from "./FieldHelp";
+import { ListEditor, type FieldDefinition } from "./list-editor";
 import type { Interrupt } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 interface InterruptsGridProps {
   value: Interrupt[];
@@ -28,145 +17,72 @@ export function InterruptsGrid({
 }: InterruptsGridProps) {
   const safeAvailableNodes = availableNodes ?? [];
 
-  const handleAdd = () => {
-    onChange([...value, { input: "", target_node: "" }]);
-  };
-
-  const handleRemove = (index: number) => {
-    const newValue = value.filter((_, i) => i !== index);
-    onChange(newValue);
-  };
-
-  const handleInputChange = (index: number, input: string) => {
-    const newValue = [...value];
-    newValue[index] = { ...newValue[index], input };
-    onChange(newValue);
-  };
-
-  const handleTargetChange = (index: number, target_node: string) => {
-    const newValue = [...value];
-    newValue[index] = { ...newValue[index], target_node };
-    onChange(newValue);
-  };
+  const fields: FieldDefinition<Interrupt>[] = [
+    {
+      key: "input",
+      label: "Keyword",
+      type: "input",
+      placeholder: "e.g., cancel, back, help",
+      maxLength: SystemConstraints.MAX_INTERRUPT_KEYWORD_LENGTH,
+    },
+    {
+      key: "target_node",
+      label: "Jump To Node",
+      type: "select",
+      placeholder: "Select node",
+      options: safeAvailableNodes
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((node) => ({ value: node.id, label: node.name })),
+    },
+  ];
 
   return (
-    <div className="space-y-2">
-      {/* Header Row */}
-      {value.length > 0 && (
-        <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start px-1">
-          <div className="text-xs font-medium text-muted-foreground">
-            Keyword
-          </div>
-          <div className="text-xs font-medium text-muted-foreground">Node</div>
-          <div className="w-9" />
-        </div>
-      )}
-
-      {/* Interrupt Rows */}
-      {value.map((interrupt, index) => {
-        const inputError = errors[`interrupts[${index}].input`];
-        const targetError = errors[`interrupts[${index}].target_node`];
-
-        return (
-          <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
-            {/* Keyword Input */}
-            <div className="min-w-0">
-              <Input
-                value={interrupt.input}
-                onChange={(e) => handleInputChange(index, e.target.value)}
-                placeholder="e.g., cancel, back, help"
-                maxLength={SystemConstraints.MAX_INTERRUPT_KEYWORD_LENGTH}
-                className={cn("text-sm", inputError && "border-destructive")}
-              />
-              {inputError && (
-                <p className="text-sm text-destructive mt-1">{inputError}</p>
-              )}
-            </div>
-
-            {/* Target Node Select */}
-            <div className="min-w-0">
-              <Select
-                value={interrupt.target_node}
-                onValueChange={(value) => handleTargetChange(index, value)}
-              >
-                <SelectTrigger
-                  className={cn("text-sm", targetError && "border-destructive")}
-                >
-                  <SelectValue placeholder="Select node" />
-                </SelectTrigger>
-                <SelectContent>
-                  {safeAvailableNodes.length === 0 ? (
-                    <div className="px-2 py-2 text-sm text-muted-foreground">
-                      No nodes available
-                    </div>
-                  ) : (
-                    safeAvailableNodes
-                      .sort((a, b) => a.name.localeCompare(b.name))
-                      .map((node) => (
-                        <SelectItem key={node.id} value={node.id}>
-                          {node.name}
-                        </SelectItem>
-                      ))
-                  )}
-                </SelectContent>
-              </Select>
-              {targetError && (
-                <p className="text-sm text-destructive mt-1">{targetError}</p>
-              )}
-            </div>
-
-            {/* Delete Button */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => handleRemove(index)}
-              className="h-9 w-9 p-0 text-muted-foreground hover:text-destructive"
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        );
-      })}
-
-      {/* Help Text */}
-      <FieldHelp
-        text="Special words that let users jump to a different part of the conversation"
-        tooltip={
-          <>
-            <p className="mb-2">
-              If a user types one of these keywords at any time, they'll immediately jump to the node you choose. This lets users exit, go back, or get help without completing the current step.
-            </p>
-            <p className="text-xs font-medium mt-2">Common uses:</p>
-            <ul className="list-none space-y-1 mt-1 text-xs">
-              <li>
-                <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">cancel</code> - Let users exit to main menu
-              </li>
-              <li>
-                <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">back</code> - Return to a previous step
-              </li>
-              <li>
-                <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">help</code> - Jump to help information
-              </li>
-            </ul>
-            <p className="mt-2 text-xs">
-              Matching ignores capitalization (CANCEL = cancel = Cancel).
-            </p>
-          </>
-        }
-      />
-
-      {/* Add Button */}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={handleAdd}
-        className="w-full"
-      >
-        <Plus className="h-4 w-4 mr-2" />
-        Add Escape Key
-      </Button>
-    </div>
+    <ListEditor
+      items={value}
+      onChange={onChange}
+      fields={fields}
+      createEmpty={() => ({ input: "", target_node: "" })}
+      renderColumns={(interrupt) => {
+        const nodeName = safeAvailableNodes.find(
+          (n) => n.id === interrupt.target_node
+        )?.name;
+        return [
+          <span key="keyword" className="font-mono text-xs">
+            {interrupt.input || <span className="text-muted-foreground">keyword</span>}
+          </span>,
+          <span key="node" className="text-xs">
+            {nodeName || <span className="text-muted-foreground">node</span>}
+          </span>,
+        ];
+      }}
+      listHeaders={["Keyword", "Node"]}
+      addLabel="Add Escape Key"
+      errorPrefix="interrupts"
+      errors={errors}
+      helpText="Special words that let users jump to a different part of the conversation"
+      helpTooltip={
+        <>
+          <p className="mb-2">
+            If a user types one of these keywords at any time, they'll immediately jump to the node you choose. This lets users exit, go back, or get help without completing the current step.
+          </p>
+          <p className="text-xs font-medium mt-2">Common uses:</p>
+          <ul className="list-none space-y-1 mt-1 text-xs">
+            <li>
+              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">cancel</code> - Let users exit to main menu
+            </li>
+            <li>
+              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">back</code> - Return to a previous step
+            </li>
+            <li>
+              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">help</code> - Jump to help information
+            </li>
+          </ul>
+          <p className="mt-2 text-xs">
+            Matching ignores capitalization (CANCEL = cancel = Cancel).
+          </p>
+        </>
+      }
+      editorSide="left"
+    />
   );
 }

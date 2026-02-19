@@ -1,11 +1,6 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Plus, X } from "lucide-react";
-import { VariableSelect } from "./VariableSelect";
-import { FieldHelp } from "./FieldHelp";
+import { ListEditor, type FieldDefinition } from "./list-editor";
 import type { APIResponseMapping, VariableType } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 interface ResponseMappingEditorProps {
   value: APIResponseMapping[];
@@ -15,9 +10,27 @@ interface ResponseMappingEditorProps {
   onCreateVariable: (variable: {
     name: string;
     type: VariableType;
-    default: any;
+    default: unknown;
   }) => Promise<void>;
 }
+
+const fields: FieldDefinition<APIResponseMapping>[] = [
+  {
+    key: "source_path",
+    label: "Extract From (JSON Path)",
+    type: "input",
+    placeholder: "data.id",
+    maxLength: SystemConstraints.MAX_SOURCE_PATH_LENGTH,
+    mono: true,
+  },
+  {
+    key: "target_variable",
+    label: "Save To Variable",
+    type: "variable-select",
+    placeholder: "Select variable",
+    mono: true,
+  },
+];
 
 export function ResponseMappingEditor({
   value,
@@ -26,104 +39,34 @@ export function ResponseMappingEditor({
   variables = [],
   onCreateVariable,
 }: ResponseMappingEditorProps) {
-  const handleAdd = () => {
-    onChange([...value, { source_path: "", target_variable: "" }]);
-  };
-
-  const handleRemove = (index: number) => {
-    const newValue = value.filter((_, i) => i !== index);
-    onChange(newValue);
-  };
-
-  const handleSourcePathChange = (index: number, source_path: string) => {
-    const newValue = [...value];
-    newValue[index] = { ...newValue[index], source_path };
-    onChange(newValue);
-  };
-
-  const handleTargetVariableChange = (
-    index: number,
-    target_variable: string
-  ) => {
-    const newValue = [...value];
-    newValue[index] = { ...newValue[index], target_variable };
-    onChange(newValue);
-  };
-
   return (
-    <div className="space-y-2">
-      {value.length > 0 && (
-        <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start px-1">
-          <div className="text-xs font-medium text-muted-foreground">
-            Extract From
-          </div>
-          <div className="text-xs font-medium text-muted-foreground">
-            To Variable
-          </div>
-          <div className="w-9" />
-        </div>
-      )}
-      {value.map((mapping, index) => {
-        const sourceError = errors[`response_map[${index}].source_path`];
-        const targetError = errors[`response_map[${index}].target_variable`];
-
-        return (
-          <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-start">
-            <div className="min-w-0">
-              <Input
-                value={mapping.source_path}
-                onChange={(e) => handleSourcePathChange(index, e.target.value)}
-                placeholder="data.id"
-                maxLength={SystemConstraints.MAX_SOURCE_PATH_LENGTH}
-                className={cn(
-                  "text-sm font-mono",
-                  sourceError && "border-destructive"
-                )}
-              />
-              {sourceError && (
-                <p className="text-sm text-destructive mt-1">{sourceError}</p>
-              )}
-            </div>
-            <div className="min-w-0">
-              <VariableSelect
-                value={mapping.target_variable}
-                onValueChange={(value) => handleTargetVariableChange(index, value)}
-                variables={variables}
-                onCreateVariable={onCreateVariable}
-                placeholder="Select variable"
-                className={cn(
-                  "text-sm font-mono",
-                  targetError && "border-destructive"
-                )}
-              />
-              {targetError && (
-                <p className="text-sm text-destructive mt-1">{targetError}</p>
-              )}
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => handleRemove(index)}
-              className="h-9 w-9 p-0 text-muted-foreground hover:text-destructive"
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        );
-      })}
-
-      {/* Help Text */}
-      <FieldHelp
-        text="Save data from the API response so you can use it later"
-        tooltip={
-          <>
-            <p className="mb-2">
-              When an API returns data, you can pick out the pieces you need and save them in variables. Then you can use those variables in messages, conditions, or other API calls.
-            </p>
-            <p className="text-xs font-medium mt-2">Example: If the API returns:</p>
-            <pre className="mt-1 text-xs bg-primary-foreground text-primary p-2 rounded overflow-x-auto">
-              {`{
+    <ListEditor
+      items={value}
+      onChange={onChange}
+      fields={fields}
+      createEmpty={() => ({ source_path: "", target_variable: "" })}
+      renderColumns={(mapping) => [
+        <span key="source" className="font-mono text-xs">
+          {mapping.source_path || <span className="text-muted-foreground">path</span>}
+        </span>,
+        <span key="target" className="font-mono text-xs">
+          {mapping.target_variable || <span className="text-muted-foreground">variable</span>}
+        </span>,
+      ]}
+      listHeaders={["Extract From", "To Variable"]}
+      addLabel="Add Extraction"
+      errorPrefix="response_map"
+      errors={errors}
+      context={{ variables, onCreateVariable }}
+      helpText="Save data from the API response so you can use it later"
+      helpTooltip={
+        <>
+          <p className="mb-2">
+            When an API returns data, you can pick out the pieces you need and save them in variables. Then you can use those variables in messages, conditions, or other API calls.
+          </p>
+          <p className="text-xs font-medium mt-2">Example: If the API returns:</p>
+          <pre className="mt-1 text-xs bg-primary-foreground text-primary p-2 rounded overflow-x-auto">
+            {`{
   "data": {
     "user_id": "123",
     "name": "John"
@@ -132,34 +75,23 @@ export function ResponseMappingEditor({
     {"id": 1, "title": "First"}
   ]
 }`}
-            </pre>
-            <p className="text-xs font-medium mt-2">You can extract:</p>
-            <p className="mt-1 text-xs">
-              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">data.user_id</code> → Gets "123"
-            </p>
-            <p className="mt-1 text-xs">
-              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">data.name</code> → Gets "John"
-            </p>
-            <p className="mt-1 text-xs">
-              <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">items.0.title</code> → Gets "First" (first item in the list)
-            </p>
-            <p className="text-xs mt-3 pt-2 border-t">
-              <span className="font-medium">Tip:</span> If the API returns a list directly (not inside an object), use <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">*</code> to access it. For example, <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">*.0.id</code> gets the id from the first item.
-            </p>
-          </>
-        }
-      />
-
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={handleAdd}
-        className="w-full"
-      >
-        <Plus className="h-4 w-4 mr-2" />
-        Add Extraction
-      </Button>
-    </div>
+          </pre>
+          <p className="text-xs font-medium mt-2">You can extract:</p>
+          <p className="mt-1 text-xs">
+            <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">data.user_id</code> → Gets "123"
+          </p>
+          <p className="mt-1 text-xs">
+            <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">data.name</code> → Gets "John"
+          </p>
+          <p className="mt-1 text-xs">
+            <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">items.0.title</code> → Gets "First" (first item in the list)
+          </p>
+          <p className="text-xs mt-3 pt-2 border-t">
+            <span className="font-medium">Tip:</span> If the API returns a list directly (not inside an object), use <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">*</code> to access it. For example, <code className="bg-primary-foreground text-primary px-1 py-0.5 rounded">*.0.id</code> gets the id from the first item.
+          </p>
+        </>
+      }
+      editorSide="left"
+    />
   );
 }

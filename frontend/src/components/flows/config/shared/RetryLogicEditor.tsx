@@ -87,7 +87,7 @@ export function RetryLogicEditor({
           maxLength={SystemConstraints.MAX_COUNTER_TEXT_LENGTH}
           placeholder="(Attempt {{current_attempt}} of {{max_attempts}})"
           rows={1}
-          maxRows={3}
+          maxRows={1}
           availableVariables={availableVariables}
           fieldContext="counter_text"
         />
