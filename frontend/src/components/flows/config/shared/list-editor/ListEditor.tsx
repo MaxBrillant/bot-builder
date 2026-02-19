@@ -133,6 +133,16 @@ export function ListEditor<T extends object>({
                   align="start"
                   className="p-0"
                   style={{ width: editorWidth }}
+                  onOpenAutoFocus={(e) => {
+                    // Focus the first input/textarea/select in the popover
+                    e.preventDefault();
+                    const container = e.currentTarget as HTMLElement | null;
+                    const firstInput = container?.querySelector<HTMLElement>(
+                      'input, textarea, select, [role="combobox"]'
+                    );
+                    firstInput?.focus();
+                  }}
+                  onEscapeKeyDown={() => setActiveIndex(null)}
                 >
                   <div className="flex items-center justify-between px-3 py-2 border-b">
                     <span className="text-sm font-medium">Edit</span>
