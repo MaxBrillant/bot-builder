@@ -52,7 +52,7 @@ const shortcutGroups: ShortcutGroup[] = [
       { keys: "Ctrl + Z", description: "Undo" },
       { keys: "Ctrl + Y", description: "Redo" },
       { keys: "Ctrl + ,", description: "Settings" },
-      { keys: "Ctrl + Shift + T", description: "Test chat" },
+      { keys: "Ctrl + Shift + T", description: "Test current flow" },
       { keys: "?", description: "Show shortcuts" },
     ],
   },

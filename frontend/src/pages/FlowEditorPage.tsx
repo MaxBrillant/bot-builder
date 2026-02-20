@@ -1799,7 +1799,7 @@ function FlowEditorContent() {
         // Test chat (Ctrl + Shift + T)
         if (ctrl && shift && !alt && event.key.toLowerCase() === 't') {
           event.preventDefault();
-          handleTestChat();
+          handleTestFlowFromNode();
           return;
         }
 
@@ -2052,6 +2052,7 @@ function FlowEditorContent() {
     handlePreviousFlow,
     handleJumpToFlow,
     handleTestChat,
+    handleTestFlowFromNode,
     handleDeleteFlow,
     // State setters (stable by React guarantee)
     setShowKeyboardHelp,

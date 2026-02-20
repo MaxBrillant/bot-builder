@@ -97,7 +97,7 @@ export default function FlowToolbar({
           ) : (
             <>
               <Save className="w-4 h-4" />
-              Save Flow
+              Save
             </>
           )}
         </Button>
@@ -109,7 +109,7 @@ export default function FlowToolbar({
           title="Test your bot in a chat simulator"
         >
           <MessageCircle className="w-4 h-4" />
-          Test Chat
+          Test Bot
         </Button>
         <Button
           variant="outline"

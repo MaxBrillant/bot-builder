@@ -52,6 +52,7 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [sessionTimestamp, setSessionTimestamp] = useState(Date.now());
   const [isTriggersOpen, setIsTriggersOpen] = useState(false);
+  const [sessionActive, setSessionActive] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const initialMessageSent = useRef(false);
@@ -68,7 +69,7 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, sessionActive, isTriggersOpen]);
 
   // Auto-reset session when flow is updated
   useEffect(() => {
@@ -189,7 +190,9 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
               }
 
               if (data.done) {
-                // Stream complete
+                // Stream complete - track session state
+                setSessionActive(data.session_active === true && !data.session_ended);
+
                 if (!receivedMessages && !data.error) {
                   const noResponseMessage: Message = {
                     id: `bot-${Date.now()}`,
@@ -234,6 +237,7 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
   const handleRestart = () => {
     setMessages([]);
     setSessionTimestamp(Date.now());
+    setSessionActive(false);
     toast.success("Conversation restarted");
     setTimeout(() => {
       chatInputRef.current?.focus();
@@ -276,55 +280,6 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
           </div>
         </CardHeader>
 
-        <div className="px-6 pb-3">
-          <Collapsible open={isTriggersOpen} onOpenChange={setIsTriggersOpen}>
-            <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors w-full">
-              <ChevronRight className={cn("h-4 w-4 transition-transform", isTriggersOpen && "rotate-90")} />
-              <span>Available Triggers</span>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="mt-2">
-              {flows.length === 0 ? (
-                <p className="text-xs text-muted-foreground ml-6">No flows configured yet</p>
-              ) : (
-                <div className="ml-6 border border-border rounded-md overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/50">
-                        <th className="text-left font-medium px-2 py-1.5">Flow</th>
-                        <th className="text-left font-medium px-2 py-1.5">Triggers</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {flows.map((f) => (
-                        <tr key={f.flow_id} className="hover:bg-muted/50 transition-colors">
-                          <td className="px-2 py-1.5 font-medium text-foreground">
-                            <div className="truncate max-w-[120px]" title={f.name}>
-                              {f.name}
-                            </div>
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <div className="flex flex-wrap gap-1">
-                              {f.trigger_keywords?.length > 0 ? (
-                                f.trigger_keywords.map((keyword: string) => (
-                                  <Badge key={keyword} variant="secondary" className="text-xs py-0 px-1.5 h-5">
-                                    {keyword}
-                                  </Badge>
-                                ))
-                              ) : (
-                                <span className="text-muted-foreground">No triggers</span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
-
         <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-4 py-2">
             {messages.length === 0 && (
@@ -351,6 +306,57 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
 
             <div ref={messagesEndRef} />
           </div>
+
+          {(messages.length === 0 || !sessionActive) && (
+            <div className="px-4 pb-2">
+              <Collapsible open={isTriggersOpen} onOpenChange={setIsTriggersOpen}>
+                <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors w-full">
+                  <ChevronRight className={cn("h-4 w-4 transition-transform", isTriggersOpen && "rotate-90")} />
+                  <span>Available Triggers</span>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-2">
+                  {flows.length === 0 ? (
+                    <p className="text-xs text-muted-foreground ml-6">No flows configured yet</p>
+                  ) : (
+                    <div className="ml-6 border border-border rounded-md overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-border bg-muted/50">
+                            <th className="text-left font-medium px-2 py-1.5">Flow</th>
+                            <th className="text-left font-medium px-2 py-1.5">Triggers</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {flows.map((f) => (
+                            <tr key={f.flow_id} className="hover:bg-muted/50 transition-colors">
+                              <td className="px-2 py-1.5 font-medium text-foreground">
+                                <div className="truncate max-w-[120px]" title={f.name}>
+                                  {f.name}
+                                </div>
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <div className="flex flex-wrap gap-1">
+                                  {f.trigger_keywords?.length > 0 ? (
+                                    f.trigger_keywords.map((keyword: string) => (
+                                      <Badge key={keyword} variant="secondary" className="text-xs py-0 px-1.5 h-5">
+                                        {keyword}
+                                      </Badge>
+                                    ))
+                                  ) : (
+                                    <span className="text-muted-foreground">No triggers</span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+          )}
 
           <ChatInput ref={chatInputRef} onSend={handleSendMessage} disabled={isLoading} />
         </CardContent>
