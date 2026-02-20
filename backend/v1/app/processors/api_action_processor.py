@@ -91,34 +91,26 @@ class APIActionProcessor(BaseProcessor):
         if is_success:
             # Skip response mapping for HTTP 204 No Content (spec line 1961)
             if api_response.status_code == 204:
-                context[SpecialVariables.API_RESULT] = 'success'
                 self.logger.info(
                     f"API call successful (204 No Content, response_map skipped)",
                     status_code=api_response.status_code
                 )
-            # Apply response mapping for other success responses
             elif config.response_map:
-                mapping_success = self._apply_response_mapping(api_response, config.response_map, context)
-                if not mapping_success:
-                    self.logger.error("Response mapping failed due to conversion errors")
-                    context[SpecialVariables.API_RESULT] = 'error'
-                else:
-                    context[SpecialVariables.API_RESULT] = 'success'
-
-                    self.logger.info(
-                        f"API call successful",
-                        status_code=api_response.status_code
-                    )
-            else:
-                context[SpecialVariables.API_RESULT] = 'success'
-
+                # Apply response mapping - failures preserve existing values and don't affect routing
+                self._apply_response_mapping(api_response, config.response_map, context)
                 self.logger.info(
                     f"API call successful",
                     status_code=api_response.status_code
                 )
+            else:
+                self.logger.info(
+                    f"API call successful",
+                    status_code=api_response.status_code
+                )
+
+            context[SpecialVariables.API_RESULT] = 'success'
         else:
             context[SpecialVariables.API_RESULT] = 'error'
-
             self.logger.warning(
                 f"API call failed success check",
                 status_code=api_response.status_code
@@ -425,7 +417,7 @@ class APIActionProcessor(BaseProcessor):
         api_response: APIResponse,
         mappings: List[APIResponseMapping],
         context: Dict[str, Any]
-    ) -> bool:
+    ) -> None:
         """
         Apply response mapping to extract data into context with type inference
 
@@ -434,8 +426,15 @@ class APIActionProcessor(BaseProcessor):
             mappings: List of typed APIResponseMapping instances
             context: Session context (updated in place)
 
-        Returns:
-            bool: True if at least one mapping succeeded, False if all failed or body invalid
+        Note:
+            - Missing or null fields preserve existing value (default or previously set)
+            - Type conversion failures preserve existing value
+            - All mappings execute independently (no partial failures affect routing)
+            - Type conversion based on variable's declared type
+            - Supports dict, array, and primitive root responses:
+              - Dict root: Use "field", "data.nested"
+              - Array root: Use "*", "*.0", "*.0.field"
+              - Primitive root: Use "*"
 
         Example:
             api_response.body = {"user": {"id": "123", "name": "Alice"}}
@@ -448,17 +447,7 @@ class APIActionProcessor(BaseProcessor):
                 {"user_id": {"type": "number"}, "user_name": {"type": "string"}}
 
             Result: context updated with user_id=123 (as number), user_name="Alice"
-
-        Note:
-            Supports dict, array, and primitive root responses:
-            - Dict root: Use "field", "data.nested"
-            - Array root: Use "*", "*.0", "*.0.field"
-            - Primitive root: Use "*"
         """
-        # Track successful mappings
-        successful_mappings = 0
-        total_mappings = 0
-
         # Get variable definitions from flow for type inference
         variables = context.get("_flow_variables", {})
 
@@ -468,8 +457,6 @@ class APIActionProcessor(BaseProcessor):
 
             if not target_var:
                 continue
-
-            total_mappings += 1
 
             # Check if variable exists in flow variables definition
             if target_var not in variables:
@@ -488,14 +475,12 @@ class APIActionProcessor(BaseProcessor):
             # Use safe extraction method
             value = api_response.extract_value(source_path)
 
-            # Handle null values or missing paths - set to null
+            # Handle null values or missing paths - preserve existing value
             if value is None:
-                context[target_var] = None
                 self.logger.debug(
-                    f"Response mapping: {source_path} -> {target_var} = null (missing or null value)",
+                    f"Response mapping: {source_path} -> {target_var} skipped (missing or null value, preserving existing)",
                     source=source_path,
-                    target=target_var,
-                    inferred_type=var_type
+                    target=target_var
                 )
                 continue
 
@@ -514,22 +499,13 @@ class APIActionProcessor(BaseProcessor):
                 )
 
                 context[target_var] = converted_value
-                successful_mappings += 1
             except Exception as e:
-                # On conversion failure, set to null and continue with other mappings
-                context[target_var] = None
+                # On conversion failure, preserve existing value and continue with other mappings
                 self.logger.warning(
-                    f"Response mapping conversion failed for '{target_var}', setting to null: {str(e)}",
+                    f"Response mapping conversion failed for '{target_var}', preserving existing value: {str(e)}",
                     source=source_path,
                     target=target_var,
                     inferred_type=var_type,
                     value=value
                 )
-
-        # Return True if at least one mapping succeeded, or if there were no mappings to process
-        # (empty mappings list is considered success)
-        if total_mappings == 0:
-            return True
-
-        return successful_mappings > 0
     

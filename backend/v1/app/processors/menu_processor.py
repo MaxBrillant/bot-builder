@@ -346,7 +346,8 @@ class MenuProcessor(BaseProcessor):
             context: Session context (updated in place)
         
         Note:
-            - Missing or null fields are set to null (graceful handling)
+            - Missing or null fields preserve existing value (default or previously set)
+            - Type conversion failures preserve existing value
             - All mappings execute independently (no partial failures)
             - Type conversion based on variable's declared type
         
@@ -390,14 +391,12 @@ class MenuProcessor(BaseProcessor):
             # Extract value from selected item
             value = self.get_nested_value(selected_item, source_path)
             
-            # Handle null values or missing paths - set to null
+            # Handle null values or missing paths - preserve existing value
             if value is None:
-                context[target_var] = None
                 self.logger.debug(
-                    f"Output mapping: {source_path} -> {target_var} = null (missing or null value)",
+                    f"Output mapping: {source_path} -> {target_var} skipped (missing or null value, preserving existing)",
                     source=source_path,
-                    target=target_var,
-                    inferred_type=var_type
+                    target=target_var
                 )
                 continue
             
@@ -416,10 +415,9 @@ class MenuProcessor(BaseProcessor):
                     converted_type=type(converted_value).__name__
                 )
             except Exception as e:
-                # On conversion failure, set to null and continue with other mappings
-                context[target_var] = None
+                # On conversion failure, preserve existing value and continue with other mappings
                 self.logger.warning(
-                    f"Output mapping conversion failed for '{target_var}', setting to null: {str(e)}",
+                    f"Output mapping conversion failed for '{target_var}', preserving existing value: {str(e)}",
                     source=source_path,
                     target=target_var,
                     inferred_type=var_type,

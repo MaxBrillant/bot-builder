@@ -819,10 +819,6 @@ class APIActionNodeConfig(BaseModel):
         default=None,
         description="Mappings to extract data from response body"
     )
-    output_mapping: Optional[List[APIResponseMapping]] = Field(
-        default=None,
-        description="Alternative name for response_map (deprecated, use response_map)"
-    )
     success_check: Optional[APISuccessCheck] = Field(
         default=None,
         description="Configuration to determine API call success"

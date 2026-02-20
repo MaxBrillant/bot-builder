@@ -644,7 +644,7 @@ Bot Builder Instance 3 ←
   4. If conversion succeeds, value is saved to context
   5. If conversion fails, user sees error and must retry (counts toward max attempts)
   6. **Note**: Validation ensures input is in convertible format (e.g., `input.isNumeric()` ensures string can convert to number)
-  7. **Output Mappings**: This type enforcement also applies to [`output_mapping`](#menu-node-config) (MENU nodes) and [`response_map`](#api_action-node-config) (API_ACTION nodes). During conversation, when mapping extracted values to variables, the system attempts conversion to the variable's declared type. Conversion failures in mappings result in `null` (don't count toward max validation attempts). See [Type Inference in Output Mappings](#type-inference-in-output-mappings) for details.
+  7. **Output Mappings**: This type enforcement also applies to [`output_mapping`](#menu-node-config) (MENU nodes) and [`response_map`](#api_action-node-config) (API_ACTION nodes). During conversation, when mapping extracted values to variables, the system attempts conversion to the variable's declared type. Conversion failures in mappings preserve the existing value (don't count toward max validation attempts). See [Type Inference in Output Mappings](#type-inference-in-output-mappings) for details.
 - **Default Value Constraints**:
   - String defaults: Maximum 256 characters
   - Array defaults: Maximum 24 items
@@ -873,7 +873,7 @@ When extracting fields from selected menu item, the system uses **type inference
 2. **Look up** `target_variable` in the flow's `variables` section to determine the declared type
 3. **Attempt type conversion** based on the variable's declared type (STRING, NUMBER, BOOLEAN, ARRAY)
 4. **On success**: Save converted value to context
-5. **On failure** (missing path OR conversion error): Set variable to `null`
+5. **On failure** (missing path OR conversion error): Preserve existing value (default or previously set)
 6. **All mappings execute independently** - one failure doesn't affect others
 
 **Source Path Syntax**:
@@ -900,8 +900,8 @@ The `source_path` uses **dot notation** to traverse the selected menu item's str
 
 - No `type` field exists in `output_mapping` structure
 - Type is determined by variable declaration in flow's `variables` section
-- Missing or null fields in source → variable set to `null`
-- Invalid type conversion (e.g., "abc" to number) → variable set to `null`
+- Missing or null fields in source → existing value preserved
+- Invalid type conversion (e.g., "abc" to number) → existing value preserved
 - `selection` variable automatically set to numeric index as **number** (1, 2, 3, etc.)
 
 **Example**:
@@ -929,7 +929,7 @@ The `source_path` uses **dot notation** to traverse the selected menu item's str
 // Result in context (after type inference):
 // selection = 2  (number, automatically set)
 // trip_id = "123"  (string, as declared)
-// driver = null  (missing field)
+// driver = <existing value>  (missing field, preserved)
 // seats_available = 5  (converted from "5" string to number)
 // is_verified = true  (boolean, as declared)
 ```
@@ -949,8 +949,8 @@ The `source_path` uses **dot notation** to traverse the selected menu item's str
 // Variable declarations: invalid_number (number), missing_field (string)
 
 // Result:
-// invalid_number = null  (conversion failed)
-// missing_field = null  (null in source)
+// invalid_number = <existing value>  (conversion failed, preserved)
+// missing_field = <existing value>  (null in source, preserved)
 ```
 
 See [Type Inference in Output Mappings](#type-inference-in-output-mappings) section for detailed behavior across node types.
@@ -998,7 +998,7 @@ The `response_map` uses **type inference** to convert API response values based 
 2. **Look up** `target_variable` in flow's `variables` section to determine declared type
 3. **Attempt type conversion** based on variable's declared type (STRING, NUMBER, BOOLEAN, ARRAY)
 4. **On success**: Save converted value to context
-5. **On failure** (missing path OR conversion error): Set variable to `null`
+5. **On failure** (missing path OR conversion error): Preserve existing value (default or previously set)
 6. **All mappings execute independently** - conversion failures don't affect other mappings
 
 **Source Path Syntax**:
@@ -1062,8 +1062,8 @@ For dictionary roots, field names are unambiguous, so no prefix is needed.
 
 - **No `type` field** exists in `response_map` structure (removed)
 - Type is determined by variable declaration in flow's `variables` section
-- Missing response paths → variable set to `null`
-- Invalid conversions → variable set to `null` (no errors thrown)
+- Missing response paths → existing value preserved
+- Invalid conversions → existing value preserved (no errors thrown)
 - Conversion failures in mappings **do not** count toward validation retry attempts
 
 **Example 1: Dictionary Root Response**
@@ -1203,14 +1203,14 @@ For dictionary roots, field names are unambiguous, so no prefix is needed.
 
 // Result:
 // user_id = "user_123"  (extracted successfully)
-// age = null  (missing in response)
-// is_verified = null  (missing in response)
-// tags = null  (missing in response)
+// age = <existing value>  (missing in response, preserved)
+// is_verified = <existing value>  (missing in response, preserved)
+// tags = <existing value>  (missing in response, preserved)
 
 // Invalid conversion example:
 // API Response: {"count": "not_a_number"}
 // Variable: count (number)
-// Result: count = null  (conversion failed)
+// Result: count = <existing value>  (conversion failed, preserved)
 ```
 
 **Empty Array Response**:
@@ -1276,16 +1276,16 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 3. **Type Conversion**: Attempt to convert extracted value to declared type
 4. **Assignment**:
    - On success → save converted value to context
-   - On failure → set variable to `null`
+   - On failure → preserve existing value (default or previously set)
 
 **Supported Conversions**:
 
 | Declared Type | Conversion Behavior               | Examples                                                                              |
 | ------------- | --------------------------------- | ------------------------------------------------------------------------------------- |
-| `STRING`      | No conversion, value stored as-is | `"123"` → `"123"`, `123` → `"123"`                                                    |
-| `NUMBER`      | Parse to numeric value            | `"42"` → `42`, `"3.14"` → `3.14`, `"abc"` → `null`                                    |
-| `BOOLEAN`     | Parse to true/false               | `"true"` → `true`, `"false"` → `false`, `1` → `true`, `0` → `false`, `"yes"` → `null` |
-| `ARRAY`       | Expect array value                | `["a","b"]` → `["a","b"]`, `"abc"` → `null`                                           |
+| `STRING`      | No conversion, value stored as-is | `"123"` → `"123"`, `123` → `"123"`                                                              |
+| `NUMBER`      | Parse to numeric value            | `"42"` → `42`, `"3.14"` → `3.14`, `"abc"` → `<existing>`                                        |
+| `BOOLEAN`     | Parse to true/false               | `"true"` → `true`, `"false"` → `false`, `1` → `true`, `0` → `false`, `"yes"` → `<existing>`     |
+| `ARRAY`       | Expect array value                | `["a","b"]` → `["a","b"]`, `"abc"` → `<existing>`                                               |
 
 #### Benefits of Type Inference
 
@@ -1293,17 +1293,22 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 2. **Consistency**: All nodes use the same type definitions from a single source
 3. **Maintainability**: Changing a variable's type updates behavior across all mappings
 4. **Simplicity**: Mapping definitions only specify source and target, not type
-5. **Graceful Failure**: Invalid conversions set `null` instead of crashing the flow
+5. **Graceful Failure**: Invalid conversions preserve existing value instead of crashing the flow
 
 #### Failure Handling
 
 **When Type Conversion Fails**:
 
-- Variable is set to `null` in context
+- Existing value is preserved in context
 - Flow execution continues normally
 - No error message shown to user
 - Does not count toward validation retry attempts
 - Other mappings in the same node continue to execute
+
+**Note**: "Existing value" refers to whatever value the variable held before the mapping attempted:
+- If variable has explicit default → that default value
+- If variable has no default (or `"default": null`) → `null`
+- If variable was set by a previous node → that previously set value
 
 **Common Failure Scenarios**:
 
@@ -1311,19 +1316,19 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 // Scenario 1: Missing path
 // Source: {"id": "123"}
 // Mapping: {"source_path": "name", "target_variable": "user_name"}
-// Result: user_name = null
+// Result: user_name = <existing value>
 
 // Scenario 2: Type conversion error
 // Source: {"age": "twenty-five"}
 // Variable: age (number)
 // Mapping: {"source_path": "age", "target_variable": "age"}
-// Result: age = null
+// Result: age = <existing value>
 
 // Scenario 3: Null in source
 // Source: {"count": null}
 // Variable: count (number)
 // Mapping: {"source_path": "count", "target_variable": "count"}
-// Result: count = null
+// Result: count = <existing value>
 ```
 
 #### Complete Example: MENU with Type Inference
@@ -1497,7 +1502,7 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 **PROMPT nodes** also perform type conversion, but with different failure behavior:
 
 - **PROMPT**: Conversion failure → validation error → user must retry (counts toward max attempts)
-- **Output Mappings**: Conversion failure → sets `null` → flow continues (no retry)
+- **Output Mappings**: Conversion failure → preserves existing value → flow continues (no retry)
 
 **Example**:
 
@@ -1506,7 +1511,7 @@ Both [`MENU`](#menu-node-config) and [`API_ACTION`](#api_action-node-config) nod
 // Result: Validation error, user sees error message, must retry
 
 // API_ACTION response_map: API returns {"age": "abc"}
-// Result: age = null, flow continues without error
+// Result: age = <existing value>, flow continues without error
 ```
 
 This design allows flows to continue gracefully when external data is malformed, while enforcing correctness for user-provided input.
