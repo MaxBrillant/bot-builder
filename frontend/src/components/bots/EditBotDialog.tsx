@@ -2,13 +2,9 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Copy, RotateCw, MessageCircle } from "lucide-react";
-import { toast } from "sonner";
+import { MessageCircle, Globe } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import {
-  useUpdateBotMutation,
-  useRegenerateWebhookSecretMutation,
-} from "@/hooks/queries/useBotsQuery";
+import { useUpdateBotMutation } from "@/hooks/queries/useBotsQuery";
 import {
   Dialog,
   DialogContent,
@@ -17,16 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -50,6 +36,7 @@ import { CharacterCounter } from "@/components/flows/config/shared/CharacterCoun
 import { SystemConstraints } from "@/lib/types";
 import WhatsAppStatusBadge from "./WhatsAppStatusBadge";
 import WhatsAppConnectionModal from "./WhatsAppConnectionModal";
+import HTTPCallModal from "./HTTPCallModal";
 import { Separator } from "@/components/ui/separator";
 
 const formSchema = z.object({
@@ -74,6 +61,7 @@ interface EditBotDialogProps {
     name: string;
     description?: string;
     status: string;
+    webhook_url: string;
     webhook_secret?: string;
     whatsapp_status?: "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "ERROR";
     whatsapp_phone_number?: string;
@@ -89,11 +77,10 @@ export default function EditBotDialog({
 }: EditBotDialogProps) {
   // React Query mutations
   const updateBotMutation = useUpdateBotMutation();
-  const regenerateSecretMutation = useRegenerateWebhookSecretMutation();
 
   const [webhookSecret, setWebhookSecret] = useState<string>("");
-  const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  const [httpDialogOpen, setHttpDialogOpen] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -135,27 +122,6 @@ export default function EditBotDialog({
         },
       }
     );
-  };
-
-  const handleCopySecret = async () => {
-    try {
-      await navigator.clipboard.writeText(webhookSecret);
-      toast.success("Webhook secret copied!");
-    } catch (error) {
-      toast.error("Failed to copy webhook secret");
-    }
-  };
-
-  const handleRegenerateSecret = async () => {
-    if (!bot) return;
-
-    regenerateSecretMutation.mutate(bot.bot_id, {
-      onSuccess: (response) => {
-        const newSecret = response.data.webhook_secret;
-        setWebhookSecret(newSecret);
-        setShowRegenerateDialog(false);
-      },
-    });
   };
 
   if (!bot) return null;
@@ -247,39 +213,6 @@ export default function EditBotDialog({
               )}
             />
 
-            {/* Webhook Secret Section */}
-            <div className="space-y-2">
-              <Label>Webhook Secret</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={webhookSecret}
-                  readOnly
-                  className="flex-1 font-mono text-sm"
-                  placeholder="No webhook secret available"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={handleCopySecret}
-                  disabled={!webhookSecret || updateBotMutation.isPending}
-                  title="Copy webhook secret"
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setShowRegenerateDialog(true)}
-                  disabled={updateBotMutation.isPending}
-                  title="Regenerate webhook secret"
-                >
-                  <RotateCw className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
             {/* WhatsApp Connection Section */}
             <Separator />
             <div className="space-y-3">
@@ -291,8 +224,8 @@ export default function EditBotDialog({
                   </p>
                 </div>
                 <WhatsAppStatusBadge
-                  status={bot?.whatsapp_status}
-                  phoneNumber={bot?.whatsapp_phone_number}
+                  status={bot.whatsapp_status}
+                  phoneNumber={bot.whatsapp_phone_number}
                 />
               </div>
               <Button
@@ -302,9 +235,29 @@ export default function EditBotDialog({
                 className="w-full"
               >
                 <MessageCircle className="h-4 w-4 mr-2" />
-                {bot?.whatsapp_status === "CONNECTED"
+                {bot.whatsapp_status === "CONNECTED"
                   ? "Manage WhatsApp Connection"
                   : "Connect to WhatsApp"}
+              </Button>
+            </div>
+
+            {/* HTTP API Section */}
+            <Separator />
+            <div className="space-y-3">
+              <div>
+                <Label className="text-base">HTTP API</Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Call your bot directly via HTTP webhook
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setHttpDialogOpen(true)}
+                className="w-full"
+              >
+                <Globe className="h-4 w-4 mr-2" />
+                View HTTP Details
               </Button>
             </div>
 
@@ -326,35 +279,21 @@ export default function EditBotDialog({
         </Form>
       </DialogContent>
 
-      {/* Regenerate Confirmation Dialog */}
-      <AlertDialog
-        open={showRegenerateDialog}
-        onOpenChange={setShowRegenerateDialog}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Regenerate Webhook Secret?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to regenerate the webhook secret? This will
-              invalidate the old secret.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={regenerateSecretMutation.isPending}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleRegenerateSecret}
-              disabled={regenerateSecretMutation.isPending}
-            >
-              {regenerateSecretMutation.isPending && (
-                <LoadingSpinner size="sm" variant="light" className="mr-2" />
-              )}
-              Regenerate
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* HTTP Call Modal */}
+      {bot && (
+        <HTTPCallModal
+          botId={bot.bot_id}
+          botName={bot.name}
+          webhookUrl={bot.webhook_url}
+          webhookSecret={webhookSecret}
+          open={httpDialogOpen}
+          onOpenChange={setHttpDialogOpen}
+          onSecretRegenerated={(newSecret) => {
+            setWebhookSecret(newSecret);
+            onSuccess();
+          }}
+        />
+      )}
 
       {/* WhatsApp Connection Modal */}
       {bot && (
