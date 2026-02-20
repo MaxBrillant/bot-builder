@@ -137,32 +137,73 @@ export const ChatSimulator: React.FC<ChatSimulatorProps> = ({
         messageText
       );
 
-      if (response.data.status === "error" && response.data.error) {
-        const errorMessage: Message = {
-          id: `bot-${Date.now()}`,
-          text: response.data.error,
-          isBot: true,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, errorMessage]);
-      } else {
-        const botMessages = response.data.messages || [];
-        if (botMessages.length === 0) {
-          const noResponseMessage: Message = {
-            id: `bot-${Date.now()}`,
-            text: "No response from bot",
-            isBot: true,
-            timestamp: new Date(),
-          };
-          setMessages((prev) => [...prev, noResponseMessage]);
-        } else {
-          const newBotMessages: Message[] = botMessages.map((text: string, index: number) => ({
-            id: `bot-${Date.now()}-${index}`,
-            text,
-            isBot: true,
-            timestamp: new Date(),
-          }));
-          setMessages((prev) => [...prev, ...newBotMessages]);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error("No response body");
+      }
+
+      let buffer = "";
+      let receivedMessages = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+
+        // Keep the last incomplete line in the buffer
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.message) {
+                receivedMessages = true;
+                const botMessage: Message = {
+                  id: `bot-${Date.now()}-${data.index ?? 0}`,
+                  text: data.message,
+                  isBot: true,
+                  timestamp: new Date(),
+                };
+                setMessages((prev) => [...prev, botMessage]);
+              }
+
+              if (data.error) {
+                const errorMessage: Message = {
+                  id: `error-${Date.now()}`,
+                  text: data.error,
+                  isBot: true,
+                  timestamp: new Date(),
+                };
+                setMessages((prev) => [...prev, errorMessage]);
+              }
+
+              if (data.done) {
+                // Stream complete
+                if (!receivedMessages && !data.error) {
+                  const noResponseMessage: Message = {
+                    id: `bot-${Date.now()}`,
+                    text: "No response from bot",
+                    isBot: true,
+                    timestamp: new Date(),
+                  };
+                  setMessages((prev) => [...prev, noResponseMessage]);
+                }
+              }
+            } catch (parseError) {
+              console.warn("Failed to parse SSE data:", line, parseError);
+            }
+          }
         }
       }
     } catch (error: unknown) {

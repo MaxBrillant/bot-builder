@@ -196,29 +196,32 @@ export const deleteFlow = async (
 
 /**
  * Send a test message to the bot webhook
- * Note: Uses direct axios call to avoid auth interceptor
+ * Returns raw Response for SSE streaming consumption
+ *
+ * The webhook returns Server-Sent Events (SSE) for real-time message delivery.
+ * Each message is streamed as: data: {"message": "...", "index": 0}
+ * Stream ends with: data: {"done": true, "session_id": "..."}
  */
 export const sendTestMessage = async (
   botId: string,
   webhookSecret: string,
   channelUserId: string,
   messageText: string
-) => {
+): Promise<Response> => {
   const baseURL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-  return axios.post(
-    `${baseURL}/webhook/${botId}`,
-    {
+  return fetch(`${baseURL}/webhook/${botId}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Webhook-Secret": webhookSecret,
+    },
+    body: JSON.stringify({
       channel: "test",
       channel_user_id: channelUserId,
       message_text: messageText,
-    },
-    {
-      headers: {
-        "X-Webhook-Secret": webhookSecret,
-      },
-    }
-  );
+    }),
+  });
 };
 
 // ============================================

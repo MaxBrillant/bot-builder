@@ -8,7 +8,7 @@ Three focused classes:
 - ConversationOrchestrator: Main entry point for message processing
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable, Awaitable
 from uuid import UUID
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +26,7 @@ from app.models.flow import Flow
 from app.models.session import Session
 from app.models.node_configs import FlowNode
 from app.models.audit_log import AuditResult
-from app.processors.base_processor import ProcessResult, BaseProcessor
+from app.processors.base_processor import ProcessResult
 from app.processors.factory import ProcessorFactory
 from app.utils.logger import get_logger
 from app.utils.constants import NodeType, ErrorMessages, SystemConstraints
@@ -38,6 +38,11 @@ from app.utils.exceptions import (
 )
 
 logger = get_logger(__name__)
+
+# ===== Message Callback Type =====
+# Callback signature: async fn(message: str, is_final: bool) -> None
+# Used for real-time message delivery (SSE streaming, WhatsApp, etc.)
+MessageCallback = Callable[[str, bool], Awaitable[None]]
 
 # ===== Shared HTTP Client Management =====
 _http_client: Optional[httpx.AsyncClient] = None
@@ -222,7 +227,8 @@ class FlowExecutor:
         self,
         session: Session,
         user_input: Optional[str],
-        user_context: Dict[str, str]
+        user_context: Dict[str, str],
+        message_callback: MessageCallback
     ) -> Dict[str, Any]:
         """
         Execute flow from current node
@@ -231,6 +237,9 @@ class FlowExecutor:
             session: Active session
             user_input: User's input (None if starting flow)
             user_context: User context for templates (channel, channel_id)
+            message_callback: Async callback for real-time message delivery.
+                              Called with (message, is_final) for each message generated.
+                              Required - all callers must provide a callback.
 
         Returns:
             Response dictionary with messages and session info
@@ -310,6 +319,7 @@ class FlowExecutor:
             except ValueError as e:
                 self.logger.error(f"Unknown node type: {node_type}", error=str(e))
                 await self.session_manager.error_session(session.session_id)
+                await message_callback(ErrorMessages.GENERIC_ERROR, True)
                 return {
                     "messages": [ErrorMessages.GENERIC_ERROR],
                     "session_active": False,
@@ -371,6 +381,7 @@ class FlowExecutor:
                     node_type=node_type
                 )
                 await self.session_manager.error_session(session.session_id)
+                await message_callback(ErrorMessages.GENERIC_ERROR, True)
                 return {
                     "messages": [ErrorMessages.GENERIC_ERROR],
                     "session_active": False,
@@ -380,6 +391,9 @@ class FlowExecutor:
             # Handle result message
             if result.message:
                 messages.append(result.message)
+
+                # Stream message immediately via callback
+                await message_callback(result.message, False)
 
                 # Track bot message in message history
                 if not session.message_history:
@@ -411,6 +425,9 @@ class FlowExecutor:
                 # and autocommit=False, so we must explicitly commit
                 await self.db.commit()
 
+                # Signal completion via callback
+                await message_callback("", True)
+
                 return {
                     "messages": messages,
                     "session_active": True,
@@ -427,6 +444,9 @@ class FlowExecutor:
                     "completed",
                     flow_id=str(session.flow_id)
                 )
+
+                # Signal completion via callback
+                await message_callback("", True)
 
                 return {
                     "messages": messages,
@@ -446,6 +466,9 @@ class FlowExecutor:
                 )
 
                 messages.append(ErrorMessages.NO_ROUTE_MATCH)
+
+                # Stream error message via callback
+                await message_callback(ErrorMessages.NO_ROUTE_MATCH, True)
 
                 # Track error message in message history
                 if not session.message_history:
@@ -545,7 +568,8 @@ class ConversationOrchestrator:
         channel: str,
         channel_user_id: str,
         bot_id: UUID,
-        message: str
+        message: str,
+        message_callback: MessageCallback
     ) -> Dict[str, Any]:
         """
         Main entry point for message processing
@@ -555,6 +579,9 @@ class ConversationOrchestrator:
             channel_user_id: User identifier in the channel
             bot_id: Bot ID processing this message
             message: User's message text
+            message_callback: Async callback for real-time message delivery.
+                              Called with (message, is_final) for each message generated.
+                              Required - all callers must provide a callback.
 
         Returns:
             Response dictionary with messages and session info
@@ -576,6 +603,7 @@ class ConversationOrchestrator:
                 # No active session - check for trigger keyword (bot-scoped)
                 flow = await self.keyword_matcher.find_flow_by_keyword(message, bot_id)
                 if flow is None:
+                    await message_callback("Unknown command. Please try again.", True)
                     return {
                         "messages": ["Unknown command. Please try again."],
                         "session_active": False,
@@ -604,7 +632,9 @@ class ConversationOrchestrator:
                     "channel": channel,
                     "channel_id": channel_user_id
                 }
-                return await self.flow_executor.execute_flow(session, None, user_context)
+                return await self.flow_executor.execute_flow(
+                    session, None, user_context, message_callback=message_callback
+                )
 
             # Check timeout
             if self.session_manager.check_timeout(session):
@@ -617,6 +647,7 @@ class ConversationOrchestrator:
                     session_id=str(session.session_id)
                 )
 
+                await message_callback(ErrorMessages.SESSION_EXPIRED, True)
                 return {
                     "messages": [ErrorMessages.SESSION_EXPIRED],
                     "session_active": False,
@@ -628,18 +659,23 @@ class ConversationOrchestrator:
                 "channel": channel,
                 "channel_id": channel_user_id
             }
-            return await self.flow_executor.execute_flow(session, message, user_context)
+            return await self.flow_executor.execute_flow(
+                session, message, user_context, message_callback=message_callback
+            )
 
         except SessionLockError:
             # Another request is already processing this session
             # Return a friendly message to the user
+            msg = "Your previous message is still being processed. Please wait a moment."
+            await message_callback(msg, True)
             return {
-                "messages": ["Your previous message is still being processed. Please wait a moment."],
+                "messages": [msg],
                 "session_active": True,
                 "session_ended": False
             }
 
         except SessionExpiredError:
+            await message_callback(ErrorMessages.SESSION_EXPIRED, True)
             return {
                 "messages": [ErrorMessages.SESSION_EXPIRED],
                 "session_active": False,
@@ -647,6 +683,7 @@ class ConversationOrchestrator:
             }
 
         except MaxAutoProgressionError:
+            await message_callback(ErrorMessages.MAX_AUTO_PROGRESSION, True)
             return {
                 "messages": [ErrorMessages.MAX_AUTO_PROGRESSION],
                 "session_active": False,
@@ -655,6 +692,7 @@ class ConversationOrchestrator:
 
         except NoMatchingRouteError as e:
             self.logger.error(f"No matching route: {str(e)}")
+            await message_callback(ErrorMessages.NO_ROUTE_MATCH, True)
             return {
                 "messages": [ErrorMessages.NO_ROUTE_MATCH],
                 "session_active": False,
@@ -663,6 +701,7 @@ class ConversationOrchestrator:
 
         except Exception as e:
             self.logger.error(f"Conversation error: {str(e)}", error=str(e))
+            await message_callback(ErrorMessages.GENERIC_ERROR, True)
             return {
                 "messages": [ErrorMessages.GENERIC_ERROR],
                 "session_active": False,
