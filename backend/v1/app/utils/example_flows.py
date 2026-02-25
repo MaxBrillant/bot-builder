@@ -50,8 +50,7 @@ def get_customer_support_menu_flow():
                 "routes": [
                     {"condition": "selection == 1", "target_node": "technical_response"},
                     {"condition": "selection == 2", "target_node": "billing_response"},
-                    {"condition": "selection == 3", "target_node": "general_response"},
-                    {"condition": "true", "target_node": "end"}
+                    {"condition": "selection == 3", "target_node": "general_response"}
                 ],
                 "position": {"x": 440, "y": 200}
             },

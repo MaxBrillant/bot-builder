@@ -713,9 +713,9 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
         toast.error('Cannot delete END nodes', {
           description: 'END nodes mark flow completion points and cannot be deleted.',
         });
-      } else if (errorMessage.includes("'true' (catch-all) route")) {
-        toast.error('Cannot delete branch node', {
-          description: "Branch node must have a 'true' (catch-all) route.",
+      } else if (errorMessage.includes('multiple branches')) {
+        toast.error('Cannot delete node with branches', {
+          description: 'Delete the connected nodes first, then delete this node.',
         });
       } else {
         toast.error(`Failed to delete node: ${errorMessage}`);

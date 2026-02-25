@@ -36,7 +36,14 @@ function LogicExpressionNode({
 }: NodeProps<LogicExpressionNodeData>) {
   const name = data?.name || "Logic";
   const routes = data?.flowNode?.routes || [];
-  const routeCount = routes.length || 0;
+  const allNodes = data?.allNodes || {};
+  // Count only visible routes (exclude routes to END nodes and non-existent nodes)
+  const visibleRouteCount = routes.filter(
+    (route) => {
+      const targetNode = allNodes[route.target_node];
+      return targetNode && targetNode.type !== "END";
+    }
+  ).length;
 
   return (
     <NodeWrapper
@@ -80,7 +87,7 @@ function LogicExpressionNode({
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold truncate">{name}</h3>
             <p className="text-xs text-muted-foreground truncate">
-              {routeCount} route{routeCount !== 1 ? "s" : ""}
+              {visibleRouteCount} route{visibleRouteCount !== 1 ? "s" : ""}
             </p>
           </div>
         </div>

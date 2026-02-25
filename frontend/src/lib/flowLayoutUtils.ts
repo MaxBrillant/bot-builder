@@ -816,6 +816,19 @@ export function insertNodeInFlow(
               );
             }
 
+            // For branching nodes (API_ACTION, static MENU): remove any auto-generated "true → END" routes.
+            // These are temporary routes added by ensureLeafNodesRouteToEnd when all children were deleted.
+            // Now that we're adding a proper route, clean up the placeholder.
+            // Note: LOGIC_EXPRESSION legitimately uses "true" as a fallback, so we don't clean those up.
+            if (isBranching && targetNode.type !== "LOGIC_EXPRESSION") {
+              const endNodeId = Object.values(updatedFlow.nodes).find(n => n.type === "END")?.id;
+              if (endNodeId) {
+                targetNode.routes = targetNode.routes.filter(
+                  r => !(r.condition.toLowerCase() === "true" && r.target_node === endNodeId)
+                );
+              }
+            }
+
             // Create new branch (leaf node with empty routes)
             newNode.routes = [];
 
@@ -1062,12 +1075,14 @@ export function deleteNodeFromFlow(flowJson: Flow, nodeId: string): Flow {
     );
   }
 
-  // Check if this is a branch node with multiple routes
+  // Branching nodes with multiple routes cannot be deleted directly.
+  // User must delete the child branches first.
   const hasMultipleRoutes = (nodeToDelete.routes?.length || 0) > 1;
 
   if (isBranchingNode(nodeToDelete.type, nodeToDelete.config) && hasMultipleRoutes) {
-    // Handle branch node deletion with cascading
-    return deleteBranchNodeWithCascading(updatedFlow, nodeId);
+    throw new Error(
+      `Cannot delete node with multiple branches. Delete the connected nodes first.`
+    );
   }
 
   // Original deletion logic for normal nodes
@@ -1076,14 +1091,27 @@ export function deleteNodeFromFlow(flowJson: Flow, nodeId: string): Flow {
 
   // Find all nodes that route to this node and update them
   Object.values(updatedFlow.nodes).forEach((node) => {
-    if (node.routes) {
+    if (!node.routes) return;
+
+    // Check if this parent is a branching node
+    const parentIsBranching = isBranchingNode(node.type, node.config);
+    // Check if redirect target is END
+    const targetIsEnd = targetNode?.type === "END";
+
+    // For branching nodes, if redirect would point to END, remove the route entirely.
+    // This prevents "ghost routes" that block condition slots but are invisible
+    // (not counted by canAddRoute but still occupy the condition in getUnassignedConditions).
+    // For non-branching nodes, redirecting to END is fine since overtaking handles it.
+    if (parentIsBranching && targetIsEnd) {
+      node.routes = node.routes.filter((r) => r.target_node !== nodeId);
+    } else {
+      // For non-branching nodes (or when target is not END), redirect as before
       node.routes.forEach((route) => {
         if (route.target_node === nodeId) {
-          // Redirect to the deleted node's target (if any)
           if (targetNodeId) {
             route.target_node = targetNodeId;
           } else {
-            // Remove the route if no target
+            // Remove route if no target (shouldn't happen due to ensureLeafNodesRouteToEnd)
             node.routes = node.routes?.filter((r) => r.target_node !== nodeId);
           }
         }
@@ -1135,140 +1163,6 @@ export function deleteNodeFromFlow(flowJson: Flow, nodeId: string): Flow {
   }
 
   return updatedFlow;
-}
-
-/**
- * Delete a branch node with cascading deletion
- * Preserves the "true" condition path and recursively deletes non-true children
- */
-function deleteBranchNodeWithCascading(flow: Flow, branchNodeId: string): Flow {
-  const branchNode = flow.nodes[branchNodeId];
-  if (!branchNode || !branchNode.routes) {
-    throw new Error("Invalid branch node");
-  }
-
-  // Capture branch node's X position for later shifting
-  const deletedNodeX = branchNode.position?.x;
-
-  // Find the "true" condition child (catch-all route)
-  const trueRoute = branchNode.routes.find(
-    (r) => r.condition.toLowerCase() === "true"
-  );
-
-  if (!trueRoute) {
-    throw new Error(
-      "Cannot delete branch node - must have a 'true' (catch-all) route"
-    );
-  }
-
-  const trueChildId = trueRoute.target_node;
-  const trueChildNode = flow.nodes[trueChildId];
-
-  // Calculate shift amount based on true child's position
-  let shiftAmount = 0;
-  if (deletedNodeX !== undefined && trueChildNode?.position?.x !== undefined) {
-    // The true child will take the deleted branch node's position
-    // All other nodes shift by the distance the true child moved
-    shiftAmount = trueChildNode.position.x - deletedNodeX;
-  }
-
-  // Collect all nodes to delete (branch node + non-true children and their descendants)
-  // Only delete children that have no other parent nodes outside the delete set
-  const nodesToDelete = new Set<string>([branchNodeId]);
-  const visited = new Set<string>();
-
-  const collectDescendants = (nodeId: string) => {
-    if (visited.has(nodeId)) return; // Prevent infinite recursion on cycles
-    visited.add(nodeId);
-
-    const node = flow.nodes[nodeId];
-    if (!node) return;
-
-    // Check if this node has parents outside the delete set
-    const incomingEdges = countIncomingEdges(flow, nodeId);
-    const parentsInDeleteSet = Array.from(nodesToDelete).filter(
-      deletedId => flow.nodes[deletedId]?.routes?.some(r => r.target_node === nodeId)
-    ).length;
-
-    // Only delete if all parents are being deleted
-    if (incomingEdges > parentsInDeleteSet) {
-      return; // Has parents outside delete set, preserve this node
-    }
-
-    nodesToDelete.add(nodeId);
-
-    // Recursively collect all descendants (but stop at END nodes, start node, and the true child)
-    node.routes?.forEach((route) => {
-      const childNode = flow.nodes[route.target_node];
-      if (
-        childNode &&
-        childNode.type !== "END" &&
-        route.target_node !== trueChildId &&
-        route.target_node !== flow.start_node_id
-      ) {
-        collectDescendants(route.target_node);
-      }
-    });
-  };
-
-  // Collect descendants of all non-true children
-  branchNode.routes
-    .filter((r) => r.target_node !== trueChildId)
-    .forEach((route) => {
-      const childNode = flow.nodes[route.target_node];
-      // Only collect if not an END node or start node
-      if (childNode && childNode.type !== "END" && route.target_node !== flow.start_node_id) {
-        collectDescendants(route.target_node);
-      }
-    });
-
-  // Update all routes that point to the branch node to point to the true child instead
-  Object.keys(flow.nodes).forEach((nodeId) => {
-    const node = flow.nodes[nodeId];
-    if (node.routes) {
-      node.routes = node.routes.map((route) =>
-        route.target_node === branchNodeId
-          ? { ...route, target_node: trueChildId }
-          : route
-      );
-    }
-  });
-
-  // Update start_node_id if the branch node was the start
-  if (flow.start_node_id === branchNodeId) {
-    flow.start_node_id = trueChildId;
-  }
-
-  // Remove all nodes marked for deletion
-  nodesToDelete.forEach((nodeId) => {
-    delete flow.nodes[nodeId];
-  });
-
-  // Remove any duplicate target routes created by rewiring
-  removeDuplicateTargetRoutes(flow);
-
-  // Shift nodes using graph-structure based algorithm
-  // Only shifts single-parent descendants until merge points
-  if (shiftAmount > 0 && trueChildId && deletedNodeX !== undefined) {
-    // Get all shiftable descendants (stops at merge points)
-    const nodesToShift = getShiftableDescendants(flow, trueChildId);
-
-    // Shift all nodes in the chain (snapped to grid)
-    nodesToShift.forEach((id) => {
-      const node = flow.nodes[id];
-      if (!node?.position) return;
-
-      flow.nodes[id] = {
-        ...node,
-        position: {
-          x: snapToGrid(node.position.x - shiftAmount),
-          y: snapToGrid(node.position.y),
-        },
-      };
-    });
-  }
-
-  return flow;
 }
 
 /**
