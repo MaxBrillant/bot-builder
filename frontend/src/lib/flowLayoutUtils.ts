@@ -24,9 +24,11 @@ const DAGRE_VERTICAL_SPACING = 100;
 
 
 /**
- * Get all descendants of a node via BFS traversal of routes
+ * Get descendants following only right-side children at each level.
+ * Left-side children (x < parent.x + NODE_WIDTH) are on wrapped rows and skipped entirely,
+ * along with all their descendants.
  */
-function getDescendants(nodes: Record<string, FlowNode>, startNodeId: string): Set<string> {
+function getRightSideDescendants(nodes: Record<string, FlowNode>, startNodeId: string): Set<string> {
   const descendants = new Set<string>();
   const queue = [startNodeId];
   const visited = new Set<string>();
@@ -37,12 +39,19 @@ function getDescendants(nodes: Record<string, FlowNode>, startNodeId: string): S
     visited.add(nodeId);
 
     const node = nodes[nodeId];
-    if (!node?.routes) continue;
+    if (!node?.routes || !node.position) continue;
+
+    const parentRightEdge = node.position.x + NODE_WIDTH;
 
     for (const route of node.routes) {
       if (route.target_node && !visited.has(route.target_node)) {
-        descendants.add(route.target_node);
-        queue.push(route.target_node);
+        const child = nodes[route.target_node];
+        // Only follow right-side children (left-side are on wrapped rows)
+        if (child?.position && child.position.x >= parentRightEdge) {
+          descendants.add(route.target_node);
+          queue.push(route.target_node);
+        }
+        // Left-side children and all their descendants are skipped
       }
     }
   }
@@ -570,22 +579,40 @@ export function insertNodeInFlow(
 
       const isBranching = isBranchingNode(targetNode.type, targetNode.config);
 
+      // Helper: get children that are to the right of the parent (left-side nodes are on wrapped rows, ignore them)
+      const parentRightEdge = targetNode.position.x + NODE_WIDTH;
+      const getRightSideChildren = () => targetNode.routes
+        ?.map(route => updatedFlow.nodes[route.target_node])
+        .filter(child =>
+          child?.position &&
+          child.type !== "END" &&
+          child.position.x >= parentRightEdge
+        ) ?? [];
+
       if (!isAddingNewRoute && targetNode.routes && routeIndex !== undefined) {
-        // OVERTAKING existing route: inherit Y position from the node being overtaken (except END nodes)
+        // OVERTAKING existing route: inherit Y position from the node being overtaken
+        // But only if it's to the right of parent (left-side nodes are on wrapped rows)
         const existingRoute = targetNode.routes[routeIndex];
         const existingTargetNode = updatedFlow.nodes[existingRoute.target_node];
-        if (existingTargetNode?.position && existingTargetNode.type !== "END") {
+        const isRightSide = existingTargetNode?.position &&
+          existingTargetNode.position.x >= parentRightEdge;
+
+        if (existingTargetNode?.position && existingTargetNode.type !== "END" && isRightSide) {
           verticalOffset = existingTargetNode.position.y - targetNode.position.y;
+        } else if (!isRightSide) {
+          // Overtaking a left-side node: position below right-side children (like a new branch)
+          const rightSideChildren = getRightSideChildren();
+          if (rightSideChildren.length > 0) {
+            const maxY = Math.max(...rightSideChildren.map(c => c!.position!.y));
+            verticalOffset = maxY - targetNode.position.y + VERTICAL_SPACING;
+          }
         }
       } else if (targetNode.routes && isBranching && isAddingNewRoute) {
-        // NEW route on branching node: position below all existing child nodes (excluding END nodes)
-        const childYPositions = targetNode.routes
-          .filter(route => updatedFlow.nodes[route.target_node]?.type !== "END")
-          .map(route => updatedFlow.nodes[route.target_node]?.position?.y)
-          .filter(y => y !== undefined) as number[];
+        // NEW route on branching node: position below right-side children only
+        const rightSideChildren = getRightSideChildren();
 
-        if (childYPositions.length > 0) {
-          const maxY = Math.max(...childYPositions);
+        if (rightSideChildren.length > 0) {
+          const maxY = Math.max(...rightSideChildren.map(c => c!.position!.y));
           verticalOffset = maxY - targetNode.position.y + VERTICAL_SPACING;
         }
       }
@@ -642,7 +669,7 @@ export function insertNodeInFlow(
   };
 
   // Determine which nodes to shift (only descendants of the specific route, respects graph structure)
-  let nodesToShift = new Set<string>();
+  const nodesToShift = new Set<string>();
 
   if (position === "after" && targetNodeId) {
     const targetNode = updatedFlow.nodes[targetNodeId];
@@ -657,24 +684,34 @@ export function insertNodeInFlow(
 
       if (effectiveRouteIndex !== undefined && effectiveRouteIndex >= 0 && effectiveRouteIndex < targetNode.routes.length) {
         // Inserting into a SPECIFIC route: only shift that route's target and its descendants
+        // But first check if branch root is right-side (left-side branches are on wrapped rows - ignore entirely)
         const specificRoute = targetNode.routes[effectiveRouteIndex];
-        if (specificRoute?.target_node) {
+        const branchRoot = specificRoute?.target_node ? updatedFlow.nodes[specificRoute.target_node] : null;
+        const parentRightEdgeForShift = (targetNode.position?.x ?? 0) + NODE_WIDTH;
+        const isBranchRightSide = branchRoot?.position && branchRoot.position.x >= parentRightEdgeForShift;
+
+        if (specificRoute?.target_node && isBranchRightSide) {
+          // Right-side branch: shift root + right-side descendants only
+          // (left-side descendants at any level are on wrapped rows, skip them)
           nodesToShift.add(specificRoute.target_node);
-          const descendants = getDescendants(updatedFlow.nodes, specificRoute.target_node);
+          const descendants = getRightSideDescendants(updatedFlow.nodes, specificRoute.target_node);
           descendants.forEach(id => nodesToShift.add(id));
         }
+        // Left-side branch: skip entirely (it's on a wrapped row, not our concern)
       }
       // If no effectiveRouteIndex (adding new branch to branching node), don't shift anything
     }
   } else if (position === "before" && targetNodeId) {
-    // For "before": shift the target and all its descendants
+    // For "before": shift the target and its right-side descendants only
+    // (left-side descendants are on wrapped rows, not our concern)
     nodesToShift.add(targetNodeId);
-    const descendants = getDescendants(updatedFlow.nodes, targetNodeId);
+    const descendants = getRightSideDescendants(updatedFlow.nodes, targetNodeId);
     descendants.forEach(id => nodesToShift.add(id));
   } else if (position === "start" && updatedFlow.start_node_id) {
-    // For "start": shift existing start and all its descendants
+    // For "start": shift existing start and its right-side descendants only
+    // (left-side descendants are on wrapped rows, not our concern)
     nodesToShift.add(updatedFlow.start_node_id);
-    const descendants = getDescendants(updatedFlow.nodes, updatedFlow.start_node_id);
+    const descendants = getRightSideDescendants(updatedFlow.nodes, updatedFlow.start_node_id);
     descendants.forEach(id => nodesToShift.add(id));
   }
 
@@ -682,35 +719,23 @@ export function insertNodeInFlow(
   // Gap from new node to its descendants always uses LINEAR_SPACING (branching spacing is only for parent → new node)
   const minRequiredX = newNode.position.x + NODE_WIDTH + LINEAR_SPACING;
 
-  // Filter out nodes that are to the left of the parent node (e.g., from backward edges)
-  // Only shift nodes that are actually to the right of the parent
-  const parentNode = targetNodeId ? updatedFlow.nodes[targetNodeId] : null;
-  const parentX = parentNode?.position?.x ?? newNode.position.x;
-  const nodesToActuallyShift = new Set<string>();
-  for (const nodeId of nodesToShift) {
-    const node = updatedFlow.nodes[nodeId];
-    if (node?.position && node.position.x >= parentX) {
-      nodesToActuallyShift.add(nodeId);
-    }
-  }
-
-  // Find the leftmost descendant (among those to the right) to determine shift amount
+  // Find the leftmost node to shift to determine shift amount
   let minDescendantX = Infinity;
-  for (const nodeId of nodesToActuallyShift) {
+  for (const nodeId of nodesToShift) {
     const node = updatedFlow.nodes[nodeId];
     if (node?.position && node.position.x < minDescendantX) {
       minDescendantX = node.position.x;
     }
   }
 
-  // Calculate shift: only shift if descendants are too close to new node
+  // Calculate shift: only shift if nodes are too close to new node
   const shiftAmount = minDescendantX < Infinity
     ? Math.max(0, minRequiredX - minDescendantX)
     : 0;
 
-  // Apply uniform shift to descendants on the right (preserves relative spacing)
+  // Apply uniform shift (preserves relative spacing)
   if (shiftAmount > 0) {
-    for (const nodeId of nodesToActuallyShift) {
+    for (const nodeId of nodesToShift) {
       const node = updatedFlow.nodes[nodeId];
       if (node?.position) {
         updatedFlow.nodes[nodeId] = {
