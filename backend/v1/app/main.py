@@ -225,19 +225,28 @@ async def general_exception_handler(request: Request, exc: Exception):
         exc_info=True
     )
 
+    # Unified error format - in debug mode, include exception details in errors array
     if settings.debug:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "error": "Internal server error",
-                "detail": str(exc),
-                "type": type(exc).__name__
+                "error_code": "INTERNAL_ERROR",
+                "errors": [
+                    {
+                        "type": type(exc).__name__,
+                        "message": str(exc)
+                    }
+                ]
             }
         )
 
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"error": "Internal server error"}
+        content={
+            "error": "Internal server error",
+            "error_code": "INTERNAL_ERROR"
+        }
     )
 
 

@@ -141,6 +141,16 @@ const FlowEditorContext = createContext<FlowEditorContextType | undefined>(undef
 // Helper to extract error messages
 // ============================================
 
+/**
+ * Extract error message from API responses.
+ *
+ * Unified backend error format:
+ * {
+ *   "error": "Human-readable message",
+ *   "error_code": "MACHINE_CODE",
+ *   "errors": [{ "type": "...", "message": "...", "location": "..." }]
+ * }
+ */
 function getErrorMessage(error: unknown): string {
   // Check for axios errors FIRST (before Error check, since AxiosError extends Error)
   if (typeof error === 'object' && error !== null && 'response' in error) {
@@ -148,36 +158,25 @@ function getErrorMessage(error: unknown): string {
     const response = axiosError.response;
     const data = response?.data;
 
-    // Our custom validation errors (status 400)
-    // Format: { error: "...", error_code: "...", errors: [{type, message, location}] }
-    if (data?.errors && Array.isArray(data.errors)) {
+    // Multiple validation errors - show each error's message
+    // Format: { errors: [{ type, message, location }] }
+    if (data?.errors && Array.isArray(data.errors) && data.errors.length > 0) {
       return data.errors
-        .map((err: any) => err.message || 'Unknown error')
+        .map((err: any) => err.message || JSON.stringify(err))
         .join('\n\n');
     }
 
-    // FastAPI validation errors (422) - array of detailed errors
-    if (data?.detail && Array.isArray(data.detail)) {
-      return data.detail
-        .map((err: any) => {
-          const location = err.loc?.slice(1).join('.') || 'unknown';
-          const message = err.msg || 'Validation error';
-          return `${location}: ${message}`;
-        })
-        .join('\n');
-    }
-
-    // Single error detail (string)
-    if (data?.detail && typeof data.detail === 'string') {
-      return data.detail;
-    }
-
-    // Generic error message
+    // Main error message (unified format)
     if (data?.error) {
       return data.error;
     }
 
-    // Generic message field
+    // Legacy: FastAPI default format or external services
+    if (data?.detail && typeof data.detail === 'string') {
+      return data.detail;
+    }
+
+    // Legacy: generic message field
     if (data?.message) {
       return data.message;
     }

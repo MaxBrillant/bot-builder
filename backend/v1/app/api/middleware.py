@@ -293,9 +293,8 @@ async def execution_exception_handler(
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
-            "error": "Flow execution error",
-            "error_code": exc.error_code,
-            "details": exc.message
+            "error": exc.message,
+            "error_code": exc.error_code
         }
     )
 
@@ -425,40 +424,99 @@ async def request_validation_exception_handler(
         # Get error message
         msg = error.get("msg", "Validation error")
 
-        # Format user-friendly error message
-        if field_path:
-            errors.append(f"{field_path}: {msg}")
-        else:
-            errors.append(msg)
+        # Build error object matching our unified format
+        error_obj = {
+            "type": error.get("type", "validation_error"),
+            "message": f"{field_path}: {msg}" if field_path else msg,
+            "location": field_path or None
+        }
+        errors.append(error_obj)
 
-    # Combine all errors into a single message
-    error_message = "; ".join(errors) if errors else "Validation error occurred"
-
-    # Sanitize errors for JSON serialization (remove non-serializable objects like ValueError)
-    sanitized_errors = []
-    for error in exc.errors():
-        sanitized_error = error.copy()
-        # Convert ctx values to strings if they contain exception objects
-        if 'ctx' in sanitized_error and isinstance(sanitized_error['ctx'], dict):
-            sanitized_error['ctx'] = {
-                k: str(v) if isinstance(v, Exception) else v
-                for k, v in sanitized_error['ctx'].items()
-            }
-        sanitized_errors.append(sanitized_error)
+    # Combine all errors into a single summary message
+    error_messages = [e["message"] for e in errors]
+    error_message = "; ".join(error_messages) if error_messages else "Validation error occurred"
 
     logger.warning(
         f"Request validation error: {error_message}",
         path=str(request.url),
-        errors=sanitized_errors
+        errors=errors
     )
 
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
-            "detail": error_message,
+            "error": error_message,
+            "error_code": "VALIDATION_ERROR",
             "errors": errors
         }
     )
+
+
+async def http_exception_handler(
+    request: Request,
+    exc: HTTPException
+) -> JSONResponse:
+    """
+    Handle FastAPI HTTPException with unified error format
+
+    Converts the default {detail} format to our unified {error, error_code} format.
+    This handles all ~60+ HTTPException raises throughout the codebase.
+
+    Returns:
+        JSONResponse with unified error format
+    """
+    # Map common status codes to error codes and default messages
+    status_code_map = {
+        400: ("BAD_REQUEST", "Bad request"),
+        401: ("UNAUTHORIZED", "Unauthorized"),
+        403: ("FORBIDDEN", "Forbidden"),
+        404: ("NOT_FOUND", "Resource not found"),
+        405: ("METHOD_NOT_ALLOWED", "Method not allowed"),
+        409: ("CONFLICT", "Conflict"),
+        422: ("VALIDATION_ERROR", "Validation error"),
+        429: ("RATE_LIMITED", "Too many requests"),
+        500: ("INTERNAL_ERROR", "Internal server error"),
+        502: ("BAD_GATEWAY", "Bad gateway"),
+        503: ("SERVICE_UNAVAILABLE", "Service unavailable"),
+        504: ("GATEWAY_TIMEOUT", "Gateway timeout"),
+    }
+
+    error_code, default_message = status_code_map.get(
+        exc.status_code,
+        (f"HTTP_{exc.status_code}", f"HTTP error {exc.status_code}")
+    )
+
+    # Use exc.detail if provided, otherwise use default message
+    error_message = exc.detail if exc.detail is not None else default_message
+
+    # Log based on severity
+    if exc.status_code >= 500:
+        logger.error(
+            f"HTTP {exc.status_code}: {error_message}",
+            path=str(request.url),
+            error_code=error_code
+        )
+    elif exc.status_code >= 400:
+        logger.warning(
+            f"HTTP {exc.status_code}: {error_message}",
+            path=str(request.url),
+            error_code=error_code
+        )
+
+    response = JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": error_message,
+            "error_code": error_code
+        }
+    )
+
+    # Preserve headers from the original exception (e.g., WWW-Authenticate)
+    if exc.headers:
+        for key, value in exc.headers.items():
+            response.headers[key] = value
+
+    return response
 
 
 # ===== Registration Helper =====
@@ -473,7 +531,8 @@ def register_exception_handlers(app):
     Args:
         app: FastAPI application instance
     """
-    # FastAPI/Pydantic validation errors
+    # FastAPI built-in exceptions
+    app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
 
     # Category handlers (most specific first)
@@ -487,7 +546,7 @@ def register_exception_handlers(app):
     # Generic catch-all for any BotBuilderException not handled above
     app.add_exception_handler(BotBuilderException, generic_botbuilder_exception_handler)
 
-    logger.info("Registered exception handlers for all BotBuilderException categories and RequestValidationError")
+    logger.info("Registered exception handlers for HTTPException, RequestValidationError, and all BotBuilderException categories")
 
 
 # ===== Security Headers Middleware =====
