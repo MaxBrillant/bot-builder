@@ -172,6 +172,7 @@ function FlowEditorContent() {
     redo,
     syncKey,
     pendingNodeSelectionRef,
+    getNodeErrorCount,
   } = useFlowEditor();
 
   // State
@@ -812,6 +813,7 @@ function FlowEditorContent() {
         outputHandleIds: outputHandlesByNode.get(node.id),
         isStartNode: node.id === activeFlow.start_node_id,
         onTestFlow: () => handleTestFlowFromNodeRef.current?.(),
+        errorCount: getNodeErrorCount(node.id),
       };
 
       // Multi-route parent nodes (nodes with 2+ routes) cannot move at all
@@ -884,6 +886,7 @@ function FlowEditorContent() {
     preSelectedNodeType,
     handleStubDropOnNode,
     pendingConnection,
+    getNodeErrorCount,
   ]);
 
   // Add selection state to nodes (only recalculates isSelected, not handlers)

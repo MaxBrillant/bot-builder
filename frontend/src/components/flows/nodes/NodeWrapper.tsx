@@ -23,6 +23,7 @@ interface NodeWrapperProps {
     name?: string;
     isStartNode?: boolean;
     onTestFlow?: () => void;
+    errorCount?: number;
   };
 }
 
@@ -46,6 +47,7 @@ export default function NodeWrapper({
 
   const isStartNode = data?.isStartNode;
   const onTestFlow = data?.onTestFlow;
+  const hasErrors = (data?.errorCount ?? 0) > 0;
 
   const handleTestClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -55,8 +57,9 @@ export default function NodeWrapper({
   const nodeContent = (
     <div
       className={cn(
-        "relative cursor-pointer transition-all",
-        isSelected && "ring-4 ring-foreground rounded-md"
+        "relative cursor-pointer transition-all rounded-md",
+        isSelected && "ring-4 ring-foreground",
+        hasErrors && !isSelected && "ring-2 ring-destructive"
       )}
       onClick={(e) => {
         e.stopPropagation();

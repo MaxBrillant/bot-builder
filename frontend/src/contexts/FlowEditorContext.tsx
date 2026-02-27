@@ -23,6 +23,7 @@ import {
   moveNodeBetween,
 } from '@/lib/flowLayoutUtils';
 import { canAddRoute, isBranchingNode } from '@/lib/routeConditionUtils';
+import { validateFlow } from '@/lib/validators/nodeConfigValidators';
 import { snapToGrid } from '@/utils/canvasPositioningUtils';
 import {
   createHistoryManager,
@@ -88,6 +89,10 @@ interface FlowEditorContextType {
   canSave: boolean;
   availableNodes: Array<{ id: string; type: NodeType; name: string }>;
   availableVariables: string[];
+
+  // Validation
+  getNodeErrorCount: (nodeId: string) => number;
+  hasValidationErrors: boolean;
 
   // Actions
   loadFlow: (flow: Flow) => void;
@@ -421,6 +426,20 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     if (!selectedNodeId || !draftState) return null;
     return draftState.nodes[selectedNodeId] ?? null;
   }, [selectedNodeId, draftState]);
+
+  // Validation state - recomputed when draft changes (already debounced from panel)
+  const validationState = useMemo(() => {
+    if (!draftState) {
+      return { nodeErrors: new Map<string, never[]>(), flowErrors: [], isValid: true };
+    }
+    return validateFlow(draftState);
+  }, [draftState]);
+
+  const getNodeErrorCount = useCallback((nodeId: string): number => {
+    return validationState.nodeErrors.get(nodeId)?.length ?? 0;
+  }, [validationState.nodeErrors]);
+
+  const hasValidationErrors = !validationState.isValid;
 
   const canSave = isDirty && !isSaving;
 
@@ -883,6 +902,33 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
       return false;
     }
 
+    // Check validation before saving
+    if (!validationState.isValid) {
+      // Build error message from validation errors
+      const errorMessages: string[] = [];
+
+      // Add flow-level errors
+      validationState.flowErrors.forEach(err => {
+        errorMessages.push(err.message);
+      });
+
+      // Add node-level errors (show node name for context)
+      validationState.nodeErrors.forEach((errors, nodeId) => {
+        const nodeName = draftState.nodes[nodeId]?.name || nodeId;
+        errors.slice(0, 2).forEach(err => {
+          errorMessages.push(`${nodeName}: ${err.message}`);
+        });
+        if (errors.length > 2) {
+          errorMessages.push(`${nodeName}: +${errors.length - 2} more errors`);
+        }
+      });
+
+      toast.error('Cannot save: validation errors', {
+        description: errorMessages.slice(0, 5).join('\n'),
+      });
+      return false;
+    }
+
     setIsSaving(true);
 
     try {
@@ -923,7 +969,7 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsSaving(false);
     }
-  }, [draftState, queryClient]);
+  }, [draftState, queryClient, validationState]);
 
   const revert = useCallback(() => {
     if (serverState) {
@@ -998,6 +1044,10 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     availableNodes,
     availableVariables,
 
+    // Validation
+    getNodeErrorCount,
+    hasValidationErrors,
+
     // Actions
     loadFlow,
     reset,
@@ -1038,6 +1088,8 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     canSave,
     availableNodes,
     availableVariables,
+    getNodeErrorCount,
+    hasValidationErrors,
     loadFlow,
     reset,
     selectNode,

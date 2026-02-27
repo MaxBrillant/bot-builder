@@ -8,6 +8,7 @@ import type {
   LogicExpressionNodeConfig,
   ValidationError,
   ValidationRule,
+  Flow,
 } from "../types";
 import { SystemConstraints } from "../types";
 import {
@@ -1070,4 +1071,76 @@ export function validateRoutes(
   }
 
   return { isValid: errors.length === 0, errors };
+}
+
+/**
+ * Flow-level validation result
+ */
+export interface FlowValidationState {
+  /** Errors per node, keyed by node ID */
+  nodeErrors: Map<string, ValidationError[]>;
+  /** Flow-level errors (name, triggers, etc.) */
+  flowErrors: ValidationError[];
+  /** True if entire flow is valid */
+  isValid: boolean;
+}
+
+/**
+ * Validate entire flow - all nodes and flow-level requirements
+ */
+export function validateFlow(flow: Flow): FlowValidationState {
+  const nodeErrors = new Map<string, ValidationError[]>();
+  const flowErrors: ValidationError[] = [];
+
+  // Flow-level validation
+  if (!flow.name?.trim()) {
+    flowErrors.push({ field: "name", message: "Flow name is required" });
+  }
+
+  if (!flow.trigger_keywords || flow.trigger_keywords.length === 0) {
+    flowErrors.push({
+      field: "trigger_keywords",
+      message: "At least one trigger keyword is required",
+    });
+  }
+
+  const nodeIds = Object.keys(flow.nodes);
+
+  if (!flow.start_node_id || !flow.nodes[flow.start_node_id]) {
+    flowErrors.push({
+      field: "start_node_id",
+      message: "Start node is missing or invalid",
+    });
+  }
+
+  // Node-level validation
+  for (const nodeId of nodeIds) {
+    const node = flow.nodes[nodeId];
+    const errors: ValidationError[] = [];
+
+    // Validate node name
+    if (!node.name?.trim()) {
+      errors.push({ field: "name", message: "Node name is required" });
+    }
+
+    // Validate node config
+    const configResult = validateNodeConfig(node.config, node.type);
+    errors.push(...configResult.errors);
+
+    // Validate routes
+    const routesResult = validateRoutes(
+      node.routes,
+      node.type,
+      nodeIds,
+      node.config
+    );
+    errors.push(...routesResult.errors);
+
+    if (errors.length > 0) {
+      nodeErrors.set(nodeId, errors);
+    }
+  }
+
+  const isValid = flowErrors.length === 0 && nodeErrors.size === 0;
+  return { nodeErrors, flowErrors, isValid };
 }
