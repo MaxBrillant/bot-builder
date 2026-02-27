@@ -39,10 +39,11 @@ export function LeftOperandSelect({
     allOptions.push({ value: opt.value, label: opt.label });
   }
 
-  // Add variables (not for success_expression - flow variables don't resolve in that context)
+  // Add variables and their .length variants (not for success_expression - flow variables don't resolve in that context)
   if (context !== "success_expression") {
     for (const varName of availableVariables) {
       allOptions.push({ value: varName, label: varName });
+      allOptions.push({ value: `${varName}.length`, label: `Size of list '${varName}'` });
     }
   }
 
@@ -91,7 +92,7 @@ export function LeftOperandSelect({
     let type: LeftOperand["type"] = "variable";
     if (selectedValue.endsWith("()")) {
       type = "method";
-    } else if (selectedValue.startsWith("input.") || selectedValue.startsWith("response.")) {
+    } else if (selectedValue.endsWith(".length") || selectedValue.startsWith("input.") || selectedValue.startsWith("response.")) {
       type = "property";
     }
 
@@ -145,15 +146,18 @@ export function LeftOperandSelect({
             );
           })}
 
-          {/* Variables (not for success_expression) */}
+          {/* Variables and their .length variants (not for success_expression) */}
           {context !== "success_expression" && availableVariables.length > 0 && (
             <>
               <SelectSeparator />
-              {availableVariables.map((varName) => (
+              {availableVariables.flatMap((varName) => [
                 <SelectItem key={`var-${varName}`} value={varName}>
                   {varName}
-                </SelectItem>
-              ))}
+                </SelectItem>,
+                <SelectItem key={`var-${varName}-length`} value={`${varName}.length`}>
+                  Size of list '{varName}'
+                </SelectItem>,
+              ])}
             </>
           )}
 
