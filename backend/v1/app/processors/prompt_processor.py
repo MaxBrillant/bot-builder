@@ -196,6 +196,7 @@ class PromptProcessor(BaseProcessor):
                     return ProcessResult(
                         message=retry_result.error_message,
                         terminal=True,
+                        status=retry_result.status,
                         context=context
                     )
 
@@ -292,6 +293,7 @@ class PromptProcessor(BaseProcessor):
                             return ProcessResult(
                                 message=retry_result.error_message,
                                 terminal=True,
+                                status=retry_result.status,
                                 context=context
                             )
 
@@ -308,9 +310,23 @@ class PromptProcessor(BaseProcessor):
                         context=context
                     )
         
-        # Evaluate routes
+        # Check if node has routes
+        has_routes = node.routes and len(node.routes) > 0
+
+        if not has_routes:
+            # No routes = terminal node
+            self.logger.debug(
+                f"PROMPT node '{node.id}' has no routes - terminal node",
+                node_id=node.id
+            )
+            return ProcessResult(
+                next_node=None,
+                context=context
+            )
+
+        # Evaluate routes for next node
         next_node = self.evaluate_routes(node.routes, context, node.type)
-        
+
         return ProcessResult(
             next_node=next_node,
             context=context

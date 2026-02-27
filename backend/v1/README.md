@@ -6,7 +6,7 @@ A production-ready conversational bot framework with multi-tenant support, built
 
 ### Core Capabilities
 
-- **6 Node Types**: PROMPT, MENU, API_ACTION, LOGIC_EXPRESSION, TEXT, END
+- **5 Node Types**: PROMPT, MENU, API_ACTION, LOGIC_EXPRESSION, TEXT (nodes without routes are terminal)
 - **Multi-Tenant**: Complete user isolation with database-level security
 - **Template System**: Variable substitution with `{{variable}}` syntax
 - **Validation**: REGEX and EXPRESSION-based input validation
@@ -186,12 +186,7 @@ curl -X POST http://localhost:8000/bots/YOUR_BOT_ID/flows \
         "id": "node_welcome",
         "type": "TEXT",
         "config": {"text": "Welcome! 👋"},
-        "routes": [{"condition": "true", "target_node": "node_end"}]
-      },
-      "node_end": {
-        "id": "node_end",
-        "type": "END",
-        "config": {}
+        "routes": []
       }
     }
   }'
@@ -246,8 +241,9 @@ v1/
 │   │   ├── menu_processor.py
 │   │   ├── api_action_processor.py
 │   │   ├── logic_processor.py
-│   │   ├── message_processor.py
-│   │   └── end_processor.py
+│   │   ├── text_processor.py
+│   │   ├── retry_handler.py
+│   │   └── factory.py
 │   │
 │   ├── api/                    # API routes
 │   │   ├── auth.py
@@ -307,7 +303,8 @@ MAX_AUTO_PROGRESSION=10
 3. **API_ACTION** - Call external APIs
 4. **LOGIC_EXPRESSION** - Conditional routing
 5. **TEXT** - Display information
-6. **END** - Terminate conversation
+
+**Note**: Nodes without routes are terminal and end the conversation.
 
 ### Example Flow
 
@@ -355,12 +352,7 @@ MAX_AUTO_PROGRESSION=10
       "config": {
         "text": "Thanks {{context.name}}! You are {{context.age}} years old."
       },
-      "routes": [{ "condition": "true", "target_node": "node_end" }]
-    },
-    "node_end": {
-      "id": "node_end",
-      "type": "END",
-      "config": {}
+      "routes": []
     }
   }
 }

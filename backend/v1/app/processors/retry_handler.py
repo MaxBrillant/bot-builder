@@ -26,11 +26,13 @@ class RetryResult:
         next_node: Next node to route to (set when max attempts reached and fail_route exists)
         terminal: Whether to terminate the session
         error_message: Error message to display to user
+        status: Session status to set (e.g., 'ERROR' for validation failure termination)
     """
     should_continue: bool
     next_node: Optional[str] = None
     terminal: bool = False
     error_message: str = ""
+    status: Optional[str] = None
 
 
 class RetryHandler:
@@ -120,18 +122,20 @@ class RetryHandler:
                     error_message=""
                 )
             else:
-                # No fail_route defined - terminate session
+                # No fail_route defined - terminate session with ERROR status
+                # Note: We don't call error_session() here - the engine will handle
+                # session state based on the terminal flag and status
                 logger.warning(
                     f"Max validation attempts reached, terminating session (no fail_route)",
                     attempts=new_attempt_count,
                     max_attempts=max_attempts
                 )
-                await self.session_manager.error_session(session.session_id)
                 return RetryResult(
                     should_continue=False,
                     next_node=None,
                     terminal=True,
-                    error_message=""
+                    error_message="",
+                    status="ERROR"  # Signal to engine to use error_session()
                 )
 
         # Not at max attempts yet - continue with retry

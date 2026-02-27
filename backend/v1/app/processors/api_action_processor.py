@@ -138,14 +138,28 @@ class APIActionProcessor(BaseProcessor):
                 }
             )
 
+        # Check if node has routes
+        has_routes = node.routes and len(node.routes) > 0
+
+        if not has_routes:
+            # No routes = terminal node
+            self.logger.debug(
+                f"API_ACTION node '{node.id}' has no routes - terminal node",
+                node_id=node.id
+            )
+            return ProcessResult(
+                next_node=None,
+                context=context
+            )
+
         # Evaluate routes based on success/error
         next_node = self.evaluate_routes(node.routes, context, node.type)
-        
+
         return ProcessResult(
             next_node=next_node,
             context=context
         )
-    
+
     async def _make_request(
         self,
         config: APIActionNodeConfig,

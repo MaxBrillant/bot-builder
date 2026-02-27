@@ -148,11 +148,9 @@ pytest unit/ --cov=app --cov-report=term
 **LogicProcessor** - `test_logic_processor.py`
 - Tests 064-066: Conditional routing only (no display)
 
-**MessageProcessor** - `test_message_processor.py`
+**TextProcessor** - `test_text_processor.py`
 - Tests 067-068: Display text, auto-progression
-
-**EndProcessor** - `test_end_processor.py`
-- Test 069: Session termination
+- Terminal nodes: Nodes without routes end the conversation
 
 ### Core Engine (unit/core/) - 88 tests
 
@@ -234,8 +232,9 @@ pytest unit/ --cov=app --cov-report=term
 - Null-safe evaluation
 
 ### Auto-Progression (Tests 169-175)
-- Increments: MESSAGE, LOGIC_EXPRESSION, API_ACTION
-- Resets: PROMPT, MENU, END
+- Increments: TEXT, LOGIC_EXPRESSION, API_ACTION
+- Resets: PROMPT, MENU (user input resets counter)
+- Terminal: Nodes without routes end the conversation
 - Max 10 consecutive → ERROR
 
 ### Interrupts (Tests 240-250)

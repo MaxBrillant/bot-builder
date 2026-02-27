@@ -159,6 +159,7 @@ class MenuProcessor(BaseProcessor):
                     return ProcessResult(
                         message=retry_result.error_message,
                         terminal=True,
+                        status=retry_result.status,
                         context=context
                     )
 
@@ -206,14 +207,28 @@ class MenuProcessor(BaseProcessor):
                     selected_item = source_array[selected_index]
                     self._apply_output_mapping(selected_item, output_mapping, context)
         
-        # Evaluate routes
+        # Check if node has routes
+        has_routes = node.routes and len(node.routes) > 0
+
+        if not has_routes:
+            # No routes = terminal node
+            self.logger.debug(
+                f"MENU node '{node.id}' has no routes - terminal node",
+                node_id=node.id
+            )
+            return ProcessResult(
+                next_node=None,
+                context=context
+            )
+
+        # Evaluate routes for next node
         next_node = self.evaluate_routes(node.routes, context, node.type)
-        
+
         return ProcessResult(
             next_node=next_node,
             context=context
         )
-    
+
     def _render_dynamic_options(
         self,
         items: List[Any],

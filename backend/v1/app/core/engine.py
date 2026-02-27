@@ -443,14 +443,24 @@ class FlowExecutor:
             # 2. Node has no routes AND processor returned no next_node
             # This replaces the explicit END node type
             if result.terminal or (not node_has_routes and result.next_node is None):
-                await self.session_manager.complete_session(session.session_id)
-
-                self.logger.log_session_event(
-                    str(session.session_id),
-                    "completed",
-                    flow_id=str(session.flow_id),
-                    terminal_node=session.current_node_id
-                )
+                # Check if processor indicated ERROR status (e.g., validation failure)
+                if result.status == "ERROR":
+                    await self.session_manager.error_session(session.session_id)
+                    self.logger.log_session_event(
+                        str(session.session_id),
+                        "error",
+                        flow_id=str(session.flow_id),
+                        terminal_node=session.current_node_id,
+                        reason="validation_failure"
+                    )
+                else:
+                    await self.session_manager.complete_session(session.session_id)
+                    self.logger.log_session_event(
+                        str(session.session_id),
+                        "completed",
+                        flow_id=str(session.flow_id),
+                        terminal_node=session.current_node_id
+                    )
 
                 # Signal completion via callback
                 await message_callback("", True)
