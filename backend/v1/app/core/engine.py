@@ -352,7 +352,7 @@ class FlowExecutor:
                 # Inject user context ONLY for API_ACTION nodes (per specification)
                 # Per BOT_BUILDER_SPECIFICATIONS.md Section 5, Template Contexts by Node:
                 # - API_ACTION nodes can access {{user.channel_id}} and {{user.channel}}
-                # - Other node types (PROMPT, MENU, TEXT, LOGIC_EXPRESSION, END) must NOT have access
+                # - Other node types (PROMPT, MENU, TEXT, LOGIC_EXPRESSION) must NOT have access
                 # Note: Both user.channel_id and user.channel are restricted together as they're
                 # part of the same user context object
                 if node_type == NodeType.API_ACTION:
@@ -435,14 +435,21 @@ class FlowExecutor:
                     "session_id": str(session.session_id)
                 }
 
-            # Check if terminal node (END)
-            if result.terminal:
+            # Check if current node has routes (for terminal detection)
+            node_has_routes = current_node.routes and len(current_node.routes) > 0
+
+            # Terminal condition:
+            # 1. Processor explicitly set terminal flag, OR
+            # 2. Node has no routes AND processor returned no next_node
+            # This replaces the explicit END node type
+            if result.terminal or (not node_has_routes and result.next_node is None):
                 await self.session_manager.complete_session(session.session_id)
 
                 self.logger.log_session_event(
                     str(session.session_id),
                     "completed",
-                    flow_id=str(session.flow_id)
+                    flow_id=str(session.flow_id),
+                    terminal_node=session.current_node_id
                 )
 
                 # Signal completion via callback
@@ -455,12 +462,12 @@ class FlowExecutor:
                     "session_id": str(session.session_id)
                 }
 
-            # Check if no next node (error)
-            if result.next_node is None:
+            # Error: node HAS routes but no match found (no next_node)
+            if result.next_node is None and node_has_routes:
                 await self.session_manager.error_session(session.session_id)
 
                 self.logger.warning(
-                    f"No next node",
+                    f"No next node - routes exist but none matched",
                     node_id=session.current_node_id,
                     session_id=str(session.session_id)
                 )

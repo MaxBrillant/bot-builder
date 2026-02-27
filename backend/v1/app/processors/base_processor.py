@@ -27,7 +27,7 @@ class ProcessResult:
         needs_input: Whether processor needs user input (wait state)
         next_node: ID of next node to execute (None if needs input or terminal)
         context: Updated context dictionary
-        terminal: Whether this is a terminal node (END)
+        terminal: Whether this node terminates the conversation
         status: Optional status indicator (e.g., 'COMPLETED', 'ERROR')
     """
     message: Optional[str] = None

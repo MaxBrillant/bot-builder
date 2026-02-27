@@ -3,7 +3,7 @@ Node Configuration Models
 Pydantic models for type-safe node storage and validation.
 
 These models provide:
-- Type-safe configuration for all 6 node types
+- Type-safe configuration for all 5 node types
 - Field-level validation with constraints from system specifications
 - Cross-field validation for complex rules
 - Discriminated unions for polymorphic node handling
@@ -74,11 +74,10 @@ class RetryLogic(BaseModel):
     """
     Validation retry configuration
 
-    Note: fail_route is REQUIRED when retry_logic is explicitly defined in flow JSON.
-    Validation enforced in FlowValidator._validate_retry_logic()
+    Note: fail_route is optional. If not specified, session terminates when max attempts exceeded.
     """
     max_attempts: int = Field(default=3, ge=1, le=10)
-    fail_route: Optional[str] = Field(default=None, max_length=96, description="Node to route to when max attempts exceeded (REQUIRED when retry_logic defined)")
+    fail_route: Optional[str] = Field(default=None, max_length=96, description="Node to route to when max attempts exceeded (optional - if not specified, session terminates)")
     counter_text: str = Field(
         default="(Attempt {{current_attempt}} of {{max_attempts}})",
         max_length=512,
@@ -839,17 +838,6 @@ class LogicExpressionNodeConfig(BaseModel):
     model_config = {"frozen": True, "extra": "forbid"}
 
 
-class EndNodeConfig(BaseModel):
-    """
-    Configuration for END nodes.
-    
-    Terminates the flow execution.
-    """
-    type: Literal["END"] = Field(default="END", frozen=True)
-    
-    model_config = {"frozen": True, "extra": "forbid"}
-
-
 # ============================================================================
 # DISCRIMINATED UNION
 # ============================================================================
@@ -860,7 +848,6 @@ NodeConfig = Union[
     MenuNodeConfig,
     APIActionNodeConfig,
     LogicExpressionNodeConfig,
-    EndNodeConfig
 ]
 
 
@@ -887,7 +874,7 @@ class FlowNode(BaseModel):
         max_length=50,
         description="Human-readable node name"
     )
-    type: Literal["TEXT", "PROMPT", "MENU", "API_ACTION", "LOGIC_EXPRESSION", "END"] = Field(
+    type: Literal["TEXT", "PROMPT", "MENU", "API_ACTION", "LOGIC_EXPRESSION"] = Field(
         ...,
         description="Node type"
     )
@@ -899,7 +886,7 @@ class FlowNode(BaseModel):
     routes: Optional[List[Route]] = Field(
         default=None,
         max_length=SystemConstraints.MAX_ROUTES_PER_NODE,
-        description="Routing configuration (required for all nodes except END)"
+        description="Routing configuration (optional - nodes without routes are terminal)"
     )
     position: Dict[str, float] = Field(
         ...,
@@ -942,11 +929,10 @@ class FlowNode(BaseModel):
         return v
     
     @model_validator(mode='after')
-    def validate_routes_required(self):
-        """Validate that routes are required for non-END nodes"""
-        if self.type != NodeType.END.value:
-            if not self.routes or len(self.routes) == 0:
-                raise ValueError(f"{self.type} nodes must have at least one route")
+    def validate_routes(self):
+        """Routes are optional - nodes without routes are terminal"""
+        # No minimum route requirement - empty routes = terminal node
+        # Max routes still enforced via Field(max_length=...)
         return self
     
     @model_validator(mode='after')
@@ -990,7 +976,6 @@ __all__ = [
     'MenuNodeConfig',
     'APIActionNodeConfig',
     'LogicExpressionNodeConfig',
-    'EndNodeConfig',
     
     # Union and main model
     'NodeConfig',

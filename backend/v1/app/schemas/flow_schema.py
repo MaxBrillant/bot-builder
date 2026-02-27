@@ -86,22 +86,18 @@ class FlowCreate(BaseModel):
                 },
                 "defaults": {
                     "retry_logic": {
-                        "max_attempts": 3,
-                        "fail_route": "node_error"
+                        "max_attempts": 3
                     }
                 },
                 "start_node_id": "node_welcome",
                 "nodes": {
                     "node_welcome": {
                         "id": "node_welcome",
+                        "name": "Welcome",
                         "type": "TEXT",
-                        "config": {"text": "Welcome!"},
-                        "routes": [{"condition": "true", "target_node": "node_end"}]
-                    },
-                    "node_end": {
-                        "id": "node_end",
-                        "type": "END",
-                        "config": {}
+                        "config": {"type": "TEXT", "text": "Welcome!"},
+                        "routes": [],
+                        "position": {"x": 100, "y": 100}
                     }
                 }
             }

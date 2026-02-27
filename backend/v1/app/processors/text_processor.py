@@ -26,12 +26,13 @@ class TextProcessor(BaseProcessor):
     - Error messages
     - Informational notifications
     - Intermediate status updates
+    - Terminal farewell messages (no routes)
 
     Note:
     - Cannot wait for user input
     - Cannot validate anything
     - Cannot save to context
-    - Must have a next node in routes
+    - Nodes without routes are terminal
     """
 
     async def process(
@@ -76,11 +77,27 @@ class TextProcessor(BaseProcessor):
             node_id=node.id,
             message_length=len(message)
         )
-        
+
+        # Check if node has routes
+        has_routes = node.routes and len(node.routes) > 0
+
+        if not has_routes:
+            # No routes = terminal node
+            self.logger.debug(
+                f"TEXT node '{node.id}' has no routes - terminal node",
+                node_id=node.id
+            )
+            return ProcessResult(
+                message=message,
+                next_node=None,
+                context=context
+            )
+
         # Evaluate routes for next node
         next_node = self.evaluate_routes(node.routes, context, node.type)
-        
+
         if next_node is None:
+            # Routes exist but none matched - this is an error
             self.logger.error(
                 f"No matching route in TEXT node '{node.id}'",
                 node_id=node.id
@@ -89,7 +106,7 @@ class TextProcessor(BaseProcessor):
                 f"No route condition matched in TEXT node '{node.id}'",
                 node_id=node.id
             )
-        
+
         return ProcessResult(
             message=message,
             next_node=next_node,

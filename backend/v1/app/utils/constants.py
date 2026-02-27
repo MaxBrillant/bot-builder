@@ -13,7 +13,6 @@ class NodeType(str, Enum):
     API_ACTION = "API_ACTION"
     LOGIC_EXPRESSION = "LOGIC_EXPRESSION"
     TEXT = "TEXT"
-    END = "END"
 
 
 # Session Status

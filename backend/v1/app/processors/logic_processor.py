@@ -54,11 +54,26 @@ class LogicProcessor(BaseProcessor):
         """
         # Type narrow config for IDE support (config is empty for logic nodes)
         config: LogicExpressionNodeConfig = node.config
-        
+
+        # Check if node has routes
+        has_routes = node.routes and len(node.routes) > 0
+
+        if not has_routes:
+            # No routes = terminal node
+            self.logger.debug(
+                f"LOGIC node '{node.id}' has no routes - terminal node",
+                node_id=node.id
+            )
+            return ProcessResult(
+                next_node=None,
+                context=context
+            )
+
         # Evaluate routes immediately (no message, no input)
         next_node = self.evaluate_routes(node.routes, context, node.type)
-        
+
         if next_node is None:
+            # Routes exist but none matched - this is an error
             self.logger.error(
                 f"No matching route in LOGIC node '{node.id}'",
                 node_id=node.id,
@@ -68,12 +83,12 @@ class LogicProcessor(BaseProcessor):
                 f"No route condition matched in LOGIC node '{node.id}'",
                 node_id=node.id
             )
-        
+
         self.logger.debug(
             f"LOGIC routing to {next_node}",
             next_node=next_node
         )
-        
+
         return ProcessResult(
             next_node=next_node,
             context=context

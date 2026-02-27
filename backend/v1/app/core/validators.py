@@ -639,8 +639,6 @@ class RouteConditionValidator:
             return 8
         elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return 1
-        elif node_type == NodeType.END.value:
-            return 0
         else:
             return 1
 
@@ -657,8 +655,6 @@ class RouteConditionValidator:
             return ["true"]
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return []
-        elif node_type == NodeType.END.value:
-            return []
         else:
             return ["true"]
 
@@ -673,7 +669,7 @@ class RouteConditionValidator:
         if node_type == NodeType.MENU.value:
             source_type = node_config.get('source_type')
             if source_type == MenuSourceType.DYNAMIC.value:
-                return f"DYNAMIC MENU nodes can only have 1 route (for 'Next'). Currently has {current_count} routes"
+                return f"DYNAMIC MENU nodes can have at most 1 route. Currently has {current_count} routes"
             else:
                 num_options = len(node_config.get('static_options', []))
                 return f"STATIC MENU nodes can have at most {max_routes} routes ({num_options} options + 1 fallback). Currently has {current_count} routes"
@@ -682,7 +678,7 @@ class RouteConditionValidator:
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return f"LOGIC_EXPRESSION nodes can have at most {max_routes} routes. Currently has {current_count} routes"
         elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
-            return f"{node_type} nodes can only have 1 route. Currently has {current_count} routes"
+            return f"{node_type} nodes can have at most 1 route. Currently has {current_count} routes"
         else:
             return f"Node type {node_type} can have at most {max_routes} routes. Currently has {current_count} routes"
 
@@ -1272,15 +1268,8 @@ class FlowValidator:
                     )
 
             fail_route = retry_logic.get('fail_route')
-            # fail_route is REQUIRED when retry_logic is defined (per spec)
-            if not fail_route:
-                result.add_error(
-                    "required_field",
-                    "fail_route is REQUIRED when retry_logic is defined. Specify the node to route to when max validation attempts are exceeded.",
-                    "defaults.retry_logic.fail_route",
-                    "Add a fail_route field with a valid node ID (typically a TEXT or END node)"
-                )
-            elif fail_route not in nodes:
+            # fail_route is optional - if not defined, session terminates on max attempts
+            if fail_route and fail_route not in nodes:
                 result.add_error(
                     "missing_node",
                     f"fail_route '{fail_route}' does not exist in nodes",

@@ -62,9 +62,7 @@ def get_customer_support_menu_flow():
                     "type": "TEXT",
                     "text": "You've reached Technical Support. Please describe the issue you're experiencing and I'll do my best to help you resolve it."
                 },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
+                "routes": [],
                 "position": {"x": 960, "y": 40}
             },
             "billing_response": {
@@ -75,9 +73,7 @@ def get_customer_support_menu_flow():
                     "type": "TEXT",
                     "text": "You've reached Billing and Payments. Please provide your account details and I'll help you with your billing inquiry."
                 },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
+                "routes": [],
                 "position": {"x": 960, "y": 200}
             },
             "general_response": {
@@ -88,19 +84,8 @@ def get_customer_support_menu_flow():
                     "type": "TEXT",
                     "text": "I'm here to help with any questions you might have. What can I assist you with today?"
                 },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
+                "routes": [],
                 "position": {"x": 960, "y": 360}
-            },
-            "end": {
-                "id": "end",
-                "name": "End",
-                "type": "END",
-                "config": {
-                    "type": "END"
-                },
-                "position": {"x": 1300, "y": 200}
             }
         }
     }
@@ -209,19 +194,8 @@ def get_onboarding_form_flow():
                     "type": "TEXT",
                     "text": "Thank you! Your account has been set up with the following information:\n\nName: {{user_name}}\nEmail: {{user_email}}\nRole: {{user_role}}\n\nYou're all ready to go."
                 },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
+                "routes": [],
                 "position": {"x": 440, "y": 600}
-            },
-            "end": {
-                "id": "end",
-                "name": "End",
-                "type": "END",
-                "config": {
-                    "type": "END"
-                },
-                "position": {"x": 1800, "y": 200}
             }
         }
     }
@@ -330,9 +304,7 @@ def get_quiz_flow():
                     "type": "TEXT",
                     "text": "Perfect score! You got all 3 questions correct!\n\n1. Capital of France: {{answer1}} ✓\n2. Number of continents: {{answer2}} ✓\n3. Is Earth flat?: {{answer3}} ✓"
                 },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
+                "routes": [],
                 "position": {"x": 780, "y": 680}
             },
             "results": {
@@ -343,19 +315,8 @@ def get_quiz_flow():
                     "type": "TEXT",
                     "text": "Quiz complete! Here are your answers:\n\n1. Capital of France: {{answer1}} (Correct: Paris)\n2. Number of continents: {{answer2}} (Correct: 7)\n3. Is Earth flat?: {{answer3}} (Correct: no)"
                 },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
+                "routes": [],
                 "position": {"x": 780, "y": 840}
-            },
-            "end": {
-                "id": "end",
-                "name": "End",
-                "type": "END",
-                "config": {
-                    "type": "END"
-                },
-                "position": {"x": 2140, "y": 200}
             }
         }
     }
@@ -499,9 +460,7 @@ def get_appointment_booking_flow():
                     "type": "TEXT",
                     "text": "Excellent! Your appointment has been booked successfully.\n\nBooking ID: #{{booking_id}}\nDay: {{selected_day}}\nTime: {{selected_time}}\nDoctor: {{selected_doctor}}\nName: {{customer_name}}\nPhone: {{customer_phone}}\n\nYou'll receive a confirmation message shortly."
                 },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
+                "routes": [],
                 "position": {"x": 600, "y": 640}
             },
             "booking_failed": {
@@ -512,19 +471,8 @@ def get_appointment_booking_flow():
                     "type": "TEXT",
                     "text": "I'm sorry, but I wasn't able to complete your booking at this time. Please try again later or contact us directly."
                 },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
+                "routes": [],
                 "position": {"x": 600, "y": 820}
-            },
-            "end": {
-                "id": "end",
-                "name": "End",
-                "type": "END",
-                "config": {
-                    "type": "END"
-                },
-                "position": {"x": 1000, "y": 660}
             }
         }
     }
@@ -553,19 +501,8 @@ def get_help_flow():
                     "type": "TEXT",
                     "text": "I didn't recognize that command. Here are the available options:\n\n• MENU - Customer support menu demo\n• ONBOARDING - User registration form demo\n• QUIZ - Interactive trivia quiz\n• BOOKING - Book an appointment\n\nType any of the above keywords to get started."
                 },
-                "routes": [
-                    {"condition": "true", "target_node": "end"}
-                ],
+                "routes": [],
                 "position": {"x": 100, "y": 200}
-            },
-            "end": {
-                "id": "end",
-                "name": "End",
-                "type": "END",
-                "config": {
-                    "type": "END"
-                },
-                "position": {"x": 500, "y": 200}
             }
         }
     }

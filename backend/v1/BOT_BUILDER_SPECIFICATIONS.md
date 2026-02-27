@@ -1,7 +1,7 @@
 # Bot Builder - System Specifications & Constraints
 
-**Version**: 1.0
-**Last Updated**: 2024-12-01
+**Version**: 1.1
+**Last Updated**: 2025-02-27
 
 ---
 
@@ -539,7 +539,7 @@ This allows nodes to reference other nodes that appear later in the JSON (order-
 - **Route conditions unique per node** - no duplicate conditions within a single node's routes array (case-insensitive)
 - **Circular references allowed only if cycle includes input node** - Cycles containing at least one PROMPT or MENU node are allowed (user input breaks potential infinite loops). Cycles with only non-input nodes (TEXT, API_ACTION, LOGIC_EXPRESSION) are rejected.
 - Variable types valid (STRING, NUMBER, BOOLEAN, ARRAY)
-- fail_route is required when retry_logic is defined, and must reference existing node
+- fail_route is optional; if defined, must reference existing node
 - Constraints respected:
   - Max 48 nodes per flow
   - Max 8 routes per node
@@ -671,15 +671,15 @@ Bot Builder Instance 3 ←
     "retry_logic": {
       "max_attempts": 3,
       "counter_text": "(Attempt {{current_attempt}} of {{max_attempts}})",
-      "fail_route": "node_id"  // REQUIRED when retry_logic is defined
+      "fail_route": "node_id"  // Optional - if omitted, session terminates on max attempts
     }
   }
   ```
-- **Note**: If `retry_logic` is defined, `fail_route` must be specified. `max_attempts` and `counter_text` have defaults.
+- **Note**: `max_attempts` and `counter_text` have defaults. `fail_route` is optional.
 - **Fields**:
   - `max_attempts`: Maximum validation retry attempts (default: 3, valid range: 1-10)
   - `counter_text`: Template for retry counter display (default: "(Attempt {{current_attempt}} of {{max_attempts}})", max 512 characters)
-  - `fail_route`: Node to redirect to after max attempts exceeded (**REQUIRED** - must always be specified when retry_logic is defined; must reference existing node ID in the flow, typically TEXT or END node; validated during two-pass validation)
+  - `fail_route`: Node to redirect to after max attempts exceeded (optional; if not specified, session terminates when max attempts exceeded; if specified, must reference existing node ID in the flow)
 
 #### `start_node_id` (required)
 
@@ -708,7 +708,7 @@ Every node has this base structure:
 {
   "id": "string (required)",
   "name": "string (required)",
-  "type": "PROMPT|MENU|API_ACTION|LOGIC_EXPRESSION|TEXT|END (required)",
+  "type": "PROMPT|MENU|API_ACTION|LOGIC_EXPRESSION|TEXT (required)",
   "config": { "object (required)" },
   "routes": [ "array (optional)" ],
   "position": { "object (required)" }
@@ -741,7 +741,7 @@ Every node has this base structure:
 
 - **Type**: `string enum`
 - **Description**: Node type determining behavior
-- **Values**: `PROMPT`, `MENU`, `API_ACTION`, `LOGIC_EXPRESSION`, `TEXT`, `END`
+- **Values**: `PROMPT`, `MENU`, `API_ACTION`, `LOGIC_EXPRESSION`, `TEXT`
 - **Example**: `"PROMPT"`
 
 ##### `config` (required)
@@ -750,10 +750,10 @@ Every node has this base structure:
 - **Description**: Node-specific configuration
 - **Structure**: Varies by node type (see Node Type Specifications section)
 
-##### `routes` (required for all nodes except END)
+##### `routes` (optional)
 
 - **Type**: `array of route objects`
-- **Description**: Defines possible next nodes based on conditions
+- **Description**: Defines possible next nodes based on conditions. Nodes without routes are terminal and end the conversation.
 - **Structure**:
   ```json
   [
@@ -766,7 +766,6 @@ Every node has this base structure:
 - **Constraints**:
   - Routes evaluated in order (first match wins)
   - `target_node` must reference existing node ID
-  - END nodes cannot have routes
   - **Route condition length**: Maximum 512 characters (same as expression limit)
   - **Route conditions must be unique** - Each node can only have one route with a given condition (case-insensitive comparison: 'true' === 'TRUE')
   - **Example**:
@@ -1539,16 +1538,6 @@ This design allows flows to continue gracefully when external data is malformed,
 
 **Required**: `type`, `text`
 
-#### END Node Config
-
-```json
-{
-  "type": "END"
-}
-```
-
-**Required**: `type`
-
 ### Flow Structure Rules
 
 #### ✅ Required Elements
@@ -1565,7 +1554,7 @@ This design allows flows to continue gracefully when external data is malformed,
    - `id` matching its key
    - `type`
    - `config` appropriate for its type
-   - `routes` (except END nodes)
+   - `routes` (optional - omit for terminal nodes)
 
 3. **Routes must**:
    - Have valid `condition`
@@ -1615,15 +1604,17 @@ This design allows flows to continue gracefully when external data is malformed,
      "start_node_id": "node_start",
      "nodes": {
        "node_start": {
-         "routes": [{"condition": "true", "target_node": "node_next"}]
+         "routes": [{"condition": "true", "target_node": "node_end"}]
        },
-       "node_next": {
-         "type": "END"
+       "node_end": {
+         "type": "TEXT",
+         "config": { "text": "Goodbye!" }
+         // No routes = terminal node
        },
        "node_orphan": {
          // ❌ ERROR: This node has no parent (nothing routes to it)
          // Only start_node_id is allowed to have no parent
-         "routes": [{"condition": "true", "target_node": "node_next"}]
+         "routes": [{"condition": "true", "target_node": "node_end"}]
        }
      }
    }
@@ -1633,15 +1624,13 @@ This design allows flows to continue gracefully when external data is malformed,
      "start_node_id": "node_start",
      "nodes": {
        "node_start": {
-         "routes": [{"condition": "true", "target_node": "node_next"}]
-       },
-       "node_next": {
-         // ✅ Has parent (node_start routes to it)
          "routes": [{"condition": "true", "target_node": "node_end"}]
        },
        "node_end": {
-         // ✅ Has parent (node_next routes to it)
-         "type": "END"
+         // ✅ Has parent (node_start routes to it)
+         // No routes = terminal node
+         "type": "TEXT",
+         "config": { "text": "Goodbye!" }
        }
      }
    }
@@ -2421,7 +2410,6 @@ Query parameters can be added using template syntax in the URL:
 - ❌ Cannot wait for user input
 - ❌ Cannot validate anything
 - ❌ Cannot save to context
-- ❌ Must have a next node in routes
 
 **When to Use**:
 
@@ -2433,27 +2421,28 @@ Query parameters can be added using template syntax in the URL:
 **When NOT to Use**:
 
 - Collecting input (use PROMPT)
-- Ending conversation (use END with TEXT before it)
+- Ending conversation (use terminal node)
 - Waiting for user acknowledgment
 
 ---
 
-### END Node
+### Terminal Nodes
 
-**Purpose**: Terminate conversation
+Any node without routes is a **terminal node**. When reached, the conversation ends.
 
-**Capabilities**:
+**Behavior**:
 
-- ✅ Mark session as completed
-- ✅ Cleanup session data
+- ✅ Session marked as completed
+- ✅ Session data cleaned up
 - ✅ No further nodes execute
-
-**Constraints**:
-
-- ❌ Cannot show message (use TEXT before END)
-- ❌ Cannot route to other nodes
 - ❌ Cannot be bypassed once reached
 - ❌ Cannot restart flow automatically
+
+**Common patterns**:
+
+- TEXT node with farewell message, no routes
+- API_ACTION that saves data, no routes (silent termination)
+- Any node type can be terminal by omitting routes
 
 **When to Use**:
 
@@ -2464,7 +2453,16 @@ Query parameters can be added using template syntax in the URL:
 **When NOT to Use**:
 
 - Temporary pauses (session stays active)
-- Conditional endings (use routes to END)
+
+**Example**:
+
+```json
+{
+  "type": "TEXT",
+  "config": { "text": "Thank you! Goodbye." }
+  // No routes = terminal
+}
+```
 
 ---
 
@@ -2821,13 +2819,14 @@ The system validates route conditions and counts based on node type to prevent i
 
 | Node Type            | Allowed Conditions                             | Max Routes      | Notes                                          |
 | -------------------- | ---------------------------------------------- | --------------- | ---------------------------------------------- |
-| **PROMPT**           | `"true"` only                                  | 1               | Single progression route                       |
-| **TEXT**          | `"true"` only                                  | 1               | Single progression route                       |
-| **MENU (STATIC)**    | `"selection == N"` (N ≤ num_options), `"true"` | num_options + 1 | N must be within 1 to number of options        |
-| **MENU (DYNAMIC)**   | `"true"` only                                  | 1               | **Critical: Only single "true" route allowed** |
-| **API_ACTION**       | `"success"`, `"error"`, `"true"`               | 3               | All conditions optional                        |
-| **LOGIC_EXPRESSION** | Any valid expression                           | 8               | No syntax restrictions                         |
-| **END**              | None                                           | 0               | Terminal node                                  |
+| **PROMPT**           | `"true"` only                                  | 0-1             | Optional single progression route              |
+| **TEXT**             | `"true"` only                                  | 0-1             | Optional single progression route              |
+| **MENU (STATIC)**    | `"selection == N"` (N ≤ num_options), `"true"` | 0 to num_options + 1 | N must be within 1 to number of options   |
+| **MENU (DYNAMIC)**   | `"true"` only                                  | 0-1             | **Critical: Only single "true" route allowed** |
+| **API_ACTION**       | `"success"`, `"error"`, `"true"`               | 0-3             | All conditions optional                        |
+| **LOGIC_EXPRESSION** | Any valid expression                           | 0-8             | No syntax restrictions                         |
+
+**Note**: Any node with 0 routes is a terminal node and ends the conversation.
 
 #### MENU Node Routing (DYNAMIC vs STATIC)
 
@@ -2905,7 +2904,7 @@ The system validates route conditions and counts based on node type to prevent i
     /* 2 routes */
   ]
 }
-// Error: "DYNAMIC MENU nodes can only have 1 route"
+// Error: "DYNAMIC MENU nodes can have at most 1 route"
 // Suggestion: "Use a LOGIC_EXPRESSION node after the menu for conditional routing"
 ```
 
@@ -3194,7 +3193,7 @@ Create Session (ACTIVE)
     ↓
 Process nodes → Update context → Move to next node
     ↓
-(Repeat until END node)
+(Repeat until terminal node)
     ↓
 Mark Session (COMPLETED)
     ↓
@@ -3251,12 +3250,12 @@ Session expires after 30min or explicit delete
 
 **Session Termination Scenarios**:
 
-1. END node reached → COMPLETED status
+1. Terminal node reached → COMPLETED status
 2. 30 minutes elapsed → EXPIRED status
 3. New flow triggered → Old session deleted silently, new ACTIVE session created
 4. No route match → ERROR status, session ends, user sees error message
 5. Max auto-progression reached → ERROR status, session ends
-6. Max validation attempts exceeded → Routes to fail_route or terminates
+6. Max validation attempts exceeded → Routes to fail_route (if defined) or terminates
 
 ### Session Capabilities
 
@@ -3323,7 +3322,7 @@ Session expires after 30min or explicit delete
 
 **Automatic Termination**:
 
-1. **END node reached** → Session marked COMPLETED
+1. **Terminal node reached** → Session marked COMPLETED
 2. **Session timeout (30 min)** → Session marked EXPIRED
 3. **No matching route** → Session marked ERROR, terminates immediately
 4. **Max auto-progression** → Session marked ERROR after 10 consecutive nodes
@@ -3332,7 +3331,7 @@ Session expires after 30min or explicit delete
 
 **User Notification**:
 
-- END node: No message (use TEXT node before END for final message)
+- Terminal node: Message from the terminal node itself (e.g., TEXT node's text)
 - Timeout: "Session expired. Please start again."
 - No route match: "An error occurred. Please try again."
 - Max auto-progression: "System error. Please contact support."
@@ -3422,7 +3421,7 @@ Session expires after 30min or explicit delete
 #### 5. Add Catch-All Routes
 
 ```json
-// Last route in every non-END node
+// Last route in every non-terminal node
 "routes": [
   { "condition": "specific_condition_1", "target_node": "node_a" },
   { "condition": "specific_condition_2", "target_node": "node_b" },
@@ -3924,7 +3923,7 @@ Before deploying a flow to production, verify:
 1. **Sequential Data Collection**
 
    ```
-   PROMPT (name) → PROMPT (email) → PROMPT (phone) → API_ACTION (save) → TEXT (confirm) → END
+   PROMPT (name) → PROMPT (email) → PROMPT (phone) → API_ACTION (save) → TEXT (confirm, terminal)
    ```
 
 2. **Conditional Branching**

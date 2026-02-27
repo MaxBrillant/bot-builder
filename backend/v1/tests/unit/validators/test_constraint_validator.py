@@ -337,8 +337,9 @@ def test_285_valid_position_extreme_coordinates():
         node = {
         "id": "node_test",
         "name": "Test",
-        "type": "END",
-        "config": {},
+        "type": "TEXT",
+        "config": {"type": "TEXT", "text": "Done"},
+        "routes": [],
         "position": position
         }
         # Expected: All positions valid (no bounds)
