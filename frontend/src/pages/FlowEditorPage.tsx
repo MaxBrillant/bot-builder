@@ -58,7 +58,6 @@ import { Plus } from "lucide-react";
 import {
   convertFlowToReactFlow,
   generateNodeName,
-  ensureLeafNodesRouteToEnd,
   moveNodeLeft,
   moveNodeRight,
   connectRouteToExistingNode,
@@ -364,25 +363,7 @@ function FlowEditorContent() {
       setFlows([]);
     } else {
       // Migrate flows to add names if missing (backward compatibility)
-      const migratedFlows = rawFlows.map((flow: Flow) => {
-        const namesMigrated = migrateFlowNodeNames(flow);
-
-        // Ensure END node exists
-        const endNode = Object.values(namesMigrated.nodes || {}).find(
-          (n) => n.type === "END"
-        );
-        if (!endNode) {
-          console.error("Flow must have exactly one END node");
-          return namesMigrated;
-        }
-
-        // Ensure leaf nodes route to END
-        const updatedNodes = ensureLeafNodesRouteToEnd(namesMigrated.nodes);
-        return {
-          ...namesMigrated,
-          nodes: updatedNodes,
-        };
-      });
+      const migratedFlows = rawFlows.map((flow: Flow) => migrateFlowNodeNames(flow));
 
       setFlows(migratedFlows);
     }
@@ -493,7 +474,7 @@ function FlowEditorContent() {
       const conditionExists = sourceNode?.routes?.some(
         r => r.condition.trim().toLowerCase() === condition.trim().toLowerCase()
       );
-      if (!conditionExists && sourceNode && !canAddRoute(sourceNode, activeFlow.nodes)) {
+      if (!conditionExists && sourceNode && !canAddRoute(sourceNode)) {
         toast.error("Cannot add more routes to this node (maximum reached)");
         setPendingConnection(null);
         setPendingCondition("");
@@ -508,7 +489,7 @@ function FlowEditorContent() {
       );
 
       if (updatedFlow) {
-        // Check if route to target was actually added (handles both new routes and END replacements)
+        // Check if route to target was actually added
         const hadRouteToTarget = sourceNode?.routes?.some(r => r.target_node === targetNodeId);
         const updatedSourceNode = updatedFlow.nodes[sourceNodeId];
         const hasRouteToTarget = updatedSourceNode?.routes?.some(r => r.target_node === targetNodeId);
@@ -518,7 +499,7 @@ function FlowEditorContent() {
           toast.success("Route created");
         }
       } else {
-        toast.error("Cannot create route: would create invalid flow (ensure END is reachable and cycles include a PROMPT or MENU node)");
+        toast.error("Cannot create route: would create invalid flow (cycles must include a PROMPT or MENU node)");
       }
 
       // Clear pending state
@@ -546,7 +527,7 @@ function FlowEditorContent() {
       const needsCondition = isBranchingNode(sourceNode.type, sourceNode.config);
 
       // Check route limit before showing condition dialog
-      if (!canAddRoute(sourceNode, activeFlow.nodes)) {
+      if (!canAddRoute(sourceNode)) {
         toast.error("Cannot add more routes to this node (maximum reached)");
         return;
       }
@@ -1130,7 +1111,7 @@ function FlowEditorContent() {
           if (!node) {
             toast.error("Node no longer exists in the flow");
           } else if (!node.routes || node.routes.length === 0) {
-            toast.error("Cannot move END nodes");
+            toast.error("Cannot move terminal nodes (nodes with no routes)");
           } else if (node.routes.length > 1) {
             toast.error("Cannot move nodes with multiple routes");
           } else if (node.routes[0].condition !== "true") {
@@ -1313,7 +1294,6 @@ function FlowEditorContent() {
         const childNode = activeFlow!.nodes[route.target_node];
         if (
           childNode &&
-          childNode.type !== "END" &&
           route.target_node !== trueChildId &&
           route.target_node !== activeFlow!.start_node_id
         ) {
@@ -1327,7 +1307,7 @@ function FlowEditorContent() {
       ?.filter((r) => r.target_node !== trueChildId)
       .forEach((route) => {
         const childNode = activeFlow!.nodes[route.target_node];
-        if (childNode && childNode.type !== "END" && route.target_node !== activeFlow!.start_node_id) {
+        if (childNode && route.target_node !== activeFlow!.start_node_id) {
           collectDescendants(route.target_node);
         }
       });
@@ -1532,8 +1512,8 @@ function FlowEditorContent() {
     const lastSelectedId = lastSelectedNodeByFlowRef.current.get(currentActiveFlow.flow_id);
     if (lastSelectedId) {
       const lastSelectedNode = currentActiveFlow.nodes[lastSelectedId];
-      // Only restore if node still exists and is not END
-      if (lastSelectedNode && lastSelectedNode.type !== "END") {
+      // Only restore if node still exists
+      if (lastSelectedNode) {
         selectNodeRef2.current(lastSelectedId);
 
         // Scroll to last selected node
@@ -1557,7 +1537,7 @@ function FlowEditorContent() {
     const startNodeId = currentActiveFlow.start_node_id;
     const startNode = currentActiveFlow.nodes[startNodeId];
 
-    if (startNode && startNode.type !== "END") {
+    if (startNode) {
       selectNodeRef2.current(startNodeId);
 
       // Scroll to start node
@@ -2038,7 +2018,7 @@ function FlowEditorContent() {
       ) {
         if (isEnterKeyControlFocused()) return;
         const selectedNode = currentActiveFlow.nodes[currentSelectedNodeId];
-        if (selectedNode && selectedNode.type !== "END") {
+        if (selectedNode) {
           event.preventDefault();
           setPendingDeleteNodeId(currentSelectedNodeId);
           dialogState.openDialog("deleteConfirmation");

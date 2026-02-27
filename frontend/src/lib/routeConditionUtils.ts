@@ -22,8 +22,6 @@ export function getConditionInputType(nodeType: NodeType): "dropdown" | "text" {
       return "dropdown";
     case "LOGIC_EXPRESSION":
       return "text";
-    case "END":
-      return "dropdown"; // Not used, but consistent
     default:
       return "text";
   }
@@ -122,10 +120,6 @@ export function getRouteConditionOptions(
           isDefault: true,
         },
       ];
-    }
-
-    case "END": {
-      return []; // End nodes have no routes
     }
 
     default:
@@ -420,9 +414,6 @@ export function getMaxRoutes(
       // Single route only
       return 1;
     }
-    case "END": {
-      return 0;
-    }
     default:
       return 1;
   }
@@ -502,13 +493,9 @@ export function isFallbackRoute(condition: string): boolean {
  * - connectRouteToExistingNode (whether to allow connecting to existing node)
  *
  * @param node - The node to check
- * @param allNodes - All nodes in the flow (needed to check if routes point to END)
  * @returns true if a new route can be added, false otherwise
  */
-export function canAddRoute(
-  node: FlowNode,
-  allNodes: Record<string, FlowNode>
-): boolean {
+export function canAddRoute(node: FlowNode): boolean {
   // LOGIC_EXPRESSION: Allow up to (MAX - 1) non-"true" routes, reserving 1 slot for fallback
   if (node.type === "LOGIC_EXPRESSION") {
     const nonTrueRouteCount =
@@ -518,12 +505,10 @@ export function canAddRoute(
     return nonTrueRouteCount < 7; // MAX_ROUTES_PER_NODE (8) - 1 for fallback
   }
 
-  // For other nodes: count visible routes (exclude END) vs maxRoutes
+  // For other nodes: count routes vs maxRoutes
   const maxRoutes = getMaxRoutes(node.type, node.config);
-  const visibleRoutes =
-    node.routes?.filter((route) => allNodes[route.target_node]?.type !== "END")
-      .length || 0;
-  return visibleRoutes < maxRoutes;
+  const currentRoutes = node.routes?.length || 0;
+  return currentRoutes < maxRoutes;
 }
 
 /**

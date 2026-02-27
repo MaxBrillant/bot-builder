@@ -38,7 +38,7 @@ export default function NodeWrapper({
   data,
 }: NodeWrapperProps) {
 
-  const canDelete = data?.nodeType !== "END" && data?.onDelete;
+  const canDelete = data?.onDelete;
   const hasContextMenu = canDelete || canMoveLeft || canMoveRight;
 
   const handleDeleteClick = () => {

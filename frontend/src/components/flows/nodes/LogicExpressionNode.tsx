@@ -37,11 +37,11 @@ function LogicExpressionNode({
   const name = data?.name || "Logic";
   const routes = data?.flowNode?.routes || [];
   const allNodes = data?.allNodes || {};
-  // Count only visible routes (exclude routes to END nodes and non-existent nodes)
+  // Count routes (exclude non-existent target nodes)
   const visibleRouteCount = routes.filter(
     (route) => {
       const targetNode = allNodes[route.target_node];
-      return targetNode && targetNode.type !== "END";
+      return targetNode;
     }
   ).length;
 

@@ -97,9 +97,8 @@ export default function CreateFlowDialog({
   });
 
   const onSubmit = async (values: FormValues) => {
-    // Create initial nodes: a text node and an end node
+    // Create initial node: a single text node (terminal - no routes)
     const messageNodeId = "message_start";
-    const endNodeId = "end_node";
 
     const initialNodes = {
       [messageNodeId]: {
@@ -110,22 +109,8 @@ export default function CreateFlowDialog({
           type: "TEXT" as const,
           text: "Welcome! This is your new flow.",
         },
-        routes: [
-          {
-            condition: "true",
-            target_node: endNodeId,
-          },
-        ],
+        routes: [], // No routes = terminal node
         position: { x: 100, y: 200 },
-      },
-      [endNodeId]: {
-        id: endNodeId,
-        type: "END" as const,
-        name: "End",
-        config: {
-          type: "END" as const,
-        },
-        position: { x: 500, y: 200 },
       },
     };
 

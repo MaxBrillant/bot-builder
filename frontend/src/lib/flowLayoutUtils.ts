@@ -14,7 +14,7 @@ const NODE_HEIGHT = 80;
 const STUB_LENGTH = 30;
 
 // Spacing constants for node insertion
-const LINEAR_SPACING = 180;      // 380px total gap for linear nodes (PROMPT, TEXT, END)
+const LINEAR_SPACING = 180;      // 380px total gap for linear nodes (PROMPT, TEXT)
 const BRANCHING_SPACING = 300;   // 500px total gap for branching nodes (MENU, API_ACTION, LOGIC_EXPRESSION)
 const VERTICAL_SPACING = 150;    // Vertical gap between branching routes
 
@@ -66,7 +66,6 @@ const NODE_TYPE_LABELS: Record<NodeType, string> = {
   API_ACTION: "API Action",
   LOGIC_EXPRESSION: "Logic",
   TEXT: "Text",
-  END: "End",
 };
 
 /**
@@ -80,11 +79,6 @@ export function generateNodeName(
   existingNodes: Record<string, FlowNode>
 ): string {
   const label = NODE_TYPE_LABELS[type];
-
-  // END nodes don't have numbers
-  if (type === "END") {
-    return label;
-  }
 
   // Get all existing node names
   const existingNames = new Set(
@@ -138,9 +132,6 @@ export const DEFAULT_NODE_CONFIGS: Record<NodeType, any> = {
     type: "TEXT",
     text: "Your text here",
   },
-  END: {
-    type: "END",
-  },
 };
 
 /**
@@ -157,9 +148,8 @@ export function convertFlowToReactFlow(flowJson: Flow): {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  // Convert each flow node to React Flow node (skip END nodes - they're hidden from UI)
+  // Convert each flow node to React Flow node
   Object.entries(flowJson.nodes)
-    .filter(([_, flowNode]) => flowNode.type !== "END")
     .forEach(([nodeId, flowNode]) => {
     nodes.push({
       id: nodeId,
@@ -170,8 +160,8 @@ export function convertFlowToReactFlow(flowJson: Flow): {
       },
     });
 
-    // Determine if stub edge should be shown (route capacity remaining or leaf node pointing to END)
-    const hasStub = shouldShowStub(flowNode, flowJson.nodes);
+    // Determine if stub edge should be shown (route capacity remaining)
+    const hasStub = shouldShowStub(flowNode);
 
     // Prepare for unified handle calculation (includes stub if present)
     let tempNode = flowNode;
@@ -180,10 +170,8 @@ export function convertFlowToReactFlow(flowJson: Flow): {
 
     if (hasStub) {
       stubTargetId = `stub-target-${nodeId}`;
-      // Count only visible routes (exclude END) for stub positioning
-      const visibleRouteCount = flowNode.routes?.filter(
-        route => flowJson.nodes[route.target_node]?.type !== "END"
-      ).length || 0;
+      // Count routes for stub positioning
+      const visibleRouteCount = flowNode.routes?.length || 0;
 
       // Position stub to guide handle assignment (right → bottom → top priority)
       const initialStubPosition = calculateInitialStubPosition(flowNode, visibleRouteCount);
@@ -197,9 +185,9 @@ export function convertFlowToReactFlow(flowJson: Flow): {
         ...flowJson.nodes,
         [stubTargetId]: {
           id: stubTargetId,
-          type: 'END' as NodeType,
+          type: 'TEXT' as NodeType, // Use TEXT as placeholder type for stub targets
           name: 'stub',
-          config: { type: 'END' },
+          config: { type: 'TEXT', text: '' },
           position: initialStubPosition
         } as FlowNode
       };
@@ -229,11 +217,6 @@ export function convertFlowToReactFlow(flowJson: Flow): {
       }> = [];
 
       flowNode.routes.forEach((route, index) => {
-        // Skip routes targeting END nodes (not rendered)
-        if (flowJson.nodes[route.target_node]?.type === "END") {
-          return;
-        }
-
         const friendlyLabel = getConditionLabel(
           flowNode.type,
           route.condition,
@@ -462,18 +445,13 @@ export function getInsertionPoints(
 
   // For each node, add an "after" insertion point
   layoutNodes.forEach((node) => {
-    const flowNode = flowJson.nodes[node.id];
-
-    // Don't add insertion point after END nodes
-    if (flowNode?.type !== "END") {
-      insertionPoints.push({
-        id: `after-${node.id}`,
-        position: "after",
-        targetNodeId: node.id,
-        x: node.position.x + NODE_WIDTH + 30,
-        y: node.position.y + NODE_HEIGHT / 2,
-      });
-    }
+    insertionPoints.push({
+      id: `after-${node.id}`,
+      position: "after",
+      targetNodeId: node.id,
+      x: node.position.x + NODE_WIDTH + 30,
+      y: node.position.y + NODE_HEIGHT / 2,
+    });
   });
 
   // Add start insertion point if no start node
@@ -487,51 +465,6 @@ export function getInsertionPoints(
   }
 
   return insertionPoints;
-}
-
-/**
- * Ensures all leaf nodes (nodes with no routes or empty routes)
- * have a default "true" route pointing to the END node
- */
-export function ensureLeafNodesRouteToEnd(
-  nodes: Record<string, FlowNode>
-): Record<string, FlowNode> {
-  // Find the END node
-  const endNode = Object.values(nodes).find((n) => n.type === "END");
-  if (!endNode) {
-    console.error("No END node found in flow");
-    return nodes;
-  }
-
-  const updatedNodes: Record<string, FlowNode> = {};
-
-  for (const [nodeId, node] of Object.entries(nodes)) {
-    // Skip END node itself
-    if (node.type === "END") {
-      updatedNodes[nodeId] = node;
-      continue;
-    }
-
-    // Check if node has no routes or empty routes array
-    const hasNoRoutes = !node.routes || node.routes.length === 0;
-
-    if (hasNoRoutes) {
-      // Auto-add default "true" route to END
-      updatedNodes[nodeId] = {
-        ...node,
-        routes: [
-          {
-            condition: "true",
-            target_node: endNode.id,
-          },
-        ],
-      };
-    } else {
-      updatedNodes[nodeId] = node;
-    }
-  }
-
-  return updatedNodes;
 }
 
 /**
@@ -585,7 +518,6 @@ export function insertNodeInFlow(
         ?.map(route => updatedFlow.nodes[route.target_node])
         .filter(child =>
           child?.position &&
-          child.type !== "END" &&
           child.position.x >= parentRightEdge
         ) ?? [];
 
@@ -597,7 +529,7 @@ export function insertNodeInFlow(
         const isRightSide = existingTargetNode?.position &&
           existingTargetNode.position.x >= parentRightEdge;
 
-        if (existingTargetNode?.position && existingTargetNode.type !== "END" && isRightSide) {
+        if (existingTargetNode?.position && isRightSide) {
           verticalOffset = existingTargetNode.position.y - targetNode.position.y;
         } else if (!isRightSide) {
           // Overtaking a left-side node: position below right-side children (like a new branch)
@@ -661,7 +593,7 @@ export function insertNodeInFlow(
     type: newNodeType,
     name: nodeName,
     config: DEFAULT_NODE_CONFIGS[newNodeType],
-    routes: newNodeType === "END" ? undefined : [],
+    routes: [], // Terminal nodes simply have empty routes
     position: {
       x: snapToGrid(initialPosition.x),
       y: snapToGrid(initialPosition.y),
@@ -810,26 +742,13 @@ export function insertNodeInFlow(
             ];
           } else {
             // Check if we can add another route to this node
-            if (!canAddRoute(targetNode, updatedFlow.nodes)) {
+            if (!canAddRoute(targetNode)) {
               throw new Error(
                 `Cannot add more routes to this ${targetNode.type} node (maximum reached)`
               );
             }
 
-            // For branching nodes (API_ACTION, static MENU): remove any auto-generated "true → END" routes.
-            // These are temporary routes added by ensureLeafNodesRouteToEnd when all children were deleted.
-            // Now that we're adding a proper route, clean up the placeholder.
-            // Note: LOGIC_EXPRESSION legitimately uses "true" as a fallback, so we don't clean those up.
-            if (isBranching && targetNode.type !== "LOGIC_EXPRESSION") {
-              const endNodeId = Object.values(updatedFlow.nodes).find(n => n.type === "END")?.id;
-              if (endNodeId) {
-                targetNode.routes = targetNode.routes.filter(
-                  r => !(r.condition.toLowerCase() === "true" && r.target_node === endNodeId)
-                );
-              }
-            }
-
-            // Create new branch (leaf node with empty routes)
+            // Create new branch (leaf node with empty routes = terminal)
             newNode.routes = [];
 
             // For LOGIC_EXPRESSION nodes, generate a unique condition placeholder
@@ -948,9 +867,6 @@ export function insertNodeInFlow(
       break;
   }
 
-  // Ensure leaf nodes route to END
-  updatedFlow.nodes = ensureLeafNodesRouteToEnd(updatedFlow.nodes);
-
   return { flow: updatedFlow, newNodeId };
 }
 
@@ -1047,7 +963,7 @@ function getShiftableDescendants(flow: Flow, startNodeId: string): Set<string> {
 
 /**
  * Delete node from flow JSON
- * Handles: start node protection, END node protection, and branch node cascading
+ * Handles: start node protection and branch node cascading
  */
 export function deleteNodeFromFlow(flowJson: Flow, nodeId: string): Flow {
   const updatedFlow: Flow = JSON.parse(JSON.stringify(flowJson));
@@ -1065,13 +981,6 @@ export function deleteNodeFromFlow(flowJson: Flow, nodeId: string): Flow {
   if (updatedFlow.start_node_id === nodeId) {
     throw new Error(
       "Cannot delete the start node - it is the entry point of the flow"
-    );
-  }
-
-  // Prevent deletion of END nodes
-  if (nodeToDelete.type === "END") {
-    throw new Error(
-      "Cannot delete END nodes - they mark flow completion points"
     );
   }
 
@@ -1095,23 +1004,19 @@ export function deleteNodeFromFlow(flowJson: Flow, nodeId: string): Flow {
 
     // Check if this parent is a branching node
     const parentIsBranching = isBranchingNode(node.type, node.config);
-    // Check if redirect target is END
-    const targetIsEnd = targetNode?.type === "END";
 
-    // For branching nodes, if redirect would point to END, remove the route entirely.
-    // This prevents "ghost routes" that block condition slots but are invisible
-    // (not counted by canAddRoute but still occupy the condition in getUnassignedConditions).
-    // For non-branching nodes, redirecting to END is fine since overtaking handles it.
-    if (parentIsBranching && targetIsEnd) {
+    // For branching nodes with no target to redirect to, remove the route entirely
+    // (the deleted node was terminal, so the parent becomes terminal on that branch)
+    if (parentIsBranching && !targetNodeId) {
       node.routes = node.routes.filter((r) => r.target_node !== nodeId);
     } else {
-      // For non-branching nodes (or when target is not END), redirect as before
+      // Redirect routes to the deleted node's target
       node.routes.forEach((route) => {
         if (route.target_node === nodeId) {
           if (targetNodeId) {
             route.target_node = targetNodeId;
           } else {
-            // Remove route if no target (shouldn't happen due to ensureLeafNodesRouteToEnd)
+            // Remove route if no target (node was terminal)
             node.routes = node.routes?.filter((r) => r.target_node !== nodeId);
           }
         }
@@ -1134,9 +1039,6 @@ export function deleteNodeFromFlow(flowJson: Flow, nodeId: string): Flow {
 
   // Delete the node
   delete updatedFlow.nodes[nodeId];
-
-  // Ensure leaf nodes route to END
-  updatedFlow.nodes = ensureLeafNodesRouteToEnd(updatedFlow.nodes);
 
   // Remove any duplicate target routes created by rewiring
   removeDuplicateTargetRoutes(updatedFlow);
@@ -1190,37 +1092,6 @@ function findParentNode(
   }
 
   return null;
-}
-
-/**
- * Check if END node is reachable from the start node.
- * Returns false if END would be orphaned (no path leads to it).
- */
-function isEndReachable(flow: Flow): boolean {
-  const endNode = Object.values(flow.nodes).find(n => n.type === "END");
-  if (!endNode) return false;
-
-  const visited = new Set<string>();
-  const queue = [flow.start_node_id];
-
-  while (queue.length > 0) {
-    const nodeId = queue.shift()!;
-    if (visited.has(nodeId)) continue;
-    visited.add(nodeId);
-
-    if (nodeId === endNode.id) return true;
-
-    const node = flow.nodes[nodeId];
-    if (node?.routes) {
-      for (const route of node.routes) {
-        if (!visited.has(route.target_node)) {
-          queue.push(route.target_node);
-        }
-      }
-    }
-  }
-
-  return false;
 }
 
 // Node types that collect user input (break potential infinite loops)
@@ -1459,8 +1330,8 @@ export function moveNodeBetween(
  * Determine if node should show stub edge based on route capacity.
  * Delegates to canAddRoute() for consistent logic across the codebase.
  */
-function shouldShowStub(node: FlowNode, allNodes: Record<string, FlowNode>): boolean {
-  return canAddRoute(node, allNodes);
+function shouldShowStub(node: FlowNode): boolean {
+  return canAddRoute(node);
 }
 
 /**
@@ -1564,10 +1435,9 @@ export function connectRouteToExistingNode(
   // Validate target node exists
   if (!flow.nodes[targetNodeId]) return null;
 
-  // If route with this condition already exists (excluding END routes), silently ignore
+  // If route with this condition already exists, silently ignore
   const conditionExists = sourceNode.routes?.some(
-    r => r.condition.trim().toLowerCase() === condition.trim().toLowerCase() &&
-         flow.nodes[r.target_node]?.type !== "END"
+    r => r.condition.trim().toLowerCase() === condition.trim().toLowerCase()
   );
   if (conditionExists) {
     return flow;
@@ -1587,22 +1457,15 @@ export function connectRouteToExistingNode(
   }
 
   // Check if we can add another route to this node
-  if (!canAddRoute(sourceNode, flow.nodes)) {
+  if (!canAddRoute(sourceNode)) {
     return null; // Max routes reached
   }
 
-  // Filter out END routes with the same condition (they're placeholders being replaced)
-  // Other END routes (e.g., LOGIC_EXPRESSION "true" fallback) are preserved
-  const updatedRoutes = (sourceNode.routes || []).filter(
-    r => !(r.condition.trim().toLowerCase() === condition.trim().toLowerCase() &&
-           flow.nodes[r.target_node]?.type === "END")
-  );
-
   // Add new route
-  updatedRoutes.push({
+  const updatedRoutes = [...(sourceNode.routes || []), {
     condition,
     target_node: targetNodeId,
-  });
+  }];
 
   const updatedFlow = {
     ...flow,
@@ -1614,11 +1477,6 @@ export function connectRouteToExistingNode(
       },
     },
   };
-
-  // Check if END is still reachable - if not, block the connection
-  if (!isEndReachable(updatedFlow)) {
-    return null;
-  }
 
   return updatedFlow;
 }

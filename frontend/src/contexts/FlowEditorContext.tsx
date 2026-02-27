@@ -685,7 +685,7 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
       // Only applies to branching nodes - non-branching nodes always overtake their single route
       if (position === 'after' && targetId && actualRouteIndex === undefined) {
         const targetNode = currentState.nodes[targetId];
-        if (targetNode && isBranchingNode(targetNode.type, targetNode.config) && !canAddRoute(targetNode, currentState.nodes)) {
+        if (targetNode && isBranchingNode(targetNode.type, targetNode.config) && !canAddRoute(targetNode)) {
           toast.error("Cannot add more routes to this node (maximum reached)");
           return null;
         }
@@ -740,10 +740,6 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
       if (errorMessage.includes('start node')) {
         toast.error('Cannot delete the start node', {
           description: 'The start node is the entry point of the flow and cannot be deleted.',
-        });
-      } else if (errorMessage.includes('END node')) {
-        toast.error('Cannot delete END nodes', {
-          description: 'END nodes mark flow completion points and cannot be deleted.',
         });
       } else if (errorMessage.includes('multiple branches')) {
         toast.error('Cannot delete node with branches', {

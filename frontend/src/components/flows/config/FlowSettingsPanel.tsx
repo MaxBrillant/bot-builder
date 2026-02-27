@@ -121,12 +121,8 @@ export function FlowSettingsPanel({
         flow.defaults?.retry_logic?.counter_text ??
         "(Attempt {{current_attempt}} of {{max_attempts}})";
 
-      const endNode = flow.nodes
-        ? Object.values(flow.nodes).find((node) => node.type === "END")
-        : null;
-      const flowFailRoute =
-        flow.defaults?.retry_logic?.fail_route ||
-        (endNode ? endNode.id : nodes.length > 0 ? nodes[0].id : "");
+      // fail_route: use existing value or empty (empty = end conversation)
+      const flowFailRoute = flow.defaults?.retry_logic?.fail_route || "";
 
       setName(flowName);
       setTriggerKeywords(flowKeywords);
@@ -180,12 +176,8 @@ export function FlowSettingsPanel({
         flow.defaults?.retry_logic?.counter_text ??
         "(Attempt {{current_attempt}} of {{max_attempts}})";
 
-      const endNode = flow.nodes
-        ? Object.values(flow.nodes).find((node) => node.type === "END")
-        : null;
-      const flowFailRoute =
-        flow.defaults?.retry_logic?.fail_route ||
-        (endNode ? endNode.id : nodes.length > 0 ? nodes[0].id : "");
+      // fail_route: use existing value or empty (empty = end conversation)
+      const flowFailRoute = flow.defaults?.retry_logic?.fail_route || "";
 
       setName(flowName);
       setTriggerKeywords(flowKeywords);

@@ -94,7 +94,7 @@ function findNodeInDirection(
 
     const rf = rfNodes[i];
     const node = nodes[rf.id];
-    if (!node || node.type === "END") continue;
+    if (!node) continue;
 
     // Calculate delta to candidate center
     const dx = rf.position.x + (rf.width || 200) * 0.5 - cx;

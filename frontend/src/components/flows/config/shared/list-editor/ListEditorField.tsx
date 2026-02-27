@@ -99,7 +99,7 @@ export function ListEditorField<T>({
             }
             rows={1}
             maxRows={5}
-            nodeType={context.nodeType as "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "END" | undefined}
+            nodeType={context.nodeType as "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | undefined}
             error={error}
           />
         );

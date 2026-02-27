@@ -123,7 +123,7 @@ export function RetryLogicEditor({
         <Label htmlFor="fail-route" className="text-xs">
           Fail Route
         </Label>
-        <Select value={failRoute} onValueChange={onFailRouteChange}>
+        <Select value={failRoute || "__NONE__"} onValueChange={(value) => onFailRouteChange(value === "__NONE__" ? "" : value)}>
           <SelectTrigger
             id="fail-route"
             className={cn(errors["failRoute"] && "border-destructive")}
@@ -131,6 +131,9 @@ export function RetryLogicEditor({
             <SelectValue placeholder="Select a node" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="__NONE__" className="text-muted-foreground">
+              None (end conversation)
+            </SelectItem>
             {nodes.length > 0 &&
               nodes
                 .sort((a, b) => a.name.localeCompare(b.name))
@@ -151,12 +154,15 @@ export function RetryLogicEditor({
               <p className="mb-2">
                 If the user uses all their attempts without entering valid input, the conversation will jump to this node instead of continuing normally.
               </p>
-              <p className="text-xs font-medium mt-2">Common choices:</p>
+              <p className="text-xs font-medium mt-2">Options:</p>
               <p className="mt-1 text-xs">
-                • An END node to end the conversation
+                • <strong>None</strong> - End the conversation immediately
               </p>
               <p className="mt-1 text-xs">
-                • A TEXT node that says "Sorry, I couldn't understand. Please try again later."
+                • A TEXT node with an error message
+              </p>
+              <p className="mt-1 text-xs">
+                • A node that loops back to try again
               </p>
             </>
           }

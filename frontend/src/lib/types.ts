@@ -72,8 +72,7 @@ export type NodeType =
   | "MENU"
   | "API_ACTION"
   | "LOGIC_EXPRESSION"
-  | "TEXT"
-  | "END";
+  | "TEXT";
 
 export type ValidationType = "REGEX" | "EXPRESSION";
 export type MenuSourceType = "STATIC" | "DYNAMIC";
@@ -181,20 +180,13 @@ export interface LogicExpressionNodeConfig {
   // Empty object - routes are configured separately
 }
 
-// END Node Configuration
-export interface EndNodeConfig {
-  type: "END";
-  // Empty object - no configuration needed
-}
-
 // Union type for all configurations
 export type NodeConfig =
   | TextNodeConfig
   | PromptNodeConfig
   | MenuNodeConfig
   | APIActionNodeConfig
-  | LogicExpressionNodeConfig
-  | EndNodeConfig;
+  | LogicExpressionNodeConfig;
 
 // ============================================
 // VARIABLE TYPES

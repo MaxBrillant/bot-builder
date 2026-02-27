@@ -180,8 +180,7 @@ export function calculateHandleAssignments(
     return [];
   }
 
-  // Categorize routes by direction (skip routes to END nodes - they're hidden from UI)
-  // Exception: stub routes (condition === 'stub') point to temporary END nodes and should be included
+  // Categorize routes by direction
   const routesBySide: Record<Exclude<HandleSide, "left">, RouteInfo[]> = {
     right: [],
     top: [],
@@ -190,11 +189,6 @@ export function calculateHandleAssignments(
 
   sourceNode.routes.forEach((route, index) => {
     const targetNode = allNodes[route.target_node];
-
-    // Skip routes to END nodes unless it's a stub route
-    if (targetNode?.type === "END" && route.condition !== "stub") {
-      return;
-    }
 
     const sourcePos = sourceNode.position || { x: 0, y: 0 };
     const targetPos = targetNode?.position || { x: 0, y: 0 };
