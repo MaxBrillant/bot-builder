@@ -51,8 +51,10 @@ export function serializeExpression(expression: ExpressionDefinition): string {
       const conditionText = serializeCondition(condition);
 
       // Add logical operator if not last condition
-      if (index < validConditions.length - 1 && condition.logicalOperator) {
-        const operator = condition.logicalOperator === "AND" ? "&&" : "||";
+      // Default to AND if logicalOperator is not set (matches UI default)
+      if (index < validConditions.length - 1) {
+        const logicalOp = condition.logicalOperator || "AND";
+        const operator = logicalOp === "AND" ? "&&" : "||";
         return `${conditionText} ${operator}`;
       }
 
