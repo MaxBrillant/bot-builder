@@ -307,7 +307,8 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     }
   }, [historyManager]);
 
-  // Ref for latest draft state (for debounced commits)
+  // Ref for latest draft state - updated synchronously during mutations to handle
+  // batched calls, and also via effect as a fallback after React renders
   const draftStateRef = useRef(draftState);
   useEffect(() => {
     draftStateRef.current = draftState;
@@ -526,46 +527,50 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
   const updateFlowSettings = useCallback((
     patch: Partial<Pick<Flow, 'name' | 'trigger_keywords' | 'variables' | 'defaults'>>
   ) => {
-    setDraftState((prev) => {
-      if (!prev) return prev;
-      const newState = { ...prev, ...patch };
+    const currentState = draftStateRef.current;
+    if (!currentState) return;
 
-      // Record history
-      recordCommand(
-        CommandType.UPDATE_FLOW_SETTINGS,
-        'Update flow settings',
-        prev,
-        newState
-      );
+    const newState = { ...currentState, ...patch };
 
-      return newState;
-    });
+    // Record history BEFORE setting state (outside state updater to avoid StrictMode double-call)
+    recordCommand(
+      CommandType.UPDATE_FLOW_SETTINGS,
+      'Update flow settings',
+      currentState,
+      newState
+    );
+
+    // Update ref synchronously so subsequent calls in same batch see updated state
+    draftStateRef.current = newState;
+    setDraftState(newState);
   }, [recordCommand]);
 
   // ========== Draft Mutations - Node Operations ==========
 
   const updateNode = useCallback((nodeId: string, patch: Partial<FlowNode>) => {
-    setDraftState((prev) => {
-      if (!prev || !prev.nodes[nodeId]) return prev;
-      const newState = {
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [nodeId]: { ...prev.nodes[nodeId], ...patch },
-        },
-      };
+    const currentState = draftStateRef.current;
+    if (!currentState || !currentState.nodes[nodeId]) return;
 
-      // Record history
-      recordCommand(
-        CommandType.UPDATE_NODE_CONFIG,
-        `Update node "${prev.nodes[nodeId].name}"`,
-        prev,
-        newState,
-        [nodeId]
-      );
+    const newState = {
+      ...currentState,
+      nodes: {
+        ...currentState.nodes,
+        [nodeId]: { ...currentState.nodes[nodeId], ...patch },
+      },
+    };
 
-      return newState;
-    });
+    // Record history BEFORE setting state (outside state updater to avoid StrictMode double-call)
+    recordCommand(
+      CommandType.UPDATE_NODE_CONFIG,
+      `Update node "${currentState.nodes[nodeId].name}"`,
+      currentState,
+      newState,
+      [nodeId]
+    );
+
+    // Update ref synchronously so subsequent calls in same batch see updated state
+    draftStateRef.current = newState;
+    setDraftState(newState);
   }, [recordCommand]);
 
   const updateNodeConfig = useCallback((nodeId: string, config: NodeConfig) => {
@@ -581,65 +586,69 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
   }, [updateNode]);
 
   const updateNodePosition = useCallback((nodeId: string, position: { x: number; y: number }) => {
-    setDraftState((prev) => {
-      if (!prev || !prev.nodes[nodeId]) return prev;
-      const newState = {
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [nodeId]: {
-            ...prev.nodes[nodeId],
-            position: {
-              x: snapToGrid(position.x),
-              y: snapToGrid(position.y),
-            },
+    const currentState = draftStateRef.current;
+    if (!currentState || !currentState.nodes[nodeId]) return;
+
+    const newState = {
+      ...currentState,
+      nodes: {
+        ...currentState.nodes,
+        [nodeId]: {
+          ...currentState.nodes[nodeId],
+          position: {
+            x: snapToGrid(position.x),
+            y: snapToGrid(position.y),
           },
         },
-      };
+      },
+    };
 
-      // Record history
-      recordCommand(
-        CommandType.UPDATE_NODE_POSITION,
-        `Move node "${prev.nodes[nodeId].name}"`,
-        prev,
-        newState,
-        [nodeId]
-      );
+    // Record history BEFORE setting state (outside state updater to avoid StrictMode double-call)
+    recordCommand(
+      CommandType.UPDATE_NODE_POSITION,
+      `Move node "${currentState.nodes[nodeId].name}"`,
+      currentState,
+      newState,
+      [nodeId]
+    );
 
-      return newState;
-    });
+    // Update ref synchronously so subsequent calls in same batch see updated state
+    draftStateRef.current = newState;
+    setDraftState(newState);
   }, [recordCommand]);
 
   const updateMultipleNodePositions = useCallback((
     positions: Record<string, { x: number; y: number }>
   ) => {
-    setDraftState((prev) => {
-      if (!prev) return prev;
-      const updatedNodes = { ...prev.nodes };
-      for (const [nodeId, position] of Object.entries(positions)) {
-        if (updatedNodes[nodeId]) {
-          updatedNodes[nodeId] = {
-            ...updatedNodes[nodeId],
-            position: {
-              x: snapToGrid(position.x),
-              y: snapToGrid(position.y),
-            },
-          };
-        }
+    const currentState = draftStateRef.current;
+    if (!currentState) return;
+
+    const updatedNodes = { ...currentState.nodes };
+    for (const [nodeId, position] of Object.entries(positions)) {
+      if (updatedNodes[nodeId]) {
+        updatedNodes[nodeId] = {
+          ...updatedNodes[nodeId],
+          position: {
+            x: snapToGrid(position.x),
+            y: snapToGrid(position.y),
+          },
+        };
       }
-      const newState = { ...prev, nodes: updatedNodes };
+    }
+    const newState = { ...currentState, nodes: updatedNodes };
 
-      // Record history
-      recordCommand(
-        CommandType.BATCH_UPDATE_POSITIONS,
-        `Move ${Object.keys(positions).length} node(s)`,
-        prev,
-        newState,
-        Object.keys(positions)
-      );
+    // Record history BEFORE setting state (outside state updater to avoid StrictMode double-call)
+    recordCommand(
+      CommandType.BATCH_UPDATE_POSITIONS,
+      `Move ${Object.keys(positions).length} node(s)`,
+      currentState,
+      newState,
+      Object.keys(positions)
+    );
 
-      return newState;
-    });
+    // Update ref synchronously so subsequent calls in same batch see updated state
+    draftStateRef.current = newState;
+    setDraftState(newState);
   }, [recordCommand]);
 
   // ========== Draft Mutations - Structural Operations ==========
@@ -694,6 +703,8 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
         [newNodeId]
       );
 
+      // Update ref synchronously so subsequent calls in same batch see updated state
+      draftStateRef.current = result.flow;
       setDraftState(result.flow);
       toast.success(`${nodeType} node added`);
 
@@ -750,7 +761,8 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
       [nodeId]
     );
 
-    // Update state
+    // Update ref synchronously so subsequent calls in same batch see updated state
+    draftStateRef.current = result;
     setDraftState(result);
 
     // Clear selection if deleted node was selected
@@ -791,6 +803,8 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
       [nodeId]
     );
 
+    // Update ref synchronously so subsequent calls in same batch see updated state
+    draftStateRef.current = result;
     setDraftState(result);
     toast.success('Node moved left');
     return true;
@@ -815,6 +829,8 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
       [nodeId]
     );
 
+    // Update ref synchronously so subsequent calls in same batch see updated state
+    draftStateRef.current = result;
     setDraftState(result);
     toast.success('Node moved right');
     return true;
@@ -836,6 +852,8 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
       [nodeId]
     );
 
+    // Update ref synchronously so subsequent calls in same batch see updated state
+    draftStateRef.current = result;
     setDraftState(result);
     return true;
   }, [recordCommand]);
