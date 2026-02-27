@@ -90,7 +90,7 @@ export function LogicExpressionConfigForm({
             <p className="font-medium text-muted-foreground">Tips</p>
             <div className="space-y-2 ml-2 text-muted-foreground">
               <p>• Use <span className="text-foreground font-medium">Always match</span> to catch everything else</p>
-              <p>• For nested values, select <span className="text-foreground font-medium">Custom field</span> and type <span className="text-foreground font-medium">context.</span> followed by the path (e.g. context.user.name)</p>
+              <p>• For nested values, select <span className="text-foreground font-medium">Custom field</span> and type the path (e.g. user.name)</p>
             </div>
           </div>
         </div>

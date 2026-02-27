@@ -235,7 +235,7 @@ export default function NodeTypeSelector({
                     ? "Select menu option"
                     : parentNode.type === "API_ACTION"
                     ? "Select condition"
-                    : "e.g. context.age > 18"
+                    : "e.g. age > 18"
                 }
                 availableVariables={availableVariables}
               />

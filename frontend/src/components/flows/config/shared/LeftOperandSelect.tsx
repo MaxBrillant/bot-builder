@@ -68,6 +68,7 @@ export function LeftOperandSelect({
   };
 
   // Get default value when custom is selected
+  // Note: Must be non-empty to trigger showCustomInput mode
   const getCustomDefault = () => {
     switch (context) {
       case "success_expression":
@@ -75,16 +76,21 @@ export function LeftOperandSelect({
       case "validation_expression":
         return "input.";
       case "route_logic":
-        return "context.";
+        return "variable.path";
       default:
-        return "context.";
+        return "variable.path";
     }
   };
 
   const handleSelectChange = (selectedValue: string) => {
     // Custom field selected - set default path to trigger input mode
     if (selectedValue === "__custom__") {
-      onChange({ type: "property", path: getCustomDefault() });
+      const defaultPath = getCustomDefault();
+      const type: LeftOperand["type"] =
+        defaultPath.startsWith("input.") || defaultPath.startsWith("response.")
+          ? "property"
+          : "variable";
+      onChange({ type, path: defaultPath });
       return;
     }
 
@@ -92,7 +98,7 @@ export function LeftOperandSelect({
     let type: LeftOperand["type"] = "variable";
     if (selectedValue.endsWith("()")) {
       type = "method";
-    } else if (selectedValue.endsWith(".length") || selectedValue.startsWith("input.") || selectedValue.startsWith("response.")) {
+    } else if (selectedValue.startsWith("input.") || selectedValue.startsWith("response.")) {
       type = "property";
     }
 
@@ -100,7 +106,13 @@ export function LeftOperandSelect({
   };
 
   const handleCustomInputChange = (path: string) => {
-    onChange({ type: "property", path });
+    // Determine type based on prefix - if starts with input./response., it's a property
+    // Otherwise treat as variable so serializer adds context. prefix
+    const type: LeftOperand["type"] =
+      path.startsWith("input.") || path.startsWith("response.")
+        ? "property"
+        : "variable";
+    onChange({ type, path });
   };
 
   // Custom input mode for custom paths

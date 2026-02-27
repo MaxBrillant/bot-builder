@@ -2467,7 +2467,7 @@ function FlowEditorContent() {
                     ? "Select menu option"
                     : activeFlow.nodes[pendingConnection.sourceNodeId]?.type === "API_ACTION"
                     ? "Select condition"
-                    : "e.g. context.value == true"
+                    : "e.g. value == true"
                 }
                 availableVariables={availableVariables}
               />
