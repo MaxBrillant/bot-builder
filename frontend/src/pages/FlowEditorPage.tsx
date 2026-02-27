@@ -57,7 +57,6 @@ import { Plus } from "lucide-react";
 // Layout utilities
 import {
   convertFlowToReactFlow,
-  generateNodeName,
   moveNodeLeft,
   moveNodeRight,
   connectRouteToExistingNode,
@@ -102,35 +101,6 @@ const edgeTypes = {
  * Migrate old flows that don't have node names
  * Adds auto-generated names to all nodes that are missing them
  */
-function migrateFlowNodeNames(flow: Flow): Flow {
-  if (!flow || !flow.nodes) return flow;
-
-  let hasChanges = false;
-  const updatedNodes = { ...flow.nodes };
-
-  // Check if any nodes are missing names
-  for (const [nodeId, node] of Object.entries(updatedNodes)) {
-    if (!node.name) {
-      hasChanges = true;
-      // Generate name based on current nodes
-      updatedNodes[nodeId] = {
-        ...node,
-        name: generateNodeName(node.type, updatedNodes),
-      };
-    }
-  }
-
-  // Return updated flow if changes were made
-  if (hasChanges) {
-    return {
-      ...flow,
-      nodes: updatedNodes,
-    };
-  }
-
-  return flow;
-}
-
 function FlowEditorContent() {
   const { botId, flowId } = useParams<{ botId: string; flowId?: string }>();
   useAuth(); // For auth state
@@ -359,14 +329,7 @@ function FlowEditorContent() {
   useEffect(() => {
     if (isFlowsLoading) return;
 
-    if (rawFlows.length === 0) {
-      setFlows([]);
-    } else {
-      // Migrate flows to add names if missing (backward compatibility)
-      const migratedFlows = rawFlows.map((flow: Flow) => migrateFlowNodeNames(flow));
-
-      setFlows(migratedFlows);
-    }
+    setFlows(rawFlows.length === 0 ? [] : rawFlows);
   }, [rawFlows, isFlowsLoading, setFlows]);
 
   // Sync activeFlowIndex with URL flowId (URL is source of truth)
