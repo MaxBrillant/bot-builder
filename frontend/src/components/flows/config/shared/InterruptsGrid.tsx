@@ -47,10 +47,10 @@ export function InterruptsGrid({
           (n) => n.id === interrupt.target_node
         )?.name;
         return [
-          <span key="keyword" className="font-mono text-xs">
+          <span key="keyword" className="font-mono text-xs" title={interrupt.input && interrupt.input.length > 16 ? interrupt.input : undefined}>
             {interrupt.input || <span className="text-muted-foreground">keyword</span>}
           </span>,
-          <span key="node" className="text-xs">
+          <span key="node" className="text-xs" title={nodeName && nodeName.length > 16 ? nodeName : undefined}>
             {nodeName || <span className="text-muted-foreground">node</span>}
           </span>,
         ];

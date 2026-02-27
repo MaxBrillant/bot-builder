@@ -73,10 +73,10 @@ export function HeadersEditor({
       fields={fields}
       createEmpty={() => ({ name: "", value: "" })}
       renderColumns={(header) => [
-        <span key="name" className="font-mono text-xs">
+        <span key="name" className="font-mono text-xs" title={header.name && header.name.length > 16 ? header.name : undefined}>
           {header.name || <span className="text-muted-foreground">name</span>}
         </span>,
-        <span key="value" className="font-mono text-xs truncate">
+        <span key="value" className="font-mono text-xs truncate" title={header.value && header.value.length > 16 ? header.value : undefined}>
           {header.value || <span className="text-muted-foreground">value</span>}
         </span>,
       ]}

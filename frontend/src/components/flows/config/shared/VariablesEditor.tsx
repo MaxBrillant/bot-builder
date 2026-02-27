@@ -191,13 +191,13 @@ export function VariablesEditor({ value, onChange, errors }: VariablesEditorProp
         const defaultStr = formatDefaultValue(variable.default);
         const truncated = defaultStr.length > 15 ? defaultStr.substring(0, 12) + "..." : defaultStr;
         return [
-          <span key="name" className="font-mono text-xs">
+          <span key="name" className="font-mono text-xs" title={variable.name && variable.name.length > 8 ? variable.name : undefined}>
             {variable.name || <span className="text-muted-foreground">name</span>}
           </span>,
           <span key="type" className="text-xs text-muted-foreground">
             {variable.type}
           </span>,
-          <span key="default" className="font-mono text-xs">
+          <span key="default" className="font-mono text-xs" title={defaultStr && defaultStr.length > 8 ? defaultStr : undefined}>
             {truncated || <span className="text-muted-foreground">—</span>}
           </span>,
         ];

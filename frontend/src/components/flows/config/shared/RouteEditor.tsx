@@ -190,13 +190,14 @@ export function RouteEditor({
         const nodeName = availableNodes.find(
           (n) => n.id === route.target_node
         )?.name;
+        const conditionText = formatCondition(route.condition);
         return [
-          <span key="condition" className="text-xs">
-            {formatCondition(route.condition) || (
+          <span key="condition" className="text-xs" title={conditionText && conditionText.length > 16 ? conditionText : undefined}>
+            {conditionText || (
               <span className="text-muted-foreground">condition</span>
             )}
           </span>,
-          <span key="node" className="text-xs">
+          <span key="node" className="text-xs" title={nodeName && nodeName.length > 16 ? nodeName : undefined}>
             {nodeName || <span className="text-muted-foreground">node</span>}
           </span>,
         ];

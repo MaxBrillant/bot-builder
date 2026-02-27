@@ -209,13 +209,16 @@ export function ExpressionBuilder({
         onChange={handleConditionsChange}
         fields={fields}
         createEmpty={createEmptyCondition}
-        renderSummary={(condition) => (
-          <span className="text-xs font-mono">
-            {formatConditionSummary(condition) || (
-              <span className="text-muted-foreground">Empty condition</span>
-            )}
-          </span>
-        )}
+        renderSummary={(condition) => {
+          const summary = formatConditionSummary(condition);
+          return (
+            <span className="text-xs font-mono" title={summary && summary.length > 16 ? summary : undefined}>
+              {summary || (
+                <span className="text-muted-foreground">Empty condition</span>
+              )}
+            </span>
+          );
+        }}
         renderBetween={(index, item, _nextItem, handleUpdate) => (
           <Select
             value={item.logicalOperator || "AND"}

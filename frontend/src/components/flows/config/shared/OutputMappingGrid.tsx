@@ -46,10 +46,10 @@ export function OutputMappingGrid({
       fields={fields}
       createEmpty={() => ({ source_path: "", target_variable: "" })}
       renderColumns={(mapping) => [
-        <span key="source" className="font-mono text-xs">
+        <span key="source" className="font-mono text-xs" title={mapping.source_path && mapping.source_path.length > 16 ? mapping.source_path : undefined}>
           {mapping.source_path || <span className="text-muted-foreground">path</span>}
         </span>,
-        <span key="target" className="font-mono text-xs">
+        <span key="target" className="font-mono text-xs" title={mapping.target_variable && mapping.target_variable.length > 16 ? mapping.target_variable : undefined}>
           {mapping.target_variable || <span className="text-muted-foreground">variable</span>}
         </span>,
       ]}

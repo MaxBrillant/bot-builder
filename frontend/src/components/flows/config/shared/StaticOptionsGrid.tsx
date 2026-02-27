@@ -32,7 +32,7 @@ export function StaticOptionsGrid({
       fields={fields}
       createEmpty={() => ({ label: "" })}
       renderSummary={(option) => (
-        <span className="text-sm truncate">
+        <span className="text-sm truncate" title={option.label && option.label.length > 16 ? option.label : undefined}>
           {option.label || <span className="text-muted-foreground">Empty option</span>}
         </span>
       )}
