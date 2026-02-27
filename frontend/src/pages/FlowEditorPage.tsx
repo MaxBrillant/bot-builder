@@ -605,9 +605,9 @@ function FlowEditorContent() {
     }
   }, [bot, activeFlow, regenerateSecretMutation, dialogState]);
 
-  // Test flow from start node - opens fresh simulator and auto-sends trigger
-  const handleTestFlowFromNode = useCallback(() => {
-    if (!bot || !activeFlow) {
+  // Test flow from start node - saves if needed, then opens fresh simulator and auto-sends trigger
+  const handleTestFlowFromNode = useCallback(async () => {
+    if (!bot || !activeFlow || !botId) {
       toast.error("No active flow selected");
       return;
     }
@@ -618,23 +618,31 @@ function FlowEditorContent() {
       return;
     }
 
+    // Auto-save if there are unsaved changes
+    if (hasUnsavedChanges) {
+      const saved = await save(botId);
+      if (!saved) {
+        return; // Save failed, don't proceed with testing
+      }
+    }
+
+    const openSimulator = () => {
+      setSimulatorKey(k => k + 1); // Force fresh mount
+      setSimulatorInitialMessage(firstTrigger);
+      dialogState.openDialog("chatSimulator");
+    };
+
     if (!bot.webhook_secret) {
       toast.info("Generating webhook secret...");
       regenerateSecretMutation.mutate(bot.bot_id, {
         onSuccess: () => {
-          setTimeout(() => {
-            setSimulatorKey(k => k + 1); // Force fresh mount
-            setSimulatorInitialMessage(firstTrigger);
-            dialogState.openDialog("chatSimulator");
-          }, 500);
+          setTimeout(openSimulator, 500);
         },
       });
     } else {
-      setSimulatorKey(k => k + 1); // Force fresh mount
-      setSimulatorInitialMessage(firstTrigger);
-      dialogState.openDialog("chatSimulator");
+      openSimulator();
     }
-  }, [bot, activeFlow, regenerateSecretMutation, dialogState]);
+  }, [bot, activeFlow, botId, hasUnsavedChanges, save, regenerateSecretMutation, dialogState]);
 
   // Ref to avoid circular dependency in useMemo
   const handleTestFlowFromNodeRef = useRef(handleTestFlowFromNode);
