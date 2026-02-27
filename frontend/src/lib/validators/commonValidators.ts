@@ -1,4 +1,5 @@
 import { RESERVED_KEYWORDS } from "../constants";
+import type { VariableInfo } from "../types";
 
 /**
  * Validates if a string is not empty after trimming
@@ -83,11 +84,12 @@ export function extractTemplateVariables(template: string): string[] {
  */
 export function areTemplateVariablesDefined(
   template: string,
-  availableVariables: string[]
+  availableVariables: VariableInfo[]
 ): { isValid: boolean; undefinedVars: string[] } {
   const usedVars = extractTemplateVariables(template);
+  const variableNames = availableVariables.map((v) => v.name);
   const undefinedVars = usedVars.filter(
-    (varName) => !availableVariables.includes(varName)
+    (varName) => !variableNames.includes(varName)
   );
   return {
     isValid: undefinedVars.length === 0,

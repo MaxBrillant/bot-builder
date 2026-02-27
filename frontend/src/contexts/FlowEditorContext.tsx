@@ -14,7 +14,7 @@ import { updateFlow as updateFlowAPI, deleteFlow as deleteFlowAPI } from '@/lib/
 import { useQueryClient } from '@tanstack/react-query';
 import { flowsKeys } from '@/hooks/queries/useFlowsQuery';
 import { botsKeys } from '@/hooks/queries/useBotsQuery';
-import type { Flow, FlowNode, NodeType, Route, NodeConfig } from '@/lib/types';
+import type { Flow, FlowNode, NodeType, Route, NodeConfig, VariableInfo } from '@/lib/types';
 import {
   insertNodeInFlow,
   deleteNodeFromFlow,
@@ -88,7 +88,7 @@ interface FlowEditorContextType {
   selectedNode: FlowNode | null;
   canSave: boolean;
   availableNodes: Array<{ id: string; type: NodeType; name: string }>;
-  availableVariables: string[];
+  availableVariables: VariableInfo[];
 
   // Validation
   getNodeErrorCount: (nodeId: string) => number;
@@ -453,9 +453,12 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     }));
   }, [draftState?.nodes]);
 
-  const availableVariables = useMemo(() => {
+  const availableVariables = useMemo((): VariableInfo[] => {
     if (!draftState?.variables) return [];
-    return Object.keys(draftState.variables);
+    return Object.entries(draftState.variables).map(([name, def]) => ({
+      name,
+      type: def.type,
+    }));
   }, [draftState?.variables]);
 
   // ========== Multi-flow management ==========

@@ -2,14 +2,14 @@ import { Label } from "@/components/ui/label";
 import { FieldHelp } from "./FieldHelp";
 import { ExpressionBuilder } from "./ExpressionBuilder";
 import { TemplateInput } from "./TemplateInput";
-import type { ValidationRule } from "@/lib/types";
+import type { ValidationRule, VariableInfo } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 
 interface ValidationRuleEditorProps {
   value?: ValidationRule;
   onChange: (value: ValidationRule | undefined) => void;
   errors?: Record<string, string>;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
 }
 
 export function ValidationRuleEditor({

@@ -11,7 +11,7 @@ import { TemplateInput } from "../TemplateInput";
 import { VariableSelect } from "../VariableSelect";
 import { cn } from "@/lib/utils";
 import type { FieldDefinition } from "./types";
-import type { VariableType } from "@/lib/types";
+import type { VariableType, VariableInfo } from "@/lib/types";
 
 // Safely convert any value to a string for display
 function toStringValue(value: unknown): string {
@@ -95,7 +95,7 @@ export function ListEditorField<T>({
             placeholder={field.placeholder}
             maxLength={field.maxLength ?? 1000}
             availableVariables={
-              (context.availableVariables as string[]) ?? []
+              (context.availableVariables as VariableInfo[]) ?? []
             }
             rows={1}
             maxRows={5}

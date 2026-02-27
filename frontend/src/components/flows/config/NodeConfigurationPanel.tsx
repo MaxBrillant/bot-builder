@@ -37,6 +37,7 @@ import type {
   ValidationError,
   Route,
   VariableType,
+  VariableInfo,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -60,7 +61,7 @@ interface NodeConfigurationPanelProps {
     isValid: boolean;
     errors: ValidationError[];
   }) => void;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   availableNodes?: Array<{ id: string; type: NodeType; name: string }>;
   variables?: Array<{ name: string; type: VariableType }>;
   onCreateVariable: (variable: {
@@ -96,12 +97,16 @@ export const NodeConfigurationPanel = forwardRef<
   },
   ref,
 ) {
-  // Derive availableVariables from variables array (just the names)
-  const derivedAvailableVariables = variables.map((v) => v.name);
+  // Derive availableVariables from variables array (which has { name, type })
+  // variables prop already has the same shape as VariableInfo[]
+  const derivedAvailableVariables: VariableInfo[] = variables.map((v) => ({
+    name: v.name,
+    type: v.type,
+  }));
 
   // Use passed availableVariables if provided, otherwise use derived
   // This maintains backward compatibility
-  const safeAvailableVariables =
+  const safeAvailableVariables: VariableInfo[] =
     availableVariables ?? derivedAvailableVariables;
   const safeAvailableNodes = availableNodes ?? [];
 

@@ -3,7 +3,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, useReactFlow } from 'reactf
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import NodeTypeSelector from '../NodeTypeSelector';
-import type { NodeType, FlowNode, Route } from '@/lib/types';
+import type { NodeType, FlowNode, Route, VariableInfo } from '@/lib/types';
 
 // Local Position enum to avoid reactflow type export issues
 enum Position {
@@ -27,7 +27,7 @@ interface StubEdgeProps {
     sourceNode?: FlowNode;
     onInsertBetween?: (nodeType: NodeType, condition?: string) => void;
     onConnectToNode?: (targetNodeId: string, screenPosition: { x: number; y: number }) => void;
-    availableVariables?: string[];
+    availableVariables?: VariableInfo[];
     // When set, edge stays connected to this node (awaiting condition input)
     pendingTargetNodeId?: string | null;
   };

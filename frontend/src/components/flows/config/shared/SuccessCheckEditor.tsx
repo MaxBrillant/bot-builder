@@ -2,13 +2,13 @@ import { Label } from "@/components/ui/label";
 import { ExpressionBuilder } from "./ExpressionBuilder";
 import { FieldHelp } from "./FieldHelp";
 import { StatusCodesInput } from "./StatusCodesInput";
-import type { APISuccessCheck } from "@/lib/types";
+import type { APISuccessCheck, VariableInfo } from "@/lib/types";
 
 interface SuccessCheckEditorProps {
   value: APISuccessCheck | undefined;
   onChange: (value: APISuccessCheck | undefined) => void;
   errors?: Record<string, string>;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
 }
 
 export function SuccessCheckEditor({

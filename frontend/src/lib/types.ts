@@ -202,6 +202,12 @@ export type NodeConfig =
 
 export type VariableType = "STRING" | "NUMBER" | "BOOLEAN" | "ARRAY";
 
+/** Variable info with name and type, used for condition builder filtering */
+export interface VariableInfo {
+  name: string;
+  type: VariableType;
+}
+
 // ============================================
 // VALIDATION CONSTRAINT TYPES
 // ============================================

@@ -27,6 +27,7 @@ import type {
   ValidationError,
   MenuSourceType,
   VariableType,
+  VariableInfo,
 } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -35,7 +36,7 @@ interface MenuConfigFormProps {
   config: MenuNodeConfig;
   onChange: (config: MenuNodeConfig) => void;
   errors: ValidationError[];
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   availableNodes?: Array<{ id: string; name: string }>;
   variables?: Array<{ name: string; type: VariableType }>;
   onCreateVariable: (variable: {

@@ -3,7 +3,7 @@ import { MessageCircle } from "lucide-react";
 import NodeWrapper from "./NodeWrapper";
 import NodeHandles from "./NodeHandles";
 import NodeTypeSelector from "../NodeTypeSelector";
-import type { NodeType, FlowNode } from "@/lib/types";
+import type { NodeType, FlowNode, VariableInfo } from "@/lib/types";
 
 // Type aliases for reactflow (v11 export issues)
 type NodeProps<T = any> = { data: T; id: string; selected?: boolean };
@@ -27,7 +27,7 @@ interface TextNodeData {
   openSelector?: boolean;
   onSelectorOpenChange?: (open: boolean) => void;
   preSelectedType?: NodeType;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   outputHandleIds?: string[];
 }
 

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ListEditor, type FieldDefinition, type CustomFieldProps } from "./list-editor";
 import { ConditionSelector } from "./ConditionSelector";
 import { SystemConstraints } from "@/lib/types";
-import type { Route, NodeType, NodeConfig, ValidationError } from "@/lib/types";
+import type { Route, NodeType, NodeConfig, ValidationError, VariableInfo } from "@/lib/types";
 
 interface RouteEditorProps {
   routes: Route[];
@@ -11,7 +11,7 @@ interface RouteEditorProps {
   errors?: ValidationError[];
   nodeType?: NodeType;
   nodeConfig?: NodeConfig;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
 }
 
 function formatCondition(condition: string): string {

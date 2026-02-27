@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TemplateInput } from "./TemplateInput";
 import { CharacterCounter } from "./CharacterCounter";
 import { FieldHelp } from "./FieldHelp";
-import { SystemConstraints } from "@/lib/types";
+import { SystemConstraints, type VariableInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface RetryLogicEditorProps {
@@ -15,7 +15,7 @@ interface RetryLogicEditorProps {
   onCounterTextChange: (value: string) => void;
   onFailRouteChange: (value: string) => void;
   nodes: Array<{ id: string; name: string }>;
-  availableVariables: string[];
+  availableVariables: VariableInfo[];
   errors: Record<string, string>;
 }
 

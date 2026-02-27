@@ -1,12 +1,12 @@
 import { ListEditor, type FieldDefinition } from "./list-editor";
-import type { MenuStaticOption } from "@/lib/types";
+import type { MenuStaticOption, VariableInfo } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 
 interface StaticOptionsGridProps {
   value: MenuStaticOption[];
   onChange: (value: MenuStaticOption[]) => void;
   errors: Record<string, string>;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
 }
 
 const fields: FieldDefinition<MenuStaticOption>[] = [

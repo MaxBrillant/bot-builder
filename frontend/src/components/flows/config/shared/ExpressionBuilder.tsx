@@ -19,6 +19,7 @@ import type {
 import { isBooleanMethod } from "@/lib/expressionBuilderTypes";
 import { parseExpression } from "@/lib/expressionParser";
 import { serializeExpression } from "@/lib/expressionSerializer";
+import type { VariableInfo } from "@/lib/types";
 
 const MAX_CONDITIONS = 8;
 
@@ -26,7 +27,7 @@ interface ExpressionBuilderProps {
   value: string;
   onChange: (value: string) => void;
   context: ExpressionContext;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   error?: string;
 }
 

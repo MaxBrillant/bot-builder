@@ -2,7 +2,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { TemplateInput } from "../shared/TemplateInput";
 import { FieldHelp } from "../shared/FieldHelp";
-import type { TextNodeConfig, ValidationError } from "@/lib/types";
+import type { TextNodeConfig, ValidationError, VariableInfo } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -10,7 +10,7 @@ interface TextConfigFormProps {
   config: TextNodeConfig;
   onChange: (config: TextNodeConfig) => void;
   errors: ValidationError[];
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   nodeName?: string;
   onNodeNameChange?: (name: string) => void;
   nodeNameError?: string;

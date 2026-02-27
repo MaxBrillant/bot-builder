@@ -5,7 +5,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import NodeTypeSelector from '../NodeTypeSelector';
 import { ConditionSelector } from '../config/shared/ConditionSelector';
-import type { NodeType, FlowNode } from '@/lib/types';
+import type { NodeType, FlowNode, VariableInfo } from '@/lib/types';
 import { useEdgeHover } from '@/contexts/EdgeHoverContext';
 
 // Local Position enum to avoid reactflow type export issues
@@ -81,7 +81,7 @@ interface CustomEdgeProps {
     onInsertBetween?: (nodeType: NodeType, condition?: string) => void;
     onUpdateCondition?: (newCondition: string) => void;
     onDeleteRoute?: () => void;
-    availableVariables?: string[];
+    availableVariables?: VariableInfo[];
   };
 }
 

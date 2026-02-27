@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { ConditionSelector } from "./config/shared/ConditionSelector";
 import { FieldHelp } from "./config/shared/FieldHelp";
 import { getDefaultCondition, isBranchingNode } from "@/lib/routeConditionUtils";
-import type { NodeType, FlowNode } from "@/lib/types";
+import type { NodeType, FlowNode, VariableInfo } from "@/lib/types";
 
 interface NodeTypeOption {
   type: NodeType;
@@ -74,7 +74,7 @@ interface NodeTypeSelectorProps {
   preSelectedType?: NodeType;
   preFilledCondition?: string; // Pre-filled condition from edge click
   conditionReadOnly?: boolean; // Show condition for context but don't allow editing
-  availableVariables?: string[]; // Available variables for autocomplete
+  availableVariables?: VariableInfo[]; // Available variables for autocomplete
 }
 
 export default function NodeTypeSelector({

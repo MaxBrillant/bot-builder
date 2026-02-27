@@ -30,6 +30,7 @@ import type {
   HTTPMethod,
   APIHeader,
   VariableType,
+  VariableInfo,
 } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -38,7 +39,7 @@ interface ApiActionConfigFormProps {
   config: APIActionNodeConfig;
   onChange: (config: APIActionNodeConfig) => void;
   errors: ValidationError[];
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   variables?: Array<{ name: string; type: VariableType }>;
   onCreateVariable: (variable: {
     name: string;

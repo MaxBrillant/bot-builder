@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { NodeType, NodeConfig } from "@/lib/types";
+import type { NodeType, NodeConfig, VariableInfo } from "@/lib/types";
 import {
   getConditionInputType,
   getRouteConditionOptions,
@@ -23,7 +23,7 @@ interface ConditionSelectorProps {
   error?: string;
   placeholder?: string;
   disabled?: boolean;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   onKeyDown?: (e: React.KeyboardEvent) => void;
 }
 

@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useCombobox } from "downshift";
+import type { VariableInfo } from "@/lib/types";
 
 interface JsonBodyEditorProps {
   value: any;
   onChange: (value: any) => void;
   error?: string;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "END";
   fieldContext?: "item_template" | "counter_text" | "default";
 }
@@ -37,7 +38,8 @@ export function JsonBodyEditor({
   });
 
   // Safely handle undefined/null availableVariables
-  const baseVariables = availableVariables ?? [];
+  // Extract just the variable names for autocomplete
+  const baseVariables = (availableVariables ?? []).map((v) => v.name);
 
   // Build context-aware special variables based on node type and field
   const contextSpecialVariables: string[] = [];

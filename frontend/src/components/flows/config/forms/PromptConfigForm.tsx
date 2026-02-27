@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { PromptNodeConfig, ValidationError, VariableType } from "@/lib/types";
+import type { PromptNodeConfig, ValidationError, VariableType, VariableInfo } from "@/lib/types";
 import { SystemConstraints } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +29,7 @@ interface PromptConfigFormProps {
   config: PromptNodeConfig;
   onChange: (config: PromptNodeConfig) => void;
   errors: ValidationError[];
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   availableNodes?: Array<{ id: string; name: string }>;
   variables?: Array<{ name: string; type: VariableType }>;
   onCreateVariable: (variable: {

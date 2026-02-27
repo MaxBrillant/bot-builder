@@ -2,6 +2,7 @@ import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 import { Popover, PopoverContent, PopoverAnchor } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useState, useRef, useEffect } from "react";
+import type { VariableInfo } from "@/lib/types";
 
 interface TemplateInputProps {
   value: string;
@@ -12,7 +13,7 @@ interface TemplateInputProps {
   placeholder?: string;
   rows?: number;
   maxRows?: number;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   includeSpecialVariables?: boolean;
   nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "END";
   fieldContext?: "item_template" | "counter_text" | "default";
@@ -33,7 +34,8 @@ export function TemplateInput({
   fieldContext = "default",
 }: TemplateInputProps) {
   // Safely handle undefined/null availableVariables with nullish coalescing
-  const baseVariables = availableVariables ?? [];
+  // Extract just the variable names for autocomplete
+  const baseVariables = (availableVariables ?? []).map((v) => v.name);
 
   // Build context-aware special variables based on node type and field
   const contextSpecialVariables: string[] = [];

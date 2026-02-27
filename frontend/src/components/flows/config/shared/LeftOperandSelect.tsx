@@ -9,13 +9,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { LeftOperand, ExpressionContext } from "@/lib/expressionBuilderTypes";
+import type { VariableInfo } from "@/lib/types";
 import { CONTEXT_CONFIGS } from "@/lib/expressionBuilderTypes";
 
 interface LeftOperandSelectProps {
   value: LeftOperand;
   onChange: (value: LeftOperand) => void;
   context: ExpressionContext;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   error?: string;
 }
 
@@ -41,9 +42,12 @@ export function LeftOperandSelect({
 
   // Add variables and their .length variants (not for success_expression - flow variables don't resolve in that context)
   if (context !== "success_expression") {
-    for (const varName of availableVariables) {
-      allOptions.push({ value: varName, label: varName });
-      allOptions.push({ value: `${varName}.length`, label: `Size of list '${varName}'` });
+    for (const variable of availableVariables) {
+      allOptions.push({ value: variable.name, label: variable.name });
+      // Only show "Size of list" option for ARRAY type variables
+      if (variable.type === "ARRAY") {
+        allOptions.push({ value: `${variable.name}.length`, label: `Size of list '${variable.name}'` });
+      }
     }
   }
 
@@ -162,13 +166,16 @@ export function LeftOperandSelect({
           {context !== "success_expression" && availableVariables.length > 0 && (
             <>
               <SelectSeparator />
-              {availableVariables.flatMap((varName) => [
-                <SelectItem key={`var-${varName}`} value={varName}>
-                  {varName}
+              {availableVariables.flatMap((variable) => [
+                <SelectItem key={`var-${variable.name}`} value={variable.name}>
+                  {variable.name}
                 </SelectItem>,
-                <SelectItem key={`var-${varName}-length`} value={`${varName}.length`}>
-                  Size of list '{varName}'
-                </SelectItem>,
+                // Only show "Size of list" option for ARRAY type variables
+                ...(variable.type === "ARRAY" ? [
+                  <SelectItem key={`var-${variable.name}-length`} value={`${variable.name}.length`}>
+                    Size of list '{variable.name}'
+                  </SelectItem>,
+                ] : []),
               ])}
             </>
           )}

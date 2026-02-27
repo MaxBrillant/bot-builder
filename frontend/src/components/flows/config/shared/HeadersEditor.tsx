@@ -1,7 +1,7 @@
 import React from "react";
 import { ListEditor, type FieldDefinition, type CustomFieldProps } from "./list-editor";
 import { Input } from "@/components/ui/input";
-import { SystemConstraints, type APIHeader } from "@/lib/types";
+import { SystemConstraints, type APIHeader, type VariableInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const COMMON_HEADERS = [
@@ -16,7 +16,7 @@ interface HeadersEditorProps {
   value: APIHeader[];
   onChange: (value: APIHeader[]) => void;
   errors?: Record<string, string>;
-  availableVariables?: string[];
+  availableVariables?: VariableInfo[];
   nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "END";
 }
 
