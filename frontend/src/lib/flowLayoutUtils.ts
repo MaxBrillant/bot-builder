@@ -1192,6 +1192,37 @@ function findParentNode(
   return null;
 }
 
+/**
+ * Check if END node is reachable from the start node.
+ * Returns false if END would be orphaned (no path leads to it).
+ */
+function isEndReachable(flow: Flow): boolean {
+  const endNode = Object.values(flow.nodes).find(n => n.type === "END");
+  if (!endNode) return false;
+
+  const visited = new Set<string>();
+  const queue = [flow.start_node_id];
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    if (visited.has(nodeId)) continue;
+    visited.add(nodeId);
+
+    if (nodeId === endNode.id) return true;
+
+    const node = flow.nodes[nodeId];
+    if (node?.routes) {
+      for (const route of node.routes) {
+        if (!visited.has(route.target_node)) {
+          queue.push(route.target_node);
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 // Node types that collect user input (break potential infinite loops)
 const INPUT_NODE_TYPES: NodeType[] = ["PROMPT", "MENU"];
 
@@ -1533,9 +1564,10 @@ export function connectRouteToExistingNode(
   // Validate target node exists
   if (!flow.nodes[targetNodeId]) return null;
 
-  // If route with this condition already exists, silently ignore (no duplicate condition)
+  // If route with this condition already exists (excluding END routes), silently ignore
   const conditionExists = sourceNode.routes?.some(
-    r => r.condition.trim().toLowerCase() === condition.trim().toLowerCase()
+    r => r.condition.trim().toLowerCase() === condition.trim().toLowerCase() &&
+         flow.nodes[r.target_node]?.type !== "END"
   );
   if (conditionExists) {
     return flow;
@@ -1559,7 +1591,12 @@ export function connectRouteToExistingNode(
     return null; // Max routes reached
   }
 
-  const updatedRoutes = [...(sourceNode.routes || [])];
+  // Filter out END routes with the same condition (they're placeholders being replaced)
+  // Other END routes (e.g., LOGIC_EXPRESSION "true" fallback) are preserved
+  const updatedRoutes = (sourceNode.routes || []).filter(
+    r => !(r.condition.trim().toLowerCase() === condition.trim().toLowerCase() &&
+           flow.nodes[r.target_node]?.type === "END")
+  );
 
   // Add new route
   updatedRoutes.push({
@@ -1567,7 +1604,7 @@ export function connectRouteToExistingNode(
     target_node: targetNodeId,
   });
 
-  return {
+  const updatedFlow = {
     ...flow,
     nodes: {
       ...flow.nodes,
@@ -1577,4 +1614,11 @@ export function connectRouteToExistingNode(
       },
     },
   };
+
+  // Check if END is still reachable - if not, block the connection
+  if (!isEndReachable(updatedFlow)) {
+    return null;
+  }
+
+  return updatedFlow;
 }

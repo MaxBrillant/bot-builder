@@ -488,7 +488,6 @@ function FlowEditorContent() {
       if (!activeFlow) return;
 
       const sourceNode = activeFlow.nodes[sourceNodeId];
-      const originalRouteCount = sourceNode?.routes?.length || 0;
 
       // Check route limit (but allow if condition already exists - that's a re-route, not add)
       const conditionExists = sourceNode?.routes?.some(
@@ -509,17 +508,17 @@ function FlowEditorContent() {
       );
 
       if (updatedFlow) {
-        const newRouteCount = updatedFlow.nodes[sourceNodeId]?.routes?.length || 0;
+        // Check if route to target was actually added (handles both new routes and END replacements)
+        const hadRouteToTarget = sourceNode?.routes?.some(r => r.target_node === targetNodeId);
+        const updatedSourceNode = updatedFlow.nodes[sourceNodeId];
+        const hasRouteToTarget = updatedSourceNode?.routes?.some(r => r.target_node === targetNodeId);
 
-        // Only update if routes actually changed (silently ignore duplicates)
-        if (newRouteCount > originalRouteCount) {
-          const sourceNode = updatedFlow.nodes[sourceNodeId];
-          updateNode(sourceNodeId, { routes: sourceNode.routes });
+        if (!hadRouteToTarget && hasRouteToTarget) {
+          updateNode(sourceNodeId, { routes: updatedSourceNode.routes });
           toast.success("Route created");
         }
-        // If route count unchanged, condition already existed - silently ignore
       } else {
-        toast.error("Cannot create route: would create invalid cycle (cycles must include a PROMPT or MENU node)");
+        toast.error("Cannot create route: would create invalid flow (ensure END is reachable and cycles include a PROMPT or MENU node)");
       }
 
       // Clear pending state
