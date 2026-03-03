@@ -49,7 +49,7 @@ import { FlowCanvas } from "@/components/flows/FlowCanvas";
 import { KeyboardShortcutsHelpDialog } from "@/components/flows/KeyboardShortcutsHelpDialog";
 import { ContextualShortcutsHint } from "@/components/flows/ContextualShortcutsHint";
 import { NotFound } from "@/components/NotFound";
-import { canAddRoute, isBranchingNode } from "@/lib/routeConditionUtils";
+import { canAddRoute, getDefaultCondition, isBranchingNode } from "@/lib/routeConditionUtils";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
@@ -517,7 +517,7 @@ function FlowEditorContent() {
 
         // Show condition dialog, then create route
         setPendingConnection({ sourceNodeId, targetNodeId, anchorPosition });
-        setPendingCondition("");
+        setPendingCondition(getDefaultCondition(sourceNode, sourceNode.routes || []));
       } else {
         // Direct connection (non-branching: PROMPT, TEXT use "true")
         createRouteToExistingNode(sourceNodeId, targetNodeId, "true");
