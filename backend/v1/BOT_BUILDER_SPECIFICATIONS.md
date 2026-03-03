@@ -1636,7 +1636,7 @@ This design allows flows to continue gracefully when external data is malformed,
    }
    ```
 
-5. **Missing Catch-All Route**
+5. **Missing Catch-All Route (LOGIC_EXPRESSION)**
 
    ```json
    // ❌ BAD - No catch-all route, flow will crash if conditions don't match
@@ -1649,7 +1649,7 @@ This design allows flows to continue gracefully when external data is malformed,
      ]
    }
 
-   // ✅ GOOD - Always include catch-all route
+   // ✅ GOOD - Always include "true" catch-all in LOGIC_EXPRESSION nodes
    {
      "type": "LOGIC_EXPRESSION",
      "routes": [
@@ -1738,12 +1738,23 @@ This design allows flows to continue gracefully when external data is malformed,
 #### 4. Route Ordering
 
 ```json
-// ✅ GOOD - Specific conditions first, catch-all last
+// ✅ GOOD - Specific conditions first, catch-all last (LOGIC_EXPRESSION)
+"routes": [
+  { "condition": "context.status == 'active'", "target_node": "node_active" },
+  { "condition": "context.status == 'pending'", "target_node": "node_pending" },
+  { "condition": "true", "target_node": "node_default" }
+]
+
+// ✅ GOOD - STATIC MENU: one route per selection, no fallback
 "routes": [
   { "condition": "selection == 1", "target_node": "node_option1" },
-  { "condition": "selection == 2", "target_node": "node_option2" },
-  { "condition": "selection > 0", "target_node": "node_valid" },
-  { "condition": "true", "target_node": "node_error" }
+  { "condition": "selection == 2", "target_node": "node_option2" }
+]
+
+// ✅ GOOD - API_ACTION: explicit success and error only
+"routes": [
+  { "condition": "success", "target_node": "node_next" },
+  { "condition": "error", "target_node": "node_error" }
 ]
 ```
 
@@ -2799,15 +2810,16 @@ input.length; // String length
 
 ### Route Condition Types
 
-| Type          | Example                                | Description             |
-| ------------- | -------------------------------------- | ----------------------- |
-| Keyword       | `"success"`                            | Checks success flag     |
-| Keyword       | `"error"`                              | Checks error flag       |
-| Keyword       | `"true"`                               | Fallback (catches all)  |
-| Comparison    | `"selection == 2"`                     | Integer equality        |
-| Comparison    | `"selection != null"`                  | Null check              |
-| Context check | `"context.trips.length > 0"`           | Array length            |
-| Complex       | `"selection == 1 && context.verified"` | Multiple conditions     |
+| Type          | Example                                          | Description                        | Node Type            |
+| ------------- | ------------------------------------------------ | ---------------------------------- | -------------------- |
+| Keyword       | `"success"`                                      | Checks API success flag            | API_ACTION only      |
+| Keyword       | `"error"`                                        | Checks API error flag              | API_ACTION only      |
+| Keyword       | `"true"`                                         | Catch-all fallback                 | LOGIC_EXPRESSION only |
+| Selection     | `"selection == 2"`                               | User picked option 2               | STATIC MENU only     |
+| Context check | `"context.age > 18"`                             | Numeric comparison                 | LOGIC_EXPRESSION     |
+| Context check | `"context.trips.length > 0"`                     | Array length check                 | LOGIC_EXPRESSION     |
+| Context check | `"context.user_id != null"`                      | Null check                         | LOGIC_EXPRESSION     |
+| Complex       | `"context.selection == 1 && context.verified"`   | Multiple conditions                | LOGIC_EXPRESSION     |
 
 ### Route Condition Validation Rules
 
@@ -2821,9 +2833,9 @@ The system validates route conditions and counts based on node type to prevent i
 | -------------------- | ---------------------------------------------- | --------------- | ---------------------------------------------- |
 | **PROMPT**           | `"true"` only                                  | 0-1             | Optional single progression route              |
 | **TEXT**             | `"true"` only                                  | 0-1             | Optional single progression route              |
-| **MENU (STATIC)**    | `"selection == N"` (N ≤ num_options), `"true"` | 0 to num_options + 1 | N must be within 1 to number of options   |
+| **MENU (STATIC)**    | `"selection == N"` (N ≤ num_options)           | 0 to num_options | N must be within 1 to number of options  |
 | **MENU (DYNAMIC)**   | `"true"` only                                  | 0-1             | **Critical: Only single "true" route allowed** |
-| **API_ACTION**       | `"success"`, `"error"`, `"true"`               | 0-3             | All conditions optional                        |
+| **API_ACTION**       | `"success"`, `"error"`                         | 0-2             | All conditions optional                        |
 | **LOGIC_EXPRESSION** | Any valid expression                           | 0-8             | No syntax restrictions                         |
 
 **Note**: Any node with 0 routes is a terminal node and ends the conversation.
@@ -2842,8 +2854,7 @@ The system validates route conditions and counts based on node type to prevent i
   },
   "routes": [
     { "condition": "selection == 1", "target_node": "node_mpesa" }, // ✅ Valid
-    { "condition": "selection == 2", "target_node": "node_card" }, // ✅ Valid
-    { "condition": "true", "target_node": "node_error" } // ✅ Fallback
+    { "condition": "selection == 2", "target_node": "node_card" }  // ✅ Valid
   ]
 }
 ```
@@ -2892,6 +2903,14 @@ The system validates route conditions and counts based on node type to prevent i
 // ❌ DYNAMIC MENU with selection routing
 { "config": { "source_type": "DYNAMIC" }, "routes": [{ "condition": "selection == 1", ... }] }
 // Error: "DYNAMIC MENU nodes only allow condition 'true'"
+
+// ❌ API_ACTION with "true" fallback
+{ "type": "API_ACTION", "routes": [{ "condition": "true", ... }] }
+// Error: "API_ACTION nodes only allow conditions: 'success' or 'error'. Got: 'true'"
+
+// ❌ STATIC MENU with "true" fallback
+{ "config": { "source_type": "STATIC" }, "routes": [{ "condition": "true", ... }] }
+// Error: "MENU node condition must be 'selection == N' (where N is 1-<num_options>)"
 ```
 
 **Error: Route count exceeded**
@@ -2922,9 +2941,9 @@ The system validates route conditions and counts based on node type to prevent i
 #### Best Practices
 
 1. **DYNAMIC menus**: Always use pattern `DYNAMIC MENU → LOGIC_EXPRESSION → routes`
-2. **API_ACTION**: Include both `success` and `error` routes
-3. **STATIC menus**: Validate selection numbers match option count
-4. **Always**: Include `"true"` fallback as final route in LOGIC_EXPRESSION nodes
+2. **API_ACTION**: Include both `success` and `error` routes (`"true"` is not allowed)
+3. **STATIC menus**: One route per option — `"true"` is not allowed
+4. **LOGIC_EXPRESSION**: Include `"true"` fallback as the final route
 
 ### Runtime Route Sorting
 
@@ -2936,12 +2955,10 @@ The system validates route conditions and counts based on node type to prevent i
 
 | Node Type            | Condition Pattern  | Priority | Example                         |
 | -------------------- | ------------------ | -------- | ------------------------------- |
-| **ALL**              | `"true"`           | 1000     | Catch-all always evaluated last |
+| **LOGIC_EXPRESSION** | `"true"`           | 1000     | Catch-all always evaluated last |
 | **MENU**             | `"selection == N"` | N        | `"selection == 1"` → priority 1 |
-| **MENU**             | Other conditions   | 500      | Custom conditions               |
 | **API_ACTION**       | `"success"`        | 1        | Success checked first           |
 | **API_ACTION**       | `"error"`          | 2        | Error checked second            |
-| **API_ACTION**       | Other conditions   | 500      | Custom conditions               |
 | **LOGIC_EXPRESSION** | Any condition      | 500      | Maintains definition order      |
 | **Other nodes**      | Any condition      | 500      | Default priority                |
 
@@ -2958,21 +2975,18 @@ The system validates route conditions and counts based on node type to prevent i
 ```python
 # Original routes (as defined in flow)
 routes = [
-    {"condition": "true", "target_node": "fallback"},
-    {"condition": "selection == 1", "target_node": "option1"},
-    {"condition": "selection == 2", "target_node": "option2"}
+    {"condition": "selection == 2", "target_node": "option2"},
+    {"condition": "selection == 1", "target_node": "option1"}
 ]
 
-# After runtime sorting (for MENU node)
+# After runtime sorting (for STATIC MENU node)
 sorted_routes = [
     {"condition": "selection == 1", "target_node": "option1"},  # Priority: 1
     {"condition": "selection == 2", "target_node": "option2"},  # Priority: 2
-    {"condition": "true", "target_node": "fallback"}            # Priority: 1000
 ]
 
 # API_ACTION example
 routes = [
-    {"condition": "true", "target_node": "fallback"},
     {"condition": "error", "target_node": "error_handler"},
     {"condition": "success", "target_node": "next"}
 ]
@@ -2981,7 +2995,6 @@ routes = [
 sorted_routes = [
     {"condition": "success", "target_node": "next"},            # Priority: 1
     {"condition": "error", "target_node": "error_handler"},     # Priority: 2
-    {"condition": "true", "target_node": "fallback"}            # Priority: 1000
 ]
 ```
 
@@ -3003,7 +3016,7 @@ sorted_routes = [
 
 ❌ **Not Supported**:
 
-- Fallback/default routes (use `"condition": "true"` as last route)
+- Automatic fallback routing (use `"condition": "true"` as last route in LOGIC_EXPRESSION nodes)
 - Priority/weight-based routing
 - Probabilistic routing
 - Time-based routing
@@ -3148,13 +3161,20 @@ context.missing = null; // null value
 3. Session ends
 4. No further nodes execute
 
-**Best Practice**: Always include a catch-all route as the last option:
+**Best Practice**: In LOGIC_EXPRESSION nodes, always include a `"true"` catch-all as the final route. For API_ACTION, define both `"success"` and `"error"` routes explicitly.
 
 ```json
+// LOGIC_EXPRESSION — catch-all prevents no-match termination
 "routes": [
   { "condition": "specific_check", "target_node": "node_a" },
   { "condition": "another_check", "target_node": "node_b" },
   { "condition": "true", "target_node": "node_default" }  // ✅ Catch-all
+]
+
+// API_ACTION — explicit coverage of both outcomes
+"routes": [
+  { "condition": "success", "target_node": "node_next" },
+  { "condition": "error", "target_node": "node_error" }   // ✅ Covers all cases
 ]
 ```
 
@@ -3169,13 +3189,12 @@ context.missing = null; // null value
   // ❌ BAD: No error route! If API fails, flow terminates with error
 }
 
-// ✅ GOOD: Always handle all possible outcomes
+// ✅ GOOD: Handle both outcomes explicitly
 {
   "type": "API_ACTION",
   "routes": [
     { "condition": "success", "target_node": "node_success" },
-    { "condition": "error", "target_node": "node_error_handler" },
-    { "condition": "true", "target_node": "node_unexpected" }
+    { "condition": "error", "target_node": "node_error_handler" }
   ]
 }
 ```
@@ -3348,8 +3367,7 @@ Session expires after 30min or explicit delete
   "type": "API_ACTION",
   "routes": [
     { "condition": "success", "target_node": "node_success" },
-    { "condition": "error", "target_node": "node_error_handler" },
-    { "condition": "true", "target_node": "node_unexpected" }
+    { "condition": "error", "target_node": "node_error_handler" }
   ]
 }
 
@@ -3418,10 +3436,10 @@ Session expires after 30min or explicit delete
 }
 ```
 
-#### 5. Add Catch-All Routes
+#### 5. Add Catch-All Routes (LOGIC_EXPRESSION only)
 
 ```json
-// Last route in every non-terminal node
+// Last route in every LOGIC_EXPRESSION node
 "routes": [
   { "condition": "specific_condition_1", "target_node": "node_a" },
   { "condition": "specific_condition_2", "target_node": "node_b" },
@@ -3454,20 +3472,25 @@ Session expires after 30min or explicit delete
 
 #### Pattern 2: Graceful Degradation
 
+API_ACTION only supports `"success"` and `"error"`. For post-success branching, chain to a LOGIC_EXPRESSION node:
+
 ```json
 {
   "node_fetch_recommendations": {
     "type": "API_ACTION",
     "routes": [
+      { "condition": "success", "target_node": "node_check_results" },
+      { "condition": "error", "target_node": "node_manual_search" }
+    ]
+  },
+  "node_check_results": {
+    "type": "LOGIC_EXPRESSION",
+    "routes": [
       {
-        "condition": "success && context.recommendations.length > 0",
+        "condition": "context.recommendations.length > 0",
         "target_node": "node_show_recommendations"
       },
-      {
-        "condition": "success && context.recommendations.length == 0",
-        "target_node": "node_manual_search"
-      },
-      { "condition": "error", "target_node": "node_manual_search" }
+      { "condition": "true", "target_node": "node_manual_search" }
     ]
   }
 }

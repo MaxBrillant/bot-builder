@@ -593,9 +593,9 @@ class RouteConditionValidator:
         if not re.match(self.MENU_SELECTION_PATTERN, condition):
             errors.append({
                 "type": "invalid_route_condition",
-                "message": f"MENU node condition must be 'selection == N' (where N is 1-{len(node_config.get('static_options', []))}) or 'true'",
+                "message": f"MENU node condition must be 'selection == N' (where N is 1-{len(node_config.get('static_options', []))})",
                 "location": f"nodes.{node_id}.routes[{route_index}].condition",
-                "suggestion": "Use format 'selection == 1', 'selection == 2', etc., or 'true' for fallback"
+                "suggestion": "Use format 'selection == 1', 'selection == 2', etc."
             })
             return errors
 
@@ -620,7 +620,7 @@ class RouteConditionValidator:
                 "type": "invalid_route_condition",
                 "message": f"Selection number {selection_num} is out of range. MENU has {num_options} option(s), valid range is 1-{num_options}",
                 "location": f"nodes.{node_id}.routes[{route_index}].condition",
-                "suggestion": f"Use 'selection == N' where N is between 1 and {num_options}, or 'true' for fallback"
+                "suggestion": f"Use 'selection == N' where N is between 1 and {num_options}"
             })
 
         return errors
@@ -632,9 +632,9 @@ class RouteConditionValidator:
             if source_type == MenuSourceType.DYNAMIC.value:
                 return 1
             static_options = node_config.get('static_options', [])
-            return len(static_options) + 1
+            return len(static_options)
         elif node_type == NodeType.API_ACTION.value:
-            return 3
+            return 2
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return 8
         elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
@@ -648,9 +648,10 @@ class RouteConditionValidator:
             source_type = node_config.get('source_type')
             if source_type == MenuSourceType.DYNAMIC.value:
                 return ["true"]
-            return ["true"]
+            # STATIC: no base allowed conditions — selection == N is validated separately
+            return []
         elif node_type == NodeType.API_ACTION.value:
-            return ["success", "error", "true"]
+            return ["success", "error"]
         elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return ["true"]
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
@@ -672,9 +673,9 @@ class RouteConditionValidator:
                 return f"DYNAMIC MENU nodes can have at most 1 route. Currently has {current_count} routes"
             else:
                 num_options = len(node_config.get('static_options', []))
-                return f"STATIC MENU nodes can have at most {max_routes} routes ({num_options} options + 1 fallback). Currently has {current_count} routes"
+                return f"STATIC MENU nodes can have at most {max_routes} routes (one per option). Currently has {current_count} routes"
         elif node_type == NodeType.API_ACTION.value:
-            return f"API_ACTION nodes can have at most {max_routes} routes (success, error, fallback). Currently has {current_count} routes"
+            return f"API_ACTION nodes can have at most {max_routes} routes (success, error). Currently has {current_count} routes"
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return f"LOGIC_EXPRESSION nodes can have at most {max_routes} routes. Currently has {current_count} routes"
         elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
@@ -696,7 +697,7 @@ class RouteConditionValidator:
             else:
                 return f"Remove extra routes or add more menu options. Maximum {max_routes} routes allowed"
         elif node_type == NodeType.API_ACTION.value:
-            return "API_ACTION nodes support 'success', 'error', and 'true' (fallback) conditions only"
+            return "API_ACTION nodes support 'success' and 'error' conditions only"
         elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return f"{node_type} nodes only support a single route with condition 'true'"
         else:
@@ -715,9 +716,9 @@ class RouteConditionValidator:
                 return f"DYNAMIC MENU nodes only allow condition 'true'. Got: '{condition}'"
             else:
                 num_options = len(node_config.get('static_options', []))
-                return f"STATIC MENU nodes only allow 'selection == N' (where N is 1-{num_options}) or 'true'. Got: '{condition}'"
+                return f"STATIC MENU nodes only allow 'selection == N' (where N is 1-{num_options}). Got: '{condition}'"
         elif node_type == NodeType.API_ACTION.value:
-            return f"API_ACTION nodes only allow conditions: 'success', 'error', or 'true'. Got: '{condition}'"
+            return f"API_ACTION nodes only allow conditions: 'success' or 'error'. Got: '{condition}'"
         elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return f"{node_type} nodes only allow condition 'true'. Got: '{condition}'"
         else:
@@ -735,9 +736,9 @@ class RouteConditionValidator:
                 return "Use condition 'true' for the Next route. For conditional routing, add a LOGIC_EXPRESSION node after this menu"
             else:
                 num_options = len(node_config.get('static_options', []))
-                return f"Use 'selection == 1' through 'selection == {num_options}' for specific options, or 'true' for fallback"
+                return f"Use 'selection == 1' through 'selection == {num_options}', one route per option"
         elif node_type == NodeType.API_ACTION.value:
-            return "Use 'success' for successful API calls, 'error' for failures, or 'true' for any outcome"
+            return "Use 'success' for successful API calls, 'error' for failures"
         elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
             return "Use condition 'true' (the only valid condition for this node type)"
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
