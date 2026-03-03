@@ -462,7 +462,7 @@ function FlowEditorContent() {
           toast.success("Route created");
         }
       } else {
-        toast.error("Cannot create route: would create invalid flow (cycles must include a PROMPT or MENU node)");
+        toast.error("Cannot create route: this loop has no user interaction — the conversation will crash. Add a PROMPT or MENU node to the loop.");
       }
 
       // Clear pending state
@@ -1080,7 +1080,7 @@ function FlowEditorContent() {
           } else if (node.routes[0].condition !== "true") {
             toast.error("Cannot move nodes with conditional routes");
           } else {
-            toast.error("Cannot reorder: would create circular reference");
+            toast.error("Cannot reorder: this loop has no user interaction — the conversation will crash. Add a PROMPT or MENU node to the loop.");
           }
         }
       }

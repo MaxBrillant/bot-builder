@@ -1094,25 +1094,29 @@ function findParentNode(
   return null;
 }
 
-// Node types that collect user input (break potential infinite loops)
+// Node types that collect user input (allow loops to be user-driven)
 const INPUT_NODE_TYPES: NodeType[] = ["PROMPT", "MENU"];
 
 /**
- * Check if moving nodeToMove into the path starting at targetNode would create
- * a problematic circular reference.
+ * Check if adding an edge nodeToMove → targetNode would create a loop with no
+ * user interaction. Such loops always crash the conversation after hitting the
+ * auto-progression limit (10 steps), so they are blocked.
  *
- * Cycles containing at least one PROMPT or MENU node are allowed since user input
- * naturally breaks potential infinite loops. Only cycles with exclusively non-input
- * nodes (TEXT, API_ACTION, LOGIC_EXPRESSION) are blocked.
+ * Loops containing at least one PROMPT or MENU are allowed — the user drives
+ * them and can break out by responding.
  *
- * @returns true if the move should be blocked (creates cycle without input node)
+ * Uses a path set (add on entry, remove on backtrack) so nodes explored in
+ * dead-end branches can be revisited via other paths — matching the backend
+ * algorithm in validators.py.
+ *
+ * @returns true if the move should be blocked (loop with no input node)
  */
 function wouldCreateCircularReference(
   flow: Flow,
   nodeToMove: string,
   targetNode: string
 ): boolean {
-  const visited = new Set<string>();
+  const inPath = new Set<string>();
   const cyclePath: string[] = [];
 
   function checkPath(currentId: string): boolean {
@@ -1120,14 +1124,15 @@ function wouldCreateCircularReference(
       cyclePath.push(currentId);
       return true;
     }
-    if (visited.has(currentId)) return false;
+    if (inPath.has(currentId)) return false;
 
-    visited.add(currentId);
+    inPath.add(currentId);
     cyclePath.push(currentId);
 
     const current = flow.nodes[currentId];
     if (!current?.routes) {
       cyclePath.pop();
+      inPath.delete(currentId);
       return false;
     }
 
@@ -1136,6 +1141,7 @@ function wouldCreateCircularReference(
     }
 
     cyclePath.pop();
+    inPath.delete(currentId);
     return false;
   }
 
