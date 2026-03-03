@@ -995,7 +995,10 @@ export function deleteNodeFromFlow(flowJson: Flow, nodeId: string): Flow {
   }
 
   // Original deletion logic for normal nodes
-  const targetNodeId = nodeToDelete.routes?.[0]?.target_node;
+  // If the node points to itself (self-loop), treat as terminal — redirecting parents to a
+  // deleted self-referencing node would leave them with a dangling route.
+  const rawTargetNodeId = nodeToDelete.routes?.[0]?.target_node;
+  const targetNodeId = rawTargetNodeId === nodeId ? undefined : rawTargetNodeId;
   const targetNode = targetNodeId ? updatedFlow.nodes[targetNodeId] : null;
 
   // Find all nodes that route to this node and update them
@@ -1013,10 +1016,10 @@ export function deleteNodeFromFlow(flowJson: Flow, nodeId: string): Flow {
       // Redirect routes to the deleted node's target
       node.routes.forEach((route) => {
         if (route.target_node === nodeId) {
-          if (targetNodeId) {
+          if (targetNodeId && targetNodeId !== node.id) {
             route.target_node = targetNodeId;
           } else {
-            // Remove route if no target (node was terminal)
+            // Remove route: either no target (terminal) or redirect would create a self-loop
             node.routes = node.routes?.filter((r) => r.target_node !== nodeId);
           }
         }
@@ -1227,6 +1230,9 @@ export function moveNode(
   const parentInfo = findParentNode(updatedFlow, nodeToMove);
   const childOfMovingNode = updatedNodeToMove.routes![0].target_node;
 
+  // If node's child is its own parent, extracting it would create a self-loop on the parent
+  if (parentInfo && childOfMovingNode === parentInfo.parentId) return null;
+
   if (parentInfo) {
     updatedFlow.nodes[parentInfo.parentId].routes![parentInfo.routeIndex].target_node = childOfMovingNode;
   } else {
@@ -1235,6 +1241,11 @@ export function moveNode(
 
   // NOW check for circular reference after extraction
   const targetAfterInsertion = updatedMoveNextToNode.routes![routeIndex].target_node;
+
+  // Explicit self-loop guard — wouldCreateCircularReference allows cycles with input nodes
+  // but a node routing to itself is never valid regardless of type
+  if (targetAfterInsertion === nodeToMove) return null;
+
   if (wouldCreateCircularReference(updatedFlow, nodeToMove, targetAfterInsertion)) {
     return null;
   }
@@ -1275,8 +1286,11 @@ export function moveNodeLeft(flowJson: Flow, nodeId: string): Flow | null {
     // Node must have exactly one route to be moveable
     if (!node.routes || node.routes.length !== 1) return null;
 
-    // Extract node from parent
+    // If node's child is the parent itself, swapping would create a self-loop on the parent
     const nodeChild = node.routes[0].target_node;
+    if (nodeChild === parentInfo.parentId) return null;
+
+    // Extract node from parent
     parentNode.routes![0].target_node = nodeChild;
 
     // Make node point to parent
@@ -1437,6 +1451,9 @@ export function connectRouteToExistingNode(
 ): Flow | null {
   const sourceNode = flow.nodes[sourceNodeId];
   if (!sourceNode) return null;
+
+  // Prevent self-loops
+  if (sourceNodeId === targetNodeId) return null;
 
   // Validate target node exists
   if (!flow.nodes[targetNodeId]) return null;

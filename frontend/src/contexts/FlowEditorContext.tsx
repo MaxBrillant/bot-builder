@@ -769,16 +769,7 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
       setSelectedNodeId(null);
     }
 
-    // Show appropriate success message
-    const hasMultipleRoutes = (nodeToDelete.routes?.length || 0) > 1;
-
-    if (isBranchingNode(nodeToDelete.type, nodeToDelete.config) && hasMultipleRoutes && deletedCount > 1) {
-      toast.success(`Deleted ${deletedCount} node${deletedCount > 1 ? 's' : ''}`, {
-        description: 'Preserved the main flow path (true condition).',
-      });
-    } else {
-      toast.success('Node deleted');
-    }
+    toast.success('Node deleted');
 
     return true;
   }, [selectedNodeId, recordCommand]);

@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react';
 /**
  * Dialog types supported by the application
  */
-export type DialogType = 'createFlow' | 'botSettings' | 'chatSimulator' | 'deleteConfirmation' | 'unsavedWarning';
+export type DialogType = 'createFlow' | 'botSettings' | 'chatSimulator' | 'unsavedWarning';
 
 /**
  * Dialog state management hook
@@ -13,7 +13,6 @@ export function useDialogState() {
   const [createFlowDialogOpen, setCreateFlowDialogOpen] = useState(false);
   const [botSettingsDialogOpen, setBotSettingsDialogOpen] = useState(false);
   const [chatSimulatorOpen, setChatSimulatorOpen] = useState(false);
-  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
 
   /**
@@ -29,9 +28,6 @@ export function useDialogState() {
         break;
       case 'chatSimulator':
         setChatSimulatorOpen(true);
-        break;
-      case 'deleteConfirmation':
-        setShowDeleteConfirmation(true);
         break;
       case 'unsavedWarning':
         setShowUnsavedWarning(true);
@@ -53,9 +49,6 @@ export function useDialogState() {
       case 'chatSimulator':
         setChatSimulatorOpen(false);
         break;
-      case 'deleteConfirmation':
-        setShowDeleteConfirmation(false);
-        break;
       case 'unsavedWarning':
         setShowUnsavedWarning(false);
         break;
@@ -73,14 +66,12 @@ export function useDialogState() {
         return botSettingsDialogOpen;
       case 'chatSimulator':
         return chatSimulatorOpen;
-      case 'deleteConfirmation':
-        return showDeleteConfirmation;
       case 'unsavedWarning':
         return showUnsavedWarning;
       default:
         return false;
     }
-  }, [createFlowDialogOpen, botSettingsDialogOpen, chatSimulatorOpen, showDeleteConfirmation, showUnsavedWarning]);
+  }, [createFlowDialogOpen, botSettingsDialogOpen, chatSimulatorOpen, showUnsavedWarning]);
 
   return {
     // Individual dialog states (for backward compatibility)
@@ -90,8 +81,6 @@ export function useDialogState() {
     setBotSettingsDialogOpen,
     chatSimulatorOpen,
     setChatSimulatorOpen,
-    showDeleteConfirmation,
-    setShowDeleteConfirmation,
     showUnsavedWarning,
     setShowUnsavedWarning,
 

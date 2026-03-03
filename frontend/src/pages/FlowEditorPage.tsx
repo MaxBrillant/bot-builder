@@ -176,8 +176,6 @@ function FlowEditorContent() {
   // State for keyboard shortcuts help dialog
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
 
-  // State for pending delete confirmation
-  const [pendingDeleteNodeId, setPendingDeleteNodeId] = useState<string | null>(null);
 
   // State for stub drag-to-connect (creating cycles)
   const [pendingConnection, setPendingConnection] = useState<{
@@ -212,7 +210,6 @@ function FlowEditorContent() {
       updateNode(data.nodeId, {
         name: data.nodeName,
         config: data.config,
-        routes: data.routes,
       });
     },
     [activeFlow, updateNode]
@@ -254,12 +251,14 @@ function FlowEditorContent() {
   const selectNodeRef = useRef(selectNode);
   const moveLeftRef = useRef(moveLeft);
   const moveRightRef = useRef(moveRight);
+  const deleteNodeRef = useRef(deleteNode);
   const dialogStateRef = useRef(dialogState);
 
   useEffect(() => {
     selectNodeRef.current = selectNode;
     moveLeftRef.current = moveLeft;
     moveRightRef.current = moveRight;
+    deleteNodeRef.current = deleteNode;
     dialogStateRef.current = dialogState;
     // Update refs used in clearSelectionWithHistory and keyboard handlers
     activeFlowRef.current = activeFlow;
@@ -287,8 +286,7 @@ function FlowEditorContent() {
   const getNodeDeleteHandler = useCallback((nodeId: string) => {
     if (!nodeDeleteHandlersRef.current.has(nodeId)) {
       nodeDeleteHandlersRef.current.set(nodeId, () => {
-        setPendingDeleteNodeId(nodeId);
-        dialogStateRef.current.openDialog("deleteConfirmation");
+        deleteNodeRef.current(nodeId);
       });
     }
     return nodeDeleteHandlersRef.current.get(nodeId)!;
@@ -1195,104 +1193,6 @@ function FlowEditorContent() {
     });
   }, [hasUnsavedChanges, dialogState]);
 
-  // Calculate nodes that will be deleted (for branching nodes)
-  const nodesToBeDeleted = useMemo(() => {
-    if (!pendingDeleteNodeId || !activeFlow) return [];
-
-    const nodeToDelete = activeFlow.nodes[pendingDeleteNodeId];
-    if (!nodeToDelete) return [];
-
-    // Check if this is a branch node with multiple routes
-    const hasMultipleRoutes = (nodeToDelete.routes?.length || 0) > 1;
-
-    if (!isBranchingNode(nodeToDelete.type, nodeToDelete.config) || !hasMultipleRoutes) return [];
-
-    // Find the "true" condition child (will be preserved)
-    const trueRoute = nodeToDelete.routes?.find(
-      (r) => r.condition.toLowerCase() === "true"
-    );
-    if (!trueRoute) return [];
-
-    const trueChildId = trueRoute.target_node;
-    // Include the node being deleted so parentsInDeleteSet counts correctly
-    const nodesToDeleteSet = new Set<string>([pendingDeleteNodeId]);
-    const visited = new Set<string>();
-
-    // Count incoming edges to a node
-    const countIncomingEdges = (targetNodeId: string): number => {
-      let count = 0;
-      Object.values(activeFlow!.nodes).forEach((node) => {
-        node.routes?.forEach((route) => {
-          if (route.target_node === targetNodeId) {
-            count++;
-          }
-        });
-      });
-      return count;
-    };
-
-    // Collect descendants recursively (with cycle detection)
-    // Only delete children that have no other parent nodes outside the delete set
-    const collectDescendants = (nodeId: string) => {
-      if (visited.has(nodeId)) return; // Prevent infinite recursion on cycles
-      visited.add(nodeId);
-
-      const node = activeFlow!.nodes[nodeId];
-      if (!node) return;
-
-      // Check if this node has parents outside the delete set
-      const incomingEdges = countIncomingEdges(nodeId);
-      const parentsInDeleteSet = Array.from(nodesToDeleteSet).filter(
-        deletedId => activeFlow!.nodes[deletedId]?.routes?.some(r => r.target_node === nodeId)
-      ).length;
-
-      // Only delete if all parents are being deleted
-      if (incomingEdges > parentsInDeleteSet) {
-        return; // Has parents outside delete set, preserve this node
-      }
-
-      nodesToDeleteSet.add(nodeId);
-
-      node.routes?.forEach((route) => {
-        const childNode = activeFlow!.nodes[route.target_node];
-        if (
-          childNode &&
-          route.target_node !== trueChildId &&
-          route.target_node !== activeFlow!.start_node_id
-        ) {
-          collectDescendants(route.target_node);
-        }
-      });
-    };
-
-    // Collect all non-true children and their descendants
-    nodeToDelete.routes
-      ?.filter((r) => r.target_node !== trueChildId)
-      .forEach((route) => {
-        const childNode = activeFlow!.nodes[route.target_node];
-        if (childNode && route.target_node !== activeFlow!.start_node_id) {
-          collectDescendants(route.target_node);
-        }
-      });
-
-    // Return only the cascaded children (exclude the node being explicitly deleted)
-    return Array.from(nodesToDeleteSet)
-      .filter((id) => id !== pendingDeleteNodeId)
-      .map((id) => activeFlow!.nodes[id].name);
-  }, [pendingDeleteNodeId, activeFlow]);
-
-  // Handle delete node confirmation
-  const handleDeleteNodeConfirm = useCallback(async () => {
-    if (pendingDeleteNodeId && activeFlow?.flow_id) {
-      // Clear from last selected tracking if this was the last selected
-      if (lastSelectedNodeByFlowRef.current.get(activeFlow.flow_id) === pendingDeleteNodeId) {
-        lastSelectedNodeByFlowRef.current.delete(activeFlow.flow_id);
-      }
-      deleteNode(pendingDeleteNodeId);
-      setPendingDeleteNodeId(null);
-    }
-    dialogState.closeDialog("deleteConfirmation");
-  }, [pendingDeleteNodeId, activeFlow, deleteNode, dialogState]);
 
   // Utility to check if user is typing in an input field
   const isTypingInInput = useCallback(() => {
@@ -1819,7 +1719,6 @@ function FlowEditorContent() {
 
       const anyTrackedDialogOpen = dialogState.isDialogOpen('createFlow') ||
                                     dialogState.isDialogOpen('botSettings') ||
-                                    dialogState.isDialogOpen('deleteConfirmation') ||
                                     dialogState.isDialogOpen('unsavedWarning');
 
       if ((isInsideDialog || anyTrackedDialogOpen) && event.key !== 'Escape') {
@@ -1945,7 +1844,6 @@ function FlowEditorContent() {
         // Also check for tracked dialogs
         const anyTrackedDialogOpen = dialogState.isDialogOpen('createFlow') ||
                                       dialogState.isDialogOpen('botSettings') ||
-                                      dialogState.isDialogOpen('deleteConfirmation') ||
                                       dialogState.isDialogOpen('unsavedWarning');
 
         if (isInsideDialog || anyTrackedDialogOpen) {
@@ -1983,8 +1881,7 @@ function FlowEditorContent() {
         const selectedNode = currentActiveFlow.nodes[currentSelectedNodeId];
         if (selectedNode) {
           event.preventDefault();
-          setPendingDeleteNodeId(currentSelectedNodeId);
-          dialogState.openDialog("deleteConfirmation");
+          deleteNodeRef.current(currentSelectedNodeId);
         }
       }
     };
@@ -2305,50 +2202,6 @@ function FlowEditorContent() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Node Confirmation */}
-      <AlertDialog
-        open={dialogState.showDeleteConfirmation}
-        onOpenChange={dialogState.setShowDeleteConfirmation}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Node</AlertDialogTitle>
-            <AlertDialogDescription>
-              {nodesToBeDeleted.length > 0 ? (
-                <div className="space-y-2">
-                  <p>
-                    Deleting this branching node will also delete the following{" "}
-                    {nodesToBeDeleted.length} child node{nodesToBeDeleted.length > 1 ? "s" : ""}:
-                  </p>
-                  <ul className="list-disc list-inside pl-2 text-sm max-h-32 overflow-y-auto">
-                    {nodesToBeDeleted.map((name, index) => (
-                      <li key={index} className="text-foreground">{name}</li>
-                    ))}
-                  </ul>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    The main flow path (true condition) will be preserved.
-                  </p>
-                </div>
-              ) : (
-                "Are you sure you want to delete this node? This action cannot be undone."
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => dialogState.closeDialog("deleteConfirmation")}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteNodeConfirm}
-              className="bg-destructive hover:bg-destructive focus:ring-destructive"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Keyboard Shortcuts Help Dialog */}
       <KeyboardShortcutsHelpDialog
