@@ -727,13 +727,9 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     if (!nodeToDelete) return false;
 
     let result: Flow;
-    let deletedCount = 0;
 
     try {
-      const originalCount = Object.keys(currentState.nodes).length;
       result = deleteNodeFromFlow(currentState, nodeId);
-      const newCount = Object.keys(result.nodes).length;
-      deletedCount = originalCount - newCount;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
