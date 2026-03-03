@@ -243,15 +243,9 @@ export default function NodeTypeSelector({
                 <FieldHelp
                   text="Choose which menu option leads to this node"
                   tooltip={
-                    <>
-                      <p className="mb-2">
-                        Each menu option can lead to a different next step. Select which option should go to the node you're adding.
-                      </p>
-                      <p className="text-xs font-medium mt-2">Tip:</p>
-                      <p className="mt-1 text-xs">
-                        Use "Default" as a fallback for any option not explicitly handled.
-                      </p>
-                    </>
+                    <p className="mb-2">
+                      Each menu option can lead to a different next step. Select which option should go to the node you're adding.
+                    </p>
                   }
                 />
               )}

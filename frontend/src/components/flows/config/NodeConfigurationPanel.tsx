@@ -6,21 +6,14 @@ import {
   useImperativeHandle,
 } from "react";
 import isEqual from "fast-deep-equal";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { AlertCircle, ChevronRight } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { TextConfigForm } from "./forms/TextConfigForm";
 import { LogicExpressionConfigForm } from "./forms/LogicExpressionConfigForm";
 import { PromptConfigForm } from "./forms/PromptConfigForm";
 import { MenuConfigForm } from "./forms/MenuConfigForm";
 import { ApiActionConfigForm } from "./forms/ApiActionConfigForm";
-import { RouteEditor } from "./shared/RouteEditor";
 import {
   validateNodeConfig,
   validateRoutes,
@@ -39,8 +32,6 @@ import type {
   VariableType,
   VariableInfo,
 } from "@/lib/types";
-import { cn } from "@/lib/utils";
-
 export interface NodeConfigurationPanelRef {
   focusNameInput: () => void;
 }
@@ -72,10 +63,6 @@ interface NodeConfigurationPanelProps {
   botId?: string;
   syncKey?: number; // Increments on undo/redo to signal re-sync from props
 }
-
-// Node types that support manual branching/routing via route editor
-// Routes are now managed visually on the canvas for all node types
-const BRANCHING_NODE_TYPES: NodeType[] = [];
 
 export const NodeConfigurationPanel = forwardRef<
   NodeConfigurationPanelRef,
@@ -117,9 +104,6 @@ export const NodeConfigurationPanel = forwardRef<
   // Node name editing state
   const [editedNodeName, setEditedNodeName] = useState(nodeName);
   const [nameError, setNameError] = useState<string | null>(null);
-
-  // Routes collapsible state
-  const [isRoutesOpen, setIsRoutesOpen] = useState(false);
 
   // Track if we've made any edits to prevent unwanted resets
   const hasLocalEditsRef = useRef(false);
@@ -189,13 +173,6 @@ export const NodeConfigurationPanel = forwardRef<
     }
   }, [initialConfig, initialRoutes, nodeName, nodeType]);
 
-  // Auto-open routes collapsible when routes exist
-  useEffect(() => {
-    if (routes && routes.length > 0) {
-      setIsRoutesOpen(true);
-    }
-  }, [routes]);
-
   // Reset local state when syncKey changes (undo/redo happened)
   useEffect(() => {
     if (syncKey === undefined || syncKey === 0) return;
@@ -225,15 +202,6 @@ export const NodeConfigurationPanel = forwardRef<
   const handleConfigChange = (newConfig: NodeConfig) => {
     hasLocalEditsRef.current = true; // Mark that user has made edits
     setConfig(newConfig);
-    // Clear errors when user makes changes
-    if (errors.length > 0) {
-      setErrors([]);
-    }
-  };
-
-  const handleRoutesChange = (newRoutes: Route[]) => {
-    hasLocalEditsRef.current = true; // Mark that user has made edits
-    setRoutes(newRoutes);
     // Clear errors when user makes changes
     if (errors.length > 0) {
       setErrors([]);
@@ -428,56 +396,12 @@ export const NodeConfigurationPanel = forwardRef<
   };
 
   const hasErrors = errors.length > 0;
-  const isBranchingNode = BRANCHING_NODE_TYPES.includes(nodeType);
 
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Form Content */}
       <div className="flex-1 overflow-y-auto p-3">
         {renderForm()}
-
-        {/* Routes Section - only for branching nodes */}
-        {isBranchingNode && (
-          <>
-            <Separator />
-            <Collapsible open={isRoutesOpen} onOpenChange={setIsRoutesOpen}>
-              <CollapsibleTrigger className="flex w-full items-center justify-between py-4 hover:bg-muted/30 transition-colors">
-                <div className="flex items-center gap-2">
-                  <ChevronRight
-                    className={cn(
-                      "h-4 w-4 text-muted-foreground transition-transform duration-200",
-                      isRoutesOpen && "rotate-90",
-                    )}
-                  />
-                  <span className="text-sm font-semibold text-foreground">
-                    Routes
-                    {nodeType === "LOGIC_EXPRESSION" && (
-                      <span className="text-destructive ml-1">*</span>
-                    )}
-                  </span>
-                  {routes && routes.length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {routes.length}
-                    </Badge>
-                  )}
-                </div>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="py-3 space-y-3">
-                  <RouteEditor
-                    routes={routes}
-                    availableNodes={safeAvailableNodes}
-                    onChange={handleRoutesChange}
-                    errors={errors}
-                    nodeType={nodeType}
-                    nodeConfig={config}
-                    availableVariables={safeAvailableVariables}
-                  />
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-          </>
-        )}
 
         {/* Validation Errors - moved to bottom */}
         {hasErrors && (

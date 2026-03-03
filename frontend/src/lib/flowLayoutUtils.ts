@@ -1,6 +1,6 @@
 import dagre from "dagre";
 import type { Flow, FlowNode, NodeType, Route } from "./types";
-import { getConditionLabel, canAddRoute, isBranchingNode } from "./routeConditionUtils";
+import { getConditionLabel, canAddRoute, isBranchingNode, getDefaultCondition } from "./routeConditionUtils";
 import { getRouteHandleInfo, HANDLE_POSITIONS } from "./handlePositioning";
 import { snapToGrid } from "@/utils/canvasPositioningUtils";
 
@@ -691,7 +691,7 @@ export function insertNodeInFlow(
         // Connect new node to existing start node
         newNode.routes = [
           {
-            condition: customCondition || "true",
+            condition: customCondition || getDefaultCondition(newNode, []),
             target_node: updatedFlow.start_node_id,
           },
         ];
@@ -733,10 +733,10 @@ export function insertNodeInFlow(
               target_node: newNodeId,
             };
 
-            // New node routes to original target with "true"
+            // New node routes to original target
             newNode.routes = [
               {
-                condition: "true",
+                condition: getDefaultCondition(newNode, []),
                 target_node: originalTarget,
               },
             ];
@@ -762,7 +762,7 @@ export function insertNodeInFlow(
                 counter++;
               } while (existingConditions.includes(branchCondition.toLowerCase()));
             } else if (!branchCondition) {
-              branchCondition = "true";
+              branchCondition = getDefaultCondition(targetNode, targetNode.routes || []);
             }
 
             // Add new branch route
@@ -776,7 +776,7 @@ export function insertNodeInFlow(
           const firstRoute = targetNode.routes[0];
           newNode.routes = [
             {
-              condition: "true",
+              condition: getDefaultCondition(newNode, []),
               target_node: firstRoute.target_node,
             },
           ];
@@ -787,10 +787,10 @@ export function insertNodeInFlow(
           };
         }
       } else {
-        // If target has no routes, just add route to new node
+        // If target has no routes, connect it to new node
         targetNode.routes = [
           {
-            condition: customCondition || "true",
+            condition: customCondition || getDefaultCondition(targetNode, []),
             target_node: newNodeId,
           },
         ];
@@ -818,7 +818,7 @@ export function insertNodeInFlow(
       // New node routes to target
       newNode.routes = [
         {
-          condition: "true",
+          condition: getDefaultCondition(newNode, []),
           target_node: targetNodeId,
         },
       ];
@@ -846,7 +846,7 @@ export function insertNodeInFlow(
         const firstRoute = betweenTargetNode.routes[0];
         newNode.routes = [
           {
-            condition: "true",
+            condition: getDefaultCondition(newNode, []),
             target_node: firstRoute.target_node,
           },
         ];
@@ -857,7 +857,7 @@ export function insertNodeInFlow(
       } else {
         betweenTargetNode.routes = [
           {
-            condition: customCondition || "true",
+            condition: customCondition || getDefaultCondition(betweenTargetNode, []),
             target_node: newNodeId,
           },
         ];
