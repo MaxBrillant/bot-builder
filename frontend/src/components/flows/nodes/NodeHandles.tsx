@@ -5,7 +5,6 @@ import { HANDLE_POSITIONS, getActiveOutputHandles, hasIncomingConnections } from
 interface NodeHandlesProps {
   node: FlowNode;
   allNodes: Record<string, FlowNode>;
-  isEndNode?: boolean;
   outputHandleIds?: string[]; // Exact handle IDs assigned to edges
 }
 
@@ -16,9 +15,9 @@ interface NodeHandlesProps {
  *
  * Both regular and stub edges use the same handle positioning system
  */
-export default function NodeHandles({ node, allNodes, isEndNode = false, outputHandleIds }: NodeHandlesProps) {
+export default function NodeHandles({ node, allNodes, outputHandleIds }: NodeHandlesProps) {
   // Render the exact handles that were assigned to edges
-  const outputHandles = isEndNode || !outputHandleIds ? [] : getActiveOutputHandles(outputHandleIds);
+  const outputHandles = !outputHandleIds ? [] : getActiveOutputHandles(outputHandleIds);
   const showInputHandle = hasIncomingConnections(node.id, allNodes);
 
   return (

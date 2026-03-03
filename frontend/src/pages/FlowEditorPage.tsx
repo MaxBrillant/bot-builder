@@ -517,8 +517,8 @@ function FlowEditorContent() {
         setPendingConnection({ sourceNodeId, targetNodeId, anchorPosition });
         setPendingCondition(getDefaultCondition(sourceNode, sourceNode.routes || []));
       } else {
-        // Direct connection (non-branching: PROMPT, TEXT use "true")
-        createRouteToExistingNode(sourceNodeId, targetNodeId, "true");
+        // Direct connection (non-branching node: use its default condition)
+        createRouteToExistingNode(sourceNodeId, targetNodeId, getDefaultCondition(sourceNode, sourceNode.routes || []));
       }
     },
     [activeFlow, createRouteToExistingNode, reactFlowInstance]
@@ -1071,11 +1071,9 @@ function FlowEditorContent() {
 
           if (!node) {
             toast.error("Node no longer exists in the flow");
-          } else if (!node.routes || node.routes.length === 0) {
-            toast.error("Cannot move terminal nodes (nodes with no routes)");
-          } else if (node.routes.length > 1) {
+          } else if (node.routes && node.routes.length > 1) {
             toast.error("Cannot move nodes with multiple routes");
-          } else if (node.routes[0].condition !== "true") {
+          } else if (node.routes && node.routes.length === 1 && node.routes[0].condition !== getDefaultCondition(node, [])) {
             toast.error("Cannot move nodes with conditional routes");
           } else {
             toast.error("Cannot reorder: this loop has no user interaction — the conversation will crash. Add a PROMPT or MENU node to the loop.");

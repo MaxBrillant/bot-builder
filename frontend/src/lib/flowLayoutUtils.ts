@@ -782,7 +782,7 @@ export function insertNodeInFlow(
           ];
           // Replace the first route (prevents duplicate routes)
           targetNode.routes[0] = {
-            condition: customCondition || "true",
+            condition: customCondition || getDefaultCondition(targetNode, []),
             target_node: newNodeId,
           };
         }
@@ -1185,7 +1185,7 @@ function swapNodePositions(
  * Moves nodeToMove to be inserted after moveNextToNode at the specified route.
  *
  * @param flowJson - The flow to modify
- * @param nodeToMove - ID of node being moved (must have 1 route with condition "true")
+ * @param nodeToMove - ID of node being moved (must be terminal or have 1 route with the default condition for its type)
  * @param moveNextToNode - ID of node to insert after
  * @param routeIndex - Which route of moveNextToNode to insert into (0-based)
  * @returns Updated flow or null if move is invalid
@@ -1209,17 +1209,28 @@ export function moveNode(
     return null;
   }
 
-  if (
-    !nodeToMoveObj.routes ||
-    nodeToMoveObj.routes.length !== 1 ||
-    nodeToMoveObj.routes[0].condition !== "true"
-  ) {
-    return null;
+  const isTerminal = !nodeToMoveObj.routes || nodeToMoveObj.routes.length === 0;
+
+  if (!isTerminal) {
+    // Only allow linear nodes: exactly 1 route with the default condition for this type
+    if (
+      nodeToMoveObj.routes!.length !== 1 ||
+      nodeToMoveObj.routes![0].condition !== getDefaultCondition(nodeToMoveObj, [])
+    ) {
+      return null;
+    }
   }
 
   if (!moveNextToNodeObj.routes?.[routeIndex]) {
     return null;
   }
+
+  // For terminal nodes: capture the insertion route's condition before cloning, since
+  // extraction removes a route from the parent which may shift route indices if the
+  // parent and moveNextToNode happen to be the same node.
+  const preExtractionInsertionCondition = isTerminal
+    ? moveNextToNodeObj.routes[routeIndex].condition
+    : null;
 
   // Validation passed - now deep clone
   const updatedFlow: Flow = JSON.parse(JSON.stringify(flowJson));
@@ -1228,19 +1239,41 @@ export function moveNode(
 
   // Extract nodeToMove from current position first
   const parentInfo = findParentNode(updatedFlow, nodeToMove);
-  const childOfMovingNode = updatedNodeToMove.routes![0].target_node;
 
-  // If node's child is its own parent, extracting it would create a self-loop on the parent
-  if (parentInfo && childOfMovingNode === parentInfo.parentId) return null;
+  if (isTerminal) {
+    // Terminal nodes have no child to promote. If this node is the start node,
+    // there's nothing to replace it — bail out.
+    if (!parentInfo) return null;
 
-  if (parentInfo) {
-    updatedFlow.nodes[parentInfo.parentId].routes![parentInfo.routeIndex].target_node = childOfMovingNode;
+    // Parent loses the route pointing to this node, becoming terminal on that branch
+    updatedFlow.nodes[parentInfo.parentId].routes =
+      updatedFlow.nodes[parentInfo.parentId].routes!.filter(
+        (_, i) => i !== parentInfo.routeIndex
+      );
   } else {
-    updatedFlow.start_node_id = childOfMovingNode;
+    const childOfMovingNode = updatedNodeToMove.routes![0].target_node;
+
+    // If node's child is its own parent, extracting it would create a self-loop on the parent
+    if (parentInfo && childOfMovingNode === parentInfo.parentId) return null;
+
+    if (parentInfo) {
+      updatedFlow.nodes[parentInfo.parentId].routes![parentInfo.routeIndex].target_node = childOfMovingNode;
+    } else {
+      updatedFlow.start_node_id = childOfMovingNode;
+    }
   }
 
-  // NOW check for circular reference after extraction
-  const targetAfterInsertion = updatedMoveNextToNode.routes![routeIndex].target_node;
+  // Locate the insertion route post-extraction. For terminal nodes we use condition-based
+  // lookup because extraction may have removed a route from updatedMoveNextToNode, shifting
+  // subsequent indices. For non-terminal nodes the route array is unchanged, so use index.
+  const insertionRoute: Route | undefined = isTerminal
+    ? updatedMoveNextToNode.routes!.find(r => r.condition === preExtractionInsertionCondition)
+    : updatedMoveNextToNode.routes![routeIndex];
+
+  // If the route is gone (terminal node was dropped on its own parent edge), bail out
+  if (!insertionRoute) return null;
+
+  const targetAfterInsertion = insertionRoute.target_node;
 
   // Explicit self-loop guard — wouldCreateCircularReference allows cycles with input nodes
   // but a node routing to itself is never valid regardless of type
@@ -1251,9 +1284,14 @@ export function moveNode(
   }
 
   // Insert nodeToMove after moveNextToNode
-  updatedNodeToMove.routes![0].target_node = targetAfterInsertion;
-  updatedNodeToMove.routes![0].condition = "true";
-  updatedMoveNextToNode.routes![routeIndex].target_node = nodeToMove;
+  const defaultCondition = getDefaultCondition(updatedNodeToMove, []);
+  if (isTerminal) {
+    updatedNodeToMove.routes = [{ condition: defaultCondition, target_node: targetAfterInsertion }];
+  } else {
+    updatedNodeToMove.routes![0].target_node = targetAfterInsertion;
+    updatedNodeToMove.routes![0].condition = defaultCondition;
+  }
+  insertionRoute.target_node = nodeToMove;
 
   // Position updates handled by wrappers
 
@@ -1282,20 +1320,28 @@ export function moveNodeLeft(flowJson: Flow, nodeId: string): Flow | null {
     const clonedFlow: Flow = JSON.parse(JSON.stringify(flowJson));
     const node = clonedFlow.nodes[nodeId];
     const parentNode = clonedFlow.nodes[parentInfo.parentId];
+    const isNodeTerminal = !node.routes || node.routes.length === 0;
 
-    // Node must have exactly one route to be moveable
-    if (!node.routes || node.routes.length !== 1) return null;
+    if (isNodeTerminal) {
+      // Terminal: parent loses its route to this node (parent becomes terminal),
+      // this node gets a new route to parent, and becomes the new START
+      parentNode.routes = parentNode.routes!.filter((_, i) => i !== parentInfo.routeIndex);
+      node.routes = [{ condition: getDefaultCondition(node, []), target_node: parentInfo.parentId }];
+    } else {
+      // Non-terminal: must have exactly one route
+      if (node.routes!.length !== 1) return null;
 
-    // If node's child is the parent itself, swapping would create a self-loop on the parent
-    const nodeChild = node.routes[0].target_node;
-    if (nodeChild === parentInfo.parentId) return null;
+      // If node's child is the parent itself, swapping would create a self-loop on the parent
+      const nodeChild = node.routes![0].target_node;
+      if (nodeChild === parentInfo.parentId) return null;
 
-    // Extract node from parent
-    parentNode.routes![0].target_node = nodeChild;
+      // Extract node from parent (parent inherits node's child)
+      parentNode.routes![0].target_node = nodeChild;
 
-    // Make node point to parent
-    node.routes[0].target_node = parentInfo.parentId;
-    node.routes[0].condition = "true";
+      // Make node point to parent
+      node.routes![0].target_node = parentInfo.parentId;
+      node.routes![0].condition = getDefaultCondition(node, []);
+    }
 
     // Make node the new START
     clonedFlow.start_node_id = nodeId;
