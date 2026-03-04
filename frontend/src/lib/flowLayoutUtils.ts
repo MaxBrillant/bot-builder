@@ -1364,7 +1364,16 @@ export function moveNodeRight(flowJson: Flow, nodeId: string): Flow | null {
 
   const nextNodeId = currentNode.routes[0].target_node;
   const nextNode = flowJson.nodes[nextNodeId];
-  if (!nextNode?.routes || nextNode.routes.length !== 1) return null;
+  if (!nextNode) return null;
+
+  // If the next node is terminal it has no routes to insert into, so the standard
+  // moveNode path won't work. Moving B past terminal T is identical to moving T
+  // before B — delegate to moveNodeLeft on the terminal node.
+  if (!nextNode.routes || nextNode.routes.length === 0) {
+    return moveNodeLeft(flowJson, nextNodeId);
+  }
+
+  if (nextNode.routes.length !== 1) return null;
 
   const result = moveNode(flowJson, nodeId, nextNodeId, 0);
   if (result) {
