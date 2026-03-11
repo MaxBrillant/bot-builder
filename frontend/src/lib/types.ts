@@ -72,7 +72,8 @@ export type NodeType =
   | "MENU"
   | "API_ACTION"
   | "LOGIC_EXPRESSION"
-  | "TEXT";
+  | "TEXT"
+  | "SET_VARIABLE";
 
 export type ValidationType = "REGEX" | "EXPRESSION";
 export type MenuSourceType = "STATIC" | "DYNAMIC";
@@ -180,13 +181,25 @@ export interface LogicExpressionNodeConfig {
   // Empty object - routes are configured separately
 }
 
+// SET_VARIABLE Node Configuration
+export interface VariableAssignment {
+  variable: string;
+  value: string;
+}
+
+export interface SetVariableNodeConfig {
+  type: "SET_VARIABLE";
+  assignments: VariableAssignment[];
+}
+
 // Union type for all configurations
 export type NodeConfig =
   | TextNodeConfig
   | PromptNodeConfig
   | MenuNodeConfig
   | APIActionNodeConfig
-  | LogicExpressionNodeConfig;
+  | LogicExpressionNodeConfig
+  | SetVariableNodeConfig;
 
 // ============================================
 // VARIABLE TYPES
@@ -230,6 +243,7 @@ export const SystemConstraints = {
   MAX_VARIABLE_DEFAULT_LENGTH: 256,
   MAX_ROUTE_CONDITION_LENGTH: 512,
   MAX_ARRAY_LENGTH: 24,
+  MAX_ASSIGNMENTS_PER_SET_VARIABLE: 8,
 } as const;
 
 // ============================================

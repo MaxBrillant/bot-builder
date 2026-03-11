@@ -6,7 +6,7 @@ A production-ready conversational bot framework with multi-tenant support, built
 
 ### Core Capabilities
 
-- **5 Node Types**: PROMPT, MENU, API_ACTION, LOGIC_EXPRESSION, TEXT (nodes without routes are terminal)
+- **6 Node Types**: PROMPT, MENU, API_ACTION, LOGIC_EXPRESSION, TEXT, SET_VARIABLE (nodes without routes are terminal)
 - **Multi-Tenant**: Complete user isolation with database-level security
 - **Template System**: Variable substitution with `{{variable}}` syntax
 - **Validation**: REGEX and EXPRESSION-based input validation
@@ -303,6 +303,7 @@ MAX_AUTO_PROGRESSION=10
 3. **API_ACTION** - Call external APIs
 4. **LOGIC_EXPRESSION** - Conditional routing
 5. **TEXT** - Display information
+6. **SET_VARIABLE** - Assign values to flow variables and auto-progress
 
 **Note**: Nodes without routes are terminal and end the conversation.
 

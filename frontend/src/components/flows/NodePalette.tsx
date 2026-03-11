@@ -4,6 +4,7 @@ import {
   Globe,
   GitBranch,
   MessageCircle,
+  Braces,
 } from "lucide-react";
 
 interface NodeTypeItem {
@@ -49,6 +50,13 @@ const nodeTypes: NodeTypeItem[] = [
     icon: MessageCircle,
     description: "Display text",
     color: "text-node-text",
+  },
+  {
+    type: "SET_VARIABLE",
+    label: "Set Variable",
+    icon: Braces,
+    description: "Assign variable values",
+    color: "text-node-setvariable",
   },
 ];
 

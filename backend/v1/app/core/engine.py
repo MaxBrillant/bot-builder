@@ -352,7 +352,7 @@ class FlowExecutor:
                 # Inject user context ONLY for API_ACTION nodes (per specification)
                 # Per BOT_BUILDER_SPECIFICATIONS.md Section 5, Template Contexts by Node:
                 # - API_ACTION nodes can access {{user.channel_id}} and {{user.channel}}
-                # - Other node types (PROMPT, MENU, TEXT, LOGIC_EXPRESSION) must NOT have access
+                # - Other node types (PROMPT, MENU, TEXT, LOGIC_EXPRESSION, SET_VARIABLE) must NOT have access
                 # Note: Both user.channel_id and user.channel are restricted together as they're
                 # part of the same user context object
                 if node_type == NodeType.API_ACTION:

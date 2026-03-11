@@ -15,7 +15,7 @@ interface TemplateInputProps {
   maxRows?: number;
   availableVariables?: VariableInfo[];
   includeSpecialVariables?: boolean;
-  nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION";
+  nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "SET_VARIABLE";
   fieldContext?: "item_template" | "counter_text" | "default";
 }
 

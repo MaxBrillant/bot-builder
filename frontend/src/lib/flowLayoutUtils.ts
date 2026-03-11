@@ -66,6 +66,7 @@ const NODE_TYPE_LABELS: Record<NodeType, string> = {
   API_ACTION: "API Action",
   LOGIC_EXPRESSION: "Logic",
   TEXT: "Text",
+  SET_VARIABLE: "Set Variable",
 };
 
 /**
@@ -131,6 +132,10 @@ export const DEFAULT_NODE_CONFIGS: Record<NodeType, any> = {
   TEXT: {
     type: "TEXT",
     text: "Your text here",
+  },
+  SET_VARIABLE: {
+    type: "SET_VARIABLE",
+    assignments: [],
   },
 };
 

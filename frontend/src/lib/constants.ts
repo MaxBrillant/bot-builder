@@ -20,6 +20,9 @@ export const RESERVED_KEYWORDS = [
   "null",
   "success",
   "error",
+  "_flow_variables",
+  "_flow_defaults",
+  "_api_result",
 ];
 
 /**

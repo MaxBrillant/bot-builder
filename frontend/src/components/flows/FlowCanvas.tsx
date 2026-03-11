@@ -94,6 +94,7 @@ export function FlowCanvas({
               API_ACTION: "#22c55e",
               LOGIC_EXPRESSION: "#f97316",
               TEXT: "#06b6d4",
+              SET_VARIABLE: "#d946ef",
             };
             return colors[node.type || ""] || "#6b7280";
           }}

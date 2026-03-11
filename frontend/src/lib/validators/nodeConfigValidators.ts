@@ -6,6 +6,7 @@ import type {
   MenuNodeConfig,
   APIActionNodeConfig,
   LogicExpressionNodeConfig,
+  SetVariableNodeConfig,
   ValidationError,
   ValidationRule,
   Flow,
@@ -40,7 +41,8 @@ export interface ValidationResult {
  */
 export function validateNodeConfig(
   config: NodeConfig,
-  nodeType: NodeType
+  nodeType: NodeType,
+  flowVariables?: Array<{ name: string }>
 ): ValidationResult {
   switch (nodeType) {
     case "TEXT":
@@ -53,6 +55,12 @@ export function validateNodeConfig(
       return validateAPIActionConfig(config as APIActionNodeConfig);
     case "LOGIC_EXPRESSION":
       return validateLogicExpressionConfig(config as LogicExpressionNodeConfig);
+    case "SET_VARIABLE": {
+      const declaredNames = flowVariables
+        ? new Set(flowVariables.map((v) => v.name))
+        : undefined;
+      return validateSetVariableConfig(config as SetVariableNodeConfig, declaredNames);
+    }
     default:
       return {
         isValid: false,
@@ -808,6 +816,108 @@ export function validateAPIActionConfig(
 }
 
 /**
+ * SET_VARIABLE node validation
+ */
+export function validateSetVariableConfig(
+  config: SetVariableNodeConfig,
+  declaredVariableNames?: Set<string>
+): ValidationResult {
+  const errors: ValidationError[] = [];
+
+  if (config.assignments.length === 0) {
+    errors.push({
+      field: "assignments",
+      message: "At least one assignment is required",
+    });
+    return { isValid: false, errors };
+  }
+
+  if (config.assignments.length > SystemConstraints.MAX_ASSIGNMENTS_PER_SET_VARIABLE) {
+    errors.push({
+      field: "assignments",
+      message: `Maximum ${SystemConstraints.MAX_ASSIGNMENTS_PER_SET_VARIABLE} assignments allowed`,
+    });
+    return { isValid: false, errors };
+  }
+
+  const seenVariables = new Set<string>();
+
+  config.assignments.forEach((assignment, index) => {
+    if (seenVariables.has(assignment.variable) && assignment.variable) {
+      errors.push({
+        field: `assignments[${index}].variable`,
+        message: `Variable '${assignment.variable}' is assigned more than once`,
+      });
+    }
+    if (assignment.variable) {
+      seenVariables.add(assignment.variable);
+    }
+    // variable: required, valid identifier, not reserved
+    if (!isNonEmptyString(assignment.variable)) {
+      errors.push({
+        field: `assignments[${index}].variable`,
+        message: getRequiredFieldError("Variable name"),
+      });
+    } else {
+      if (!isWithinMaxLength(assignment.variable, SystemConstraints.MAX_VARIABLE_NAME_LENGTH)) {
+        errors.push({
+          field: `assignments[${index}].variable`,
+          message: getMaxLengthError("Variable name", SystemConstraints.MAX_VARIABLE_NAME_LENGTH),
+        });
+      }
+      const varNameError = getVariableNameError(assignment.variable);
+      if (varNameError) {
+        errors.push({
+          field: `assignments[${index}].variable`,
+          message: varNameError,
+        });
+      }
+
+      // Check the variable is declared in the flow
+      if (declaredVariableNames && !declaredVariableNames.has(assignment.variable)) {
+        errors.push({
+          field: `assignments[${index}].variable`,
+          message: `Variable '${assignment.variable}' is not declared in this flow`,
+        });
+      }
+    }
+
+    // value: required + length constraint + template syntax
+    if (!isNonEmptyString(assignment.value)) {
+      errors.push({
+        field: `assignments[${index}].value`,
+        message: getRequiredFieldError("Value"),
+      });
+    } else if (!isWithinMaxLength(assignment.value, SystemConstraints.MAX_TEMPLATE_LENGTH)) {
+      errors.push({
+        field: `assignments[${index}].value`,
+        message: getMaxLengthError("Value", SystemConstraints.MAX_TEMPLATE_LENGTH),
+      });
+    }
+
+    if (assignment.value) {
+      const syntaxValidation = validateTemplateSyntax(assignment.value);
+      if (!syntaxValidation.isValid && syntaxValidation.error) {
+        errors.push({
+          field: `assignments[${index}].value`,
+          message: syntaxValidation.error,
+        });
+      }
+
+      const varValidation = validateTemplateVariables(assignment.value, "SET_VARIABLE");
+      if (!varValidation.isValid && varValidation.error) {
+        errors.push({
+          field: `assignments[${index}].value`,
+          message: varValidation.error,
+        });
+      }
+    }
+  });
+
+  return { isValid: errors.length === 0, errors };
+}
+
+/**
  * LOGIC_EXPRESSION node validation
  */
 export function validateLogicExpressionConfig(
@@ -992,7 +1102,7 @@ export function validateRoutes(
 
       if (!isValidCondition(nodeType, route.condition, nodeConfig)) {
         // For dropdown types, give specific error about valid options
-        if (["MENU", "API_ACTION", "PROMPT", "TEXT"].includes(nodeType)) {
+        if (["MENU", "API_ACTION", "PROMPT", "TEXT", "SET_VARIABLE"].includes(nodeType)) {
           errors.push({
             field: `routes[${index}].condition`,
             message:
@@ -1093,6 +1203,9 @@ export function validateFlow(flow: Flow): FlowValidationState {
     });
   }
 
+  // Build declared variable names for SET_VARIABLE assignment validation
+  const flowVariables = Object.keys(flow.variables || {}).map((name) => ({ name }));
+
   // Node-level validation
   for (const nodeId of nodeIds) {
     const node = flow.nodes[nodeId];
@@ -1104,7 +1217,7 @@ export function validateFlow(flow: Flow): FlowValidationState {
     }
 
     // Validate node config
-    const configResult = validateNodeConfig(node.config, node.type);
+    const configResult = validateNodeConfig(node.config, node.type, flowVariables);
     errors.push(...configResult.errors);
 
     // Validate routes

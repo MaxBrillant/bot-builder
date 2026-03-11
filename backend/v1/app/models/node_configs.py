@@ -3,7 +3,7 @@ Node Configuration Models
 Pydantic models for type-safe node storage and validation.
 
 These models provide:
-- Type-safe configuration for all 5 node types
+- Type-safe configuration for all 6 node types
 - Field-level validation with constraints from system specifications
 - Cross-field validation for complex rules
 - Discriminated unions for polymorphic node handling
@@ -838,6 +838,57 @@ class LogicExpressionNodeConfig(BaseModel):
     model_config = {"frozen": True, "extra": "forbid"}
 
 
+class VariableAssignment(BaseModel):
+    """A single variable assignment: variable = value"""
+    variable: str = Field(
+        ...,
+        min_length=1,
+        max_length=SystemConstraints.MAX_VARIABLE_NAME_LENGTH,
+        description="Variable name to assign to"
+    )
+    value: str = Field(
+        ...,
+        min_length=1,
+        max_length=SystemConstraints.MAX_TEMPLATE_LENGTH,
+        description="Value to assign (supports template variables)"
+    )
+
+    @field_validator('variable')
+    @classmethod
+    def validate_variable_name(cls, v: str) -> str:
+        """Ensure variable name follows identifier pattern and is not reserved"""
+        if v in ReservedKeywords.RESERVED:
+            raise ValueError(
+                f"Variable name '{v}' is reserved. Reserved keywords: "
+                f"{', '.join(ReservedKeywords.RESERVED)}"
+            )
+        if not re.match(RegexPatterns.IDENTIFIER, v):
+            raise ValueError(
+                f"Variable name '{v}' must start with a letter or underscore "
+                f"and contain only letters, numbers, and underscores"
+            )
+        return v
+
+    model_config = {"frozen": True, "extra": "forbid"}
+
+
+class SetVariableNodeConfig(BaseModel):
+    """
+    Configuration for SET_VARIABLE nodes.
+
+    Sets one or more flow variables to configured values, then auto-progresses.
+    No user input required. Supports template syntax in values.
+    """
+    type: Literal["SET_VARIABLE"] = Field(default="SET_VARIABLE", frozen=True)
+    assignments: List[VariableAssignment] = Field(
+        ...,
+        min_length=1,
+        max_length=SystemConstraints.MAX_ASSIGNMENTS_PER_SET_VARIABLE
+    )
+
+    model_config = {"frozen": True, "extra": "forbid"}
+
+
 # ============================================================================
 # DISCRIMINATED UNION
 # ============================================================================
@@ -848,6 +899,7 @@ NodeConfig = Union[
     MenuNodeConfig,
     APIActionNodeConfig,
     LogicExpressionNodeConfig,
+    SetVariableNodeConfig,
 ]
 
 
@@ -874,7 +926,7 @@ class FlowNode(BaseModel):
         max_length=50,
         description="Human-readable node name"
     )
-    type: Literal["TEXT", "PROMPT", "MENU", "API_ACTION", "LOGIC_EXPRESSION"] = Field(
+    type: Literal["TEXT", "PROMPT", "MENU", "API_ACTION", "LOGIC_EXPRESSION", "SET_VARIABLE"] = Field(
         ...,
         description="Node type"
     )
@@ -976,6 +1028,8 @@ __all__ = [
     'MenuNodeConfig',
     'APIActionNodeConfig',
     'LogicExpressionNodeConfig',
+    'VariableAssignment',
+    'SetVariableNodeConfig',
     
     # Union and main model
     'NodeConfig',

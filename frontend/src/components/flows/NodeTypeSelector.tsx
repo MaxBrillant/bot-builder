@@ -5,6 +5,7 @@ import {
   Globe,
   GitBranch,
   MessageCircle,
+  Braces,
 } from "lucide-react";
 import {
   Popover,
@@ -60,6 +61,13 @@ const nodeTypeOptions: NodeTypeOption[] = [
     icon: MessageCircle,
     description: "Display text",
     color: "text-node-text hover:bg-accent",
+  },
+  {
+    type: "SET_VARIABLE",
+    label: "Set Variable",
+    icon: Braces,
+    description: "Assign variable values",
+    color: "text-node-setvariable hover:bg-accent",
   },
 ];
 

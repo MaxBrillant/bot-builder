@@ -13,6 +13,7 @@ from app.processors.menu_processor import MenuProcessor
 from app.processors.api_action_processor import APIActionProcessor
 from app.processors.logic_processor import LogicProcessor
 from app.processors.text_processor import TextProcessor
+from app.processors.set_variable_processor import SetVariableProcessor
 from app.core.template_engine import TemplateEngine
 from app.core.conditions import ConditionEvaluator
 from app.core.validators import InputValidator as ValidationSystem
@@ -83,6 +84,7 @@ class ProcessorFactory:
         self.register(NodeType.API_ACTION.value, APIActionProcessor)
         self.register(NodeType.LOGIC_EXPRESSION.value, LogicProcessor)
         self.register(NodeType.TEXT.value, TextProcessor)
+        self.register(NodeType.SET_VARIABLE.value, SetVariableProcessor)
 
     def register(self, node_type: str, processor_class: Type[BaseProcessor]):
         """

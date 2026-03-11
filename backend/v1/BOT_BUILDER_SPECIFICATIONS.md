@@ -1,7 +1,7 @@
 # Bot Builder - System Specifications & Constraints
 
-**Version**: 1.1
-**Last Updated**: 2025-02-27
+**Version**: 1.2
+**Last Updated**: 2026-03-11
 
 ---
 
@@ -537,7 +537,7 @@ This allows nodes to reference other nodes that appear later in the JSON (order-
 - All route target_nodes reference existing nodes
 - **Only start node has no parent** - only the start_node_id should have no parent (not be referenced in any route). All other nodes must have at least one parent (be referenced as target_node in at least one route). Orphan nodes are invalid.
 - **Route conditions unique per node** - no duplicate conditions within a single node's routes array (case-insensitive)
-- **Circular references allowed only if cycle includes input node** - Cycles containing at least one PROMPT or MENU node are allowed (user input breaks potential infinite loops). Cycles with only non-input nodes (TEXT, API_ACTION, LOGIC_EXPRESSION) are rejected.
+- **Circular references allowed only if cycle includes input node** - Cycles containing at least one PROMPT or MENU node are allowed (user input breaks potential infinite loops). Cycles with only non-input nodes (TEXT, API_ACTION, LOGIC_EXPRESSION, SET_VARIABLE) are rejected.
 - Variable types valid (STRING, NUMBER, BOOLEAN, ARRAY)
 - fail_route is optional; if defined, must reference existing node
 - Constraints respected:
@@ -644,7 +644,7 @@ Bot Builder Instance 3 ←
   4. If conversion succeeds, value is saved to context
   5. If conversion fails, user sees error and must retry (counts toward max attempts)
   6. **Note**: Validation ensures input is in convertible format (e.g., `input.isNumeric()` ensures string can convert to number)
-  7. **Output Mappings**: This type enforcement also applies to [`output_mapping`](#menu-node-config) (MENU nodes) and [`response_map`](#api_action-node-config) (API_ACTION nodes). During conversation, when mapping extracted values to variables, the system attempts conversion to the variable's declared type. Conversion failures in mappings preserve the existing value (don't count toward max validation attempts). See [Type Inference in Output Mappings](#type-inference-in-output-mappings) for details.
+  7. **Output Mappings**: This type enforcement also applies to [`output_mapping`](#menu-node-config) (MENU nodes), [`response_map`](#api_action-node-config) (API_ACTION nodes), and `assignments` (SET_VARIABLE nodes). During conversation, when mapping or assigning values to variables, the system attempts conversion to the variable's declared type. Conversion failures in mappings preserve the existing value (don't count toward max validation attempts). See [Type Inference in Output Mappings](#type-inference-in-output-mappings) for details.
 - **Default Value Constraints**:
   - String defaults: Maximum 256 characters
   - Array defaults: Maximum 24 items
@@ -708,7 +708,7 @@ Every node has this base structure:
 {
   "id": "string (required)",
   "name": "string (required)",
-  "type": "PROMPT|MENU|API_ACTION|LOGIC_EXPRESSION|TEXT (required)",
+  "type": "PROMPT|MENU|API_ACTION|LOGIC_EXPRESSION|TEXT|SET_VARIABLE (required)",
   "config": { "object (required)" },
   "routes": [ "array (optional)" ],
   "position": { "object (required)" }
@@ -741,7 +741,7 @@ Every node has this base structure:
 
 - **Type**: `string enum`
 - **Description**: Node type determining behavior
-- **Values**: `PROMPT`, `MENU`, `API_ACTION`, `LOGIC_EXPRESSION`, `TEXT`
+- **Values**: `PROMPT`, `MENU`, `API_ACTION`, `LOGIC_EXPRESSION`, `TEXT`, `SET_VARIABLE`
 - **Example**: `"PROMPT"`
 
 ##### `config` (required)
@@ -1862,6 +1862,8 @@ See the Tujane driver flow in [`flows/tujane_driver_flow_v1.json`](flows/tujane_
 | Interrupt keyword length   | 96 characters                                | Navigation keywords           |
 | **Mappings**               |
 | Source path length         | 256 characters                               | Dot notation paths            |
+| **SET_VARIABLE**           |
+| Assignments per node       | 8                                            | Multiple assignments per node |
 | **Menu Options**           |
 | Static options count       | 8                                            | User experience               |
 | Dynamic options count      | 24 (first 24 if source exceeds)              | Performance & UX              |
@@ -1889,7 +1891,7 @@ See the Tujane driver flow in [`flows/tujane_driver_flow_v1.json`](flows/tujane_
 - Session timeout is absolute (30 minutes from creation, not last activity)
 - Limits enforced during flow validation and runtime execution
 - Input sanitization (4096 chars): Applied automatically at webhook ingestion. Truncation logged but user not notified. See Section 10.1 for complete sanitization rules.
-- Array length limit (24 items): Enforced whenever an array is written to context (defaults, API responses, MENU mappings). Arrays exceeding 24 items are silently truncated to first 24 items.
+- Array length limit (24 items): Enforced whenever an array is written to context (defaults, API responses, MENU mappings, SET_VARIABLE assignments). Arrays exceeding 24 items are silently truncated to first 24 items.
 - Source path notation: Only dot notation supported (e.g., `data.items.0.name`). Bracket notation (e.g., `items[0]`) NOT supported. Root array/primitive access requires `*` prefix (e.g., `*`, `*.0`, `*.0.field`).
 
 ### ⚠️ Design Constraints
@@ -2437,6 +2439,54 @@ Query parameters can be added using template syntax in the URL:
 
 ---
 
+### SET_VARIABLE Node
+
+**Purpose**: Assign values to one or more flow variables and auto-progress
+
+**Capabilities**:
+
+- ✅ Assign multiple flow variables in a single node (up to 8)
+- ✅ Supports template syntax in values (e.g. `{{user_name}}`, `{{trip_id}}`)
+- ✅ Type conversion based on the variable's declared type
+- ✅ Auto-progress to next node (no user input required)
+
+**Constraints**:
+
+- ❌ Cannot display a message to the user
+- ❌ Cannot wait for user input
+- ❌ Cannot assign undeclared variables (variable must be defined in `variables`)
+- ❌ Cannot assign the same variable twice in one node
+- ❌ Maximum 8 assignments per node
+
+**Config Schema**:
+
+```json
+{
+  "type": "SET_VARIABLE",
+  "assignments": [
+    { "variable": "variable_name", "value": "literal or {{template}}" }
+  ]
+}
+```
+
+**Route Conditions**: Single `"true"` route only (same as TEXT/PROMPT).
+
+**Type Conversion**: Values are rendered through the template engine first, then converted to the variable's declared type. If conversion fails (e.g., rendering produces `"hello"` for a `number` variable), the rendered string is stored without crashing the session.
+
+**When to Use**:
+
+- Initializing variables before a branching node
+- Copying one variable's value into another
+- Setting a flag after a step completes (e.g., `verified = true`)
+- Transforming API response data into context variables
+
+**When NOT to Use**:
+
+- When the value depends on user input (use PROMPT with `save_to_variable`)
+- When the value requires a conditional (use LOGIC_EXPRESSION routes to branch, then SET_VARIABLE on each branch)
+
+---
+
 ### Terminal Nodes
 
 Any node without routes is a **terminal node**. When reached, the conversation ends.
@@ -2690,6 +2740,7 @@ When a template references a variable that doesn't exist in context:
 | API_ACTION       | `{{variable}}`, `{{user.channel_id}}` | `user.channel_id` is the platform-specific user identifier (e.g., phone number for WhatsApp). Other user data should be fetched via API calls. |
 | LOGIC_EXPRESSION | N/A (no templates)                    | Routes use expressions, not templates                                                                                                          |
 | TEXT          | `{{variable}}`                        | All flow variables available                                                                                                                   |
+| SET_VARIABLE  | `{{variable}}`                        | All flow variables available (used in assignment values)                                                                                       |
 
 **Special Variables**:
 
@@ -2814,7 +2865,7 @@ input.length; // String length
 | ------------- | ------------------------------------------------ | ---------------------------------- | -------------------- |
 | Keyword       | `"success"`                                      | Checks API success flag            | API_ACTION only      |
 | Keyword       | `"error"`                                        | Checks API error flag              | API_ACTION only      |
-| Keyword       | `"true"`                                         | Catch-all fallback                 | LOGIC_EXPRESSION only |
+| Keyword       | `"true"`                                         | Catch-all fallback                 | LOGIC_EXPRESSION, PROMPT, TEXT, SET_VARIABLE, DYNAMIC MENU |
 | Selection     | `"selection == 2"`                               | User picked option 2               | STATIC MENU only     |
 | Context check | `"context.age > 18"`                             | Numeric comparison                 | LOGIC_EXPRESSION     |
 | Context check | `"context.trips.length > 0"`                     | Array length check                 | LOGIC_EXPRESSION     |
@@ -2837,6 +2888,7 @@ The system validates route conditions and counts based on node type to prevent i
 | **MENU (DYNAMIC)**   | `"true"` only                                  | 0-1             | **Critical: Only single "true" route allowed** |
 | **API_ACTION**       | `"success"`, `"error"`                         | 0-2             | All conditions optional                        |
 | **LOGIC_EXPRESSION** | Any valid expression                           | 0-8             | No syntax restrictions                         |
+| **SET_VARIABLE**     | `"true"` only                                  | 0-1             | Optional single progression route              |
 
 **Note**: Any node with 0 routes is a terminal node and ends the conversation.
 
@@ -4125,6 +4177,7 @@ Before deploying a flow to production, verify:
    - TEXT: Information display
    - API_ACTION: External operations
    - LOGIC_EXPRESSION: Conditional routing
+   - SET_VARIABLE: Programmatic variable assignment
 
 ### 🎯 Context Management
 

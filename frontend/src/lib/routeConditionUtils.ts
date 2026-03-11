@@ -22,6 +22,8 @@ export function getConditionInputType(nodeType: NodeType): "dropdown" | "text" {
       return "dropdown";
     case "LOGIC_EXPRESSION":
       return "text";
+    case "SET_VARIABLE":
+      return "dropdown";
     default:
       return "text";
   }
@@ -99,7 +101,8 @@ export function getRouteConditionOptions(
     }
 
     case "PROMPT":
-    case "TEXT": {
+    case "TEXT":
+    case "SET_VARIABLE": {
       return [
         {
           value: "true",
@@ -410,7 +413,8 @@ export function getMaxRoutes(
       return 8;
     }
     case "PROMPT":
-    case "TEXT": {
+    case "TEXT":
+    case "SET_VARIABLE": {
       // Single route only
       return 1;
     }

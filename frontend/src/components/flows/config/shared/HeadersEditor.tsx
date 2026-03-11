@@ -17,7 +17,7 @@ interface HeadersEditorProps {
   onChange: (value: APIHeader[]) => void;
   errors?: Record<string, string>;
   availableVariables?: VariableInfo[];
-  nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION";
+  nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "SET_VARIABLE";
 }
 
 // Custom renderer for header name with autocomplete suggestions

@@ -31,6 +31,7 @@ import MenuNode from "@/components/flows/nodes/MenuNode";
 import ApiActionNode from "@/components/flows/nodes/ApiActionNode";
 import LogicExpressionNode from "@/components/flows/nodes/LogicExpressionNode";
 import TextNode from "@/components/flows/nodes/TextNode";
+import SetVariableNode from "@/components/flows/nodes/SetVariableNode";
 
 // Custom edge components
 import CustomEdge from "@/components/flows/edges/CustomEdge";
@@ -91,6 +92,7 @@ const nodeTypes = {
   API_ACTION: ApiActionNode,
   LOGIC_EXPRESSION: LogicExpressionNode,
   TEXT: TextNode,
+  SET_VARIABLE: SetVariableNode,
 };
 
 const edgeTypes = {
@@ -1820,6 +1822,7 @@ function FlowEditorContent() {
           't': 'TEXT',
           'a': 'API_ACTION',
           'l': 'LOGIC_EXPRESSION',
+          'v': 'SET_VARIABLE',
           'n': null, // Generic palette
         };
 
@@ -2351,7 +2354,9 @@ function FlowEditorContent() {
                 placeholder={
                   activeFlow.nodes[pendingConnection.sourceNodeId]?.type === "MENU"
                     ? "Select menu option"
-                    : activeFlow.nodes[pendingConnection.sourceNodeId]?.type === "API_ACTION"
+                    : activeFlow.nodes[pendingConnection.sourceNodeId]?.type === "API_ACTION" ||
+                      activeFlow.nodes[pendingConnection.sourceNodeId]?.type === "TEXT" ||
+                      activeFlow.nodes[pendingConnection.sourceNodeId]?.type === "SET_VARIABLE"
                     ? "Select condition"
                     : "e.g. value == true"
                 }
@@ -2407,7 +2412,9 @@ function FlowEditorContent() {
                 placeholder={
                   activeFlow.nodes[pendingDuplicate.nodeId]?.type === "MENU"
                     ? "Select menu option"
-                    : activeFlow.nodes[pendingDuplicate.nodeId]?.type === "API_ACTION"
+                    : activeFlow.nodes[pendingDuplicate.nodeId]?.type === "API_ACTION" ||
+                      activeFlow.nodes[pendingDuplicate.nodeId]?.type === "TEXT" ||
+                      activeFlow.nodes[pendingDuplicate.nodeId]?.type === "SET_VARIABLE"
                     ? "Select condition"
                     : "e.g. value == true"
                 }

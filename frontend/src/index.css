@@ -41,6 +41,7 @@
   --node-logic: oklch(0.675 0.241 43.068); /* Orange */
   --node-text: oklch(0.685 0.161 210.514); /* Cyan */
   --node-end: oklch(0.577 0.245 27.325); /* Red */
+  --node-setvariable: oklch(0.648 0.199 330); /* Pink */
 }
 
 .dark {
@@ -84,6 +85,7 @@
   --node-logic: oklch(0.675 0.241 43.068); /* Orange */
   --node-text: oklch(0.685 0.161 210.514); /* Cyan */
   --node-end: oklch(0.577 0.245 27.325); /* Red */
+  --node-setvariable: oklch(0.648 0.199 330); /* Pink */
 }
 
 @theme inline {
@@ -114,6 +116,7 @@
   --color-node-logic: var(--node-logic);
   --color-node-text: var(--node-text);
   --color-node-end: var(--node-end);
+  --color-node-setvariable: var(--node-setvariable);
 }
 
 @layer base {

@@ -23,7 +23,7 @@ class ConditionEvaluator:
     Evaluate routing conditions against context
 
     Supported:
-    - Keywords: success, error (API_ACTION only), true (LOGIC_EXPRESSION only)
+    - Keywords: success, error (API_ACTION only), true (catch-all for LOGIC_EXPRESSION, PROMPT, TEXT, SET_VARIABLE, DYNAMIC MENU)
     - Comparison: ==, !=, >, <, >=, <=
     - Logical: &&, ||
     - Context access: context.variable
@@ -262,13 +262,13 @@ class RouteSorter:
             Priority value (lower = higher priority)
 
         Priority Rules:
-            - Catch-all "true": 1000 (LOGIC_EXPRESSION only — not valid on API_ACTION or STATIC MENU)
+            - Catch-all "true": 1000 (valid on LOGIC_EXPRESSION, PROMPT, TEXT, SET_VARIABLE, DYNAMIC MENU — not on API_ACTION or STATIC MENU)
             - MENU: Extract number from "selection == N", use as priority
             - API_ACTION: "success"=1, "error"=2
             - LOGIC_EXPRESSION: 500 (maintain order)
             - Default: 500
         """
-        # Catch-all "true" always goes last (only valid on LOGIC_EXPRESSION)
+        # Catch-all "true" always goes last
         if condition.strip().lower() == "true":
             return 1000
 
@@ -300,7 +300,7 @@ class RouteSorter:
         """
         Sort routes by condition priority
 
-        Specific conditions evaluated first, catch-all "true" last (LOGIC_EXPRESSION only).
+        Specific conditions evaluated first, catch-all "true" last.
         Returns a new sorted list without mutating the original.
 
         Args:

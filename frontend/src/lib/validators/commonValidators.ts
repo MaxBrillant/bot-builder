@@ -503,7 +503,7 @@ export function validateExpressionFunctions(expression: string): {
  */
 export function validateTemplateVariables(
   template: string,
-  nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION",
+  nodeType?: "TEXT" | "PROMPT" | "MENU" | "API_ACTION" | "LOGIC_EXPRESSION" | "SET_VARIABLE",
   fieldContext?: "item_template" | "counter_text" | "default"
 ): {
   isValid: boolean;

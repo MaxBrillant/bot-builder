@@ -14,6 +14,7 @@ import { LogicExpressionConfigForm } from "./forms/LogicExpressionConfigForm";
 import { PromptConfigForm } from "./forms/PromptConfigForm";
 import { MenuConfigForm } from "./forms/MenuConfigForm";
 import { ApiActionConfigForm } from "./forms/ApiActionConfigForm";
+import { SetVariableConfigForm } from "./forms/SetVariableConfigForm";
 import {
   validateNodeConfig,
   validateRoutes,
@@ -27,6 +28,7 @@ import type {
   PromptNodeConfig,
   MenuNodeConfig,
   APIActionNodeConfig,
+  SetVariableNodeConfig,
   ValidationError,
   Route,
   VariableType,
@@ -251,7 +253,7 @@ export const NodeConfigurationPanel = forwardRef<
     }
 
     // Validate config
-    const configResult = validateNodeConfig(config, nodeType);
+    const configResult = validateNodeConfig(config, nodeType, variables);
 
     // Validate routes (pass config for context-aware validation)
     const availableNodeIds = safeAvailableNodes.map((n) => n.id);
@@ -384,6 +386,21 @@ export const NodeConfigurationPanel = forwardRef<
             nodeNameError={nameError || undefined}
             nodeNameInputRef={nodeNameInputRef}
             botId={botId}
+          />
+        );
+      case "SET_VARIABLE":
+        return (
+          <SetVariableConfigForm
+            config={config as SetVariableNodeConfig}
+            onChange={handleConfigChange}
+            errors={errors}
+            availableVariables={safeAvailableVariables}
+            variables={variables}
+            onCreateVariable={onCreateVariable}
+            nodeName={editedNodeName}
+            onNodeNameChange={handleNameChange}
+            nodeNameError={nameError || undefined}
+            nodeNameInputRef={nodeNameInputRef}
           />
         );
       default:

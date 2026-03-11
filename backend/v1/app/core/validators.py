@@ -637,7 +637,7 @@ class RouteConditionValidator:
             return 2
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return 8
-        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value, NodeType.SET_VARIABLE.value]:
             return 1
         else:
             return 1
@@ -652,7 +652,7 @@ class RouteConditionValidator:
             return []
         elif node_type == NodeType.API_ACTION.value:
             return ["success", "error"]
-        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value, NodeType.SET_VARIABLE.value]:
             return ["true"]
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return []
@@ -678,7 +678,7 @@ class RouteConditionValidator:
             return f"API_ACTION nodes can have at most {max_routes} routes (success, error). Currently has {current_count} routes"
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return f"LOGIC_EXPRESSION nodes can have at most {max_routes} routes. Currently has {current_count} routes"
-        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value, NodeType.SET_VARIABLE.value]:
             return f"{node_type} nodes can have at most 1 route. Currently has {current_count} routes"
         else:
             return f"Node type {node_type} can have at most {max_routes} routes. Currently has {current_count} routes"
@@ -698,7 +698,7 @@ class RouteConditionValidator:
                 return f"Remove extra routes or add more menu options. Maximum {max_routes} routes allowed"
         elif node_type == NodeType.API_ACTION.value:
             return "API_ACTION nodes support 'success' and 'error' conditions only"
-        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value, NodeType.SET_VARIABLE.value]:
             return f"{node_type} nodes only support a single route with condition 'true'"
         else:
             return f"Reduce the number of routes to {max_routes} or fewer"
@@ -719,7 +719,7 @@ class RouteConditionValidator:
                 return f"STATIC MENU nodes only allow 'selection == N' (where N is 1-{num_options}). Got: '{condition}'"
         elif node_type == NodeType.API_ACTION.value:
             return f"API_ACTION nodes only allow conditions: 'success' or 'error'. Got: '{condition}'"
-        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value, NodeType.SET_VARIABLE.value]:
             return f"{node_type} nodes only allow condition 'true'. Got: '{condition}'"
         else:
             return f"Invalid condition '{condition}' for node type {node_type}"
@@ -739,7 +739,7 @@ class RouteConditionValidator:
                 return f"Use 'selection == 1' through 'selection == {num_options}', one route per option"
         elif node_type == NodeType.API_ACTION.value:
             return "Use 'success' for successful API calls, 'error' for failures"
-        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value]:
+        elif node_type in [NodeType.PROMPT.value, NodeType.TEXT.value, NodeType.SET_VARIABLE.value]:
             return "Use condition 'true' (the only valid condition for this node type)"
         elif node_type == NodeType.LOGIC_EXPRESSION.value:
             return "Use any valid expression as a condition (non-empty string)"
@@ -937,10 +937,14 @@ class FlowValidator:
         # 12. Validate all routes and their conditions
         self._validate_all_routes(nodes, result)
 
-        # 13. Detect circular references
+        # 13. Validate SET_VARIABLE assignments reference declared variables
+        declared_variables = set(flow_data.get('variables', {}).keys())
+        self._validate_set_variable_assignments(nodes, declared_variables, result)
+
+        # 14. Detect circular references
         self._detect_circular_references(nodes, start_node_id, result)
 
-        # 14. Check for unreachable nodes (warning only)
+        # 15. Check for unreachable nodes (warning only)
         self._check_unreachable_nodes(nodes, start_node_id, result)
 
         return result
@@ -1400,6 +1404,50 @@ class FlowValidator:
                     error.get("suggestion")
                 )
 
+    def _validate_set_variable_assignments(
+        self,
+        nodes: Dict[str, FlowNode],
+        declared_variables: Set[str],
+        result: ValidationResult
+    ):
+        """Validate SET_VARIABLE node assignments: presence, uniqueness, and declared variables"""
+        from app.models.node_configs import SetVariableNodeConfig
+
+        for node_id, node in nodes.items():
+            if node.type != NodeType.SET_VARIABLE.value:
+                continue
+
+            config: SetVariableNodeConfig = node.config
+
+            # Check for duplicates, empty values, and undeclared variables
+            seen_variables: Set[str] = set()
+            for i, assignment in enumerate(config.assignments):
+                if assignment.variable in seen_variables:
+                    result.add_error(
+                        "duplicate_variable_assignment",
+                        f"SET_VARIABLE node '{node_id}': variable '{assignment.variable}' is assigned more than once",
+                        f"nodes.{node_id}.config.assignments[{i}].variable",
+                        "Each variable can only be assigned once per SET_VARIABLE node"
+                    )
+                else:
+                    seen_variables.add(assignment.variable)
+
+                if not assignment.value:
+                    result.add_error(
+                        "empty_assignment_value",
+                        f"SET_VARIABLE node '{node_id}': assignment [{i}] value cannot be empty",
+                        f"nodes.{node_id}.config.assignments[{i}].value",
+                        "Provide a literal value or a template expression such as {{variable}}"
+                    )
+
+                if assignment.variable not in declared_variables:
+                    result.add_error(
+                        "undeclared_variable",
+                        f"SET_VARIABLE node '{node_id}': assignment [{i}] references undeclared variable '{assignment.variable}'",
+                        f"nodes.{node_id}.config.assignments[{i}].variable",
+                        f"Declare variable '{assignment.variable}' in the flow's variables definition first"
+                    )
+
     def _check_cycle_from_node(self, node_id: str, nodes: Dict[str, FlowNode], visited_in_path: Set[str]) -> Optional[List[str]]:
         """Check for cycle starting from a specific node using DFS"""
         if node_id in visited_in_path:
@@ -1428,7 +1476,7 @@ class FlowValidator:
 
         Cycles containing at least one PROMPT or MENU node are allowed since user input
         naturally breaks potential infinite loops. Cycles with only non-input nodes
-        (TEXT, API_ACTION, LOGIC_EXPRESSION) are rejected.
+        (TEXT, API_ACTION, LOGIC_EXPRESSION, SET_VARIABLE) are rejected.
         """
         checked_nodes = set()
 

@@ -13,6 +13,7 @@ class NodeType(str, Enum):
     API_ACTION = "API_ACTION"
     LOGIC_EXPRESSION = "LOGIC_EXPRESSION"
     TEXT = "TEXT"
+    SET_VARIABLE = "SET_VARIABLE"
 
 
 # Session Status
@@ -124,6 +125,9 @@ class SystemConstraints:
     MAX_COUNTER_TEXT_LENGTH = 512
     MAX_INTERRUPT_KEYWORD_LENGTH = 96
 
+    # Node-specific
+    MAX_ASSIGNMENTS_PER_SET_VARIABLE = 8  # SET_VARIABLE: max assignments per node
+
     # Menu Options
     MAX_STATIC_MENU_OPTIONS = 8  # Static menus: max 8 options
     MAX_DYNAMIC_MENU_OPTIONS = 24  # Dynamic menus: max 24 options (truncate if source exceeds)
@@ -227,5 +231,8 @@ class ReservedKeywords:
         "false",
         "null",
         "success",
-        "error"
+        "error",
+        "_flow_variables",
+        "_flow_defaults",
+        "_api_result",
     ]

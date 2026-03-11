@@ -20,6 +20,7 @@ const shortcutGroups: ShortcutGroup[] = [
       { keys: "T", description: "Message node" },
       { keys: "A", description: "API Action node" },
       { keys: "L", description: "Logic node" },
+      { keys: "V", description: "Set Variable node" },
       { keys: "N", description: "Node palette" },
     ],
   },
