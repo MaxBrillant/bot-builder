@@ -238,6 +238,14 @@ export default function CustomEdge({
                           availableVariables={data.availableVariables}
                         />
                       )}
+                      <div className="pt-2 border-t border-border flex items-center justify-center text-muted-foreground text-xs">
+                        <span className="flex items-center gap-2">
+                          <kbd className="px-2 py-1 h-5 bg-transparent text-foreground border border-gray-400 rounded text-xs font-mono flex items-center">
+                            Esc
+                          </kbd>
+                          <span>Save & close</span>
+                        </span>
+                      </div>
                     </div>
                   </PopoverContent>
                 </Popover>
