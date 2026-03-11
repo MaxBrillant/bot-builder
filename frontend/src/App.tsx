@@ -1,7 +1,7 @@
 import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
+  createBrowserRouter,
+  RouterProvider,
+  Outlet,
   Navigate,
 } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -66,72 +66,40 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Layout route: provides auth context and toast notifications to all routes
+function AppLayout() {
+  return (
+    <AuthProvider>
+      <Toaster />
+      <Outlet />
+    </AuthProvider>
+  );
+}
+
+const router = createBrowserRouter([
+  {
+    element: <AppLayout />,
+    children: [
+      // Public routes - redirect to /bots if already logged in
+      { path: "/", element: <PublicRoute><LoginPage /></PublicRoute> },
+      { path: "/login", element: <PublicRoute><LoginPage /></PublicRoute> },
+      { path: "/register", element: <PublicRoute><RegisterPage /></PublicRoute> },
+      // OAuth callback route - handles authentication
+      { path: "/auth/callback", element: <OAuthCallbackPage /> },
+      // Protected routes - require authentication
+      { path: "/bots", element: <ProtectedRoute><BotsPage /></ProtectedRoute> },
+      { path: "/bots/:botId/flows/:flowId", element: <ProtectedRoute><FlowEditorPage /></ProtectedRoute> },
+      { path: "/bots/:botId", element: <ProtectedRoute><FlowEditorPage /></ProtectedRoute> },
+    ],
+  },
+]);
+
 function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
-          <Router>
-            <AuthProvider>
-              <Toaster />
-              <Routes>
-              {/* Public routes - redirect to /bots if already logged in */}
-              <Route
-                path="/"
-                element={
-                  <PublicRoute>
-                    <LoginPage />
-                  </PublicRoute>
-                }
-              />
-              <Route
-                path="/login"
-                element={
-                  <PublicRoute>
-                    <LoginPage />
-                  </PublicRoute>
-                }
-              />
-              <Route
-                path="/register"
-                element={
-                  <PublicRoute>
-                    <RegisterPage />
-                  </PublicRoute>
-                }
-              />
-
-              {/* OAuth callback route - handles authentication */}
-              <Route path="/auth/callback" element={<OAuthCallbackPage />} />
-
-              {/* Protected routes - require authentication */}
-              <Route
-                path="/bots"
-                element={
-                  <ProtectedRoute>
-                    <BotsPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/bots/:botId/flows/:flowId"
-                element={
-                  <ProtectedRoute>
-                    <FlowEditorPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/bots/:botId"
-                element={
-                  <ProtectedRoute>
-                    <FlowEditorPage />
-                  </ProtectedRoute>
-                }
-              />
-              </Routes>
-            </AuthProvider>
-          </Router>
+          <RouterProvider router={router} />
           <ReactQueryDevtools initialIsOpen={false} />
         </QueryClientProvider>
       </ThemeProvider>

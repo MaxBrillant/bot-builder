@@ -15,7 +15,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ConditionSelector } from "@/components/flows/config/shared/ConditionSelector";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useBlocker } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getLastOpenedFlowId, setLastOpenedFlowId } from "@/lib/flowStorage";
 import { FlowEditorProvider, useFlowEditor } from "@/contexts/FlowEditorContext";
@@ -379,6 +379,20 @@ function FlowEditorContent() {
       setLastOpenedFlowId(botId, flowId);
     }
   }, [flowId, flows, botId, isFlowsLoading, navigate, setActiveFlowIndex]);
+
+  // Block browser back/forward navigation when there are unsaved changes.
+  // Only intercept POP actions — in-app navigations (PUSH/REPLACE) already have their own guards.
+  const blockerResetRef = useRef<(() => void) | null>(null);
+  const blocker = useBlocker(
+    ({ historyAction }) => hasUnsavedChanges && historyAction === 'POP'
+  );
+  useEffect(() => {
+    if (blocker.state === 'blocked') {
+      pendingActionRef.current = () => blocker.proceed();
+      blockerResetRef.current = () => blocker.reset();
+      dialogState.openDialog('unsavedWarning');
+    }
+  }, [blocker, dialogState]);
 
   // Warn user before closing/refreshing tab with unsaved changes
   useEffect(() => {
@@ -1152,9 +1166,10 @@ function FlowEditorContent() {
       logoutResolveRef.current(true);
       logoutResolveRef.current = null;
     } else if (pendingActionRef.current) {
-      // Execute the pending action
+      // Execute the pending action (may be blocker.proceed, flow switch, back-to-bots, etc.)
       pendingActionRef.current();
       pendingActionRef.current = null;
+      blockerResetRef.current = null;
     }
     dialogState.closeDialog("unsavedWarning");
   }, [dialogState]);
@@ -1166,6 +1181,9 @@ function FlowEditorContent() {
       logoutResolveRef.current(false);
       logoutResolveRef.current = null;
     }
+    // If a browser back/forward navigation was blocked, reset it so the URL stays put
+    blockerResetRef.current?.();
+    blockerResetRef.current = null;
     pendingActionRef.current = null;
     dialogState.closeDialog("unsavedWarning");
 
