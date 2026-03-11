@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Bot Builder is a conversational bot framework with a FastAPI backend and React/TypeScript frontend. The system supports multi-tenant bot creation with a visual flow editor for building conversation flows using 6 node types: PROMPT, MENU, API_ACTION, LOGIC_EXPRESSION, TEXT, and END.
+Bot Builder is a conversational bot framework with a FastAPI backend and React/TypeScript frontend. The system supports multi-tenant bot creation with a visual flow editor for building conversation flows using 6 node types: PROMPT, MENU, API_ACTION, LOGIC_EXPRESSION, TEXT, and SET_VARIABLE.
 
 ## Code Guidelines & Working Principles
 
@@ -250,7 +250,7 @@ Each node type has a dedicated processor inheriting from `BaseProcessor`:
 - **APIActionProcessor**: Calls external APIs, stores responses
 - **LogicProcessor**: Conditional routing only
 - **TextProcessor**: Displays text information
-- **EndProcessor**: Terminates conversation
+- **SetVariableProcessor**: Assigns values to flow variables, then auto-progresses
 
 Processors return `ProcessResult` containing:
 - `message`: Response text (rendered with template engine)
@@ -433,3 +433,10 @@ pytest --cov=app tests/  # With coverage
 ```
 
 Frontend testing setup is available but tests not yet implemented.
+
+## Git Commit Conventions
+
+- Format: `type: brief description` (e.g. `fix: curl import body parsing breaks on JSON`)
+- Types: `feat`, `fix`, `refactor`, `docs`, `chore`
+- Keep the subject line concise — no body, no Co-Authored-By, no trailing punctuation
+- Match the tense and style of existing commits in the repo (`git log --oneline`)
