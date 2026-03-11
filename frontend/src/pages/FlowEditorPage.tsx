@@ -43,6 +43,7 @@ import NodeTypeSelector from "@/components/flows/NodeTypeSelector";
 import { NodeConfigurationPanel, type NodeConfigurationPanelRef } from "@/components/flows/config/NodeConfigurationPanel";
 import { FlowSettingsPanel } from "@/components/flows/config/FlowSettingsPanel";
 import CreateFlowDialog from "@/components/flows/CreateFlowDialog";
+import { ExportFlowDialog } from "@/components/flows/ExportFlowDialog";
 import EditBotDialog from "@/components/bots/EditBotDialog";
 import { ChatSimulator } from "@/components/flows/ChatSimulator";
 import { FlowCanvas } from "@/components/flows/FlowCanvas";
@@ -142,6 +143,7 @@ function FlowEditorContent() {
     syncKey,
     pendingNodeSelectionRef,
     getNodeErrorCount,
+    hasValidationErrors,
   } = useFlowEditor();
 
   // State
@@ -1992,7 +1994,8 @@ function FlowEditorContent() {
         isSaving={isSaving}
         checkUnsavedChanges={withUnsavedChangesGuard}
         onBeforeLogout={handleBeforeLogout}
-        onTestChat={handleTestChat}
+        onExportFlow={activeFlow ? () => dialogState.openDialog("exportFlow") : undefined}
+        hasValidationErrors={hasValidationErrors}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={undo}
@@ -2174,6 +2177,12 @@ function FlowEditorContent() {
         flow={activeFlow}
         flows={flows}
         initialMessage={simulatorInitialMessage}
+      />
+
+      <ExportFlowDialog
+        open={dialogState.exportFlowDialogOpen}
+        onOpenChange={dialogState.setExportFlowDialogOpen}
+        flow={activeFlow}
       />
 
       {/* Unsaved Changes Warning */}

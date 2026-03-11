@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { X, Plus } from "lucide-react";
+import { X, Plus, ChevronRight } from "lucide-react";
 import { useCreateFlowMutation } from "@/hooks/queries/useFlowsQuery";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import {
@@ -13,6 +13,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -73,6 +79,49 @@ interface CreateFlowDialogProps {
   botId: string;
 }
 
+interface ImportedFlowData {
+  start_node_id: string;
+  nodes: Record<string, any>;
+  variables?: Record<string, any>;
+  defaults?: any;
+}
+
+function parseImportJson(raw: string): { data: ImportedFlowData; name: string; trigger_keywords: string[] } | { error: string } {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { error: "Invalid JSON — check for syntax errors." };
+  }
+
+  if (typeof parsed.name !== "string" || !parsed.name.trim()) {
+    return { error: "Missing or invalid 'name' field." };
+  }
+  if (!Array.isArray(parsed.trigger_keywords) || parsed.trigger_keywords.length === 0) {
+    return { error: "Missing or empty 'trigger_keywords' array." };
+  }
+  if (typeof parsed.start_node_id !== "string" || !parsed.start_node_id) {
+    return { error: "Missing 'start_node_id' field." };
+  }
+  if (typeof parsed.nodes !== "object" || parsed.nodes === null || Array.isArray(parsed.nodes)) {
+    return { error: "Missing or invalid 'nodes' object." };
+  }
+  if (!(parsed.start_node_id in parsed.nodes)) {
+    return { error: `'start_node_id' ("${parsed.start_node_id}") does not exist in 'nodes'.` };
+  }
+
+  return {
+    data: {
+      start_node_id: parsed.start_node_id,
+      nodes: parsed.nodes,
+      variables: parsed.variables,
+      defaults: parsed.defaults,
+    },
+    name: parsed.name.trim(),
+    trigger_keywords: parsed.trigger_keywords,
+  };
+}
+
 export default function CreateFlowDialog({
   open,
   onOpenChange,
@@ -85,6 +134,10 @@ export default function CreateFlowDialog({
   const createFlowMutation = useCreateFlowMutation(botId);
   const [newKeyword, setNewKeyword] = useState("");
   const [keywordError, setKeywordError] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importJson, setImportJson] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importedData, setImportedData] = useState<ImportedFlowData | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(
@@ -96,49 +149,65 @@ export default function CreateFlowDialog({
     },
   });
 
+  const resetImportState = () => {
+    setImportOpen(false);
+    setImportJson("");
+    setImportError(null);
+    setImportedData(null);
+  };
+
+  const handleClose = (isOpen: boolean) => {
+    if (!isOpen) resetImportState();
+    onOpenChange(isOpen);
+  };
+
   const onSubmit = async (values: FormValues) => {
-    // Create initial node: a single text node (terminal - no routes)
-    const messageNodeId = "message_start";
+    const flowDefinition = importedData
+      ? {
+          name: values.name.trim(),
+          trigger_keywords: values.triggerKeywords,
+          start_node_id: importedData.start_node_id,
+          nodes: importedData.nodes,
+          ...(importedData.variables ? { variables: importedData.variables } : {}),
+          ...(importedData.defaults ? { defaults: importedData.defaults } : {}),
+        }
+      : (() => {
+          const messageNodeId = "message_start";
+          return {
+            name: values.name.trim(),
+            trigger_keywords: values.triggerKeywords,
+            start_node_id: messageNodeId,
+            nodes: {
+              [messageNodeId]: {
+                id: messageNodeId,
+                type: "TEXT" as const,
+                name: "Welcome Message",
+                config: {
+                  type: "TEXT" as const,
+                  text: "Welcome! This is your new flow.",
+                },
+                routes: [],
+                position: { x: 100, y: 200 },
+              },
+            },
+          };
+        })();
 
-    const initialNodes = {
-      [messageNodeId]: {
-        id: messageNodeId,
-        type: "TEXT" as const,
-        name: "Welcome Message",
-        config: {
-          type: "TEXT" as const,
-          text: "Welcome! This is your new flow.",
-        },
-        routes: [], // No routes = terminal node
-        position: { x: 100, y: 200 },
+    createFlowMutation.mutate(flowDefinition, {
+      onSuccess: (newFlow) => {
+        if (onCreateFlow) {
+          onCreateFlow(values.name.trim(), values.triggerKeywords);
+        }
+        if (onSuccess) {
+          onSuccess(newFlow);
+        }
+        form.reset();
+        setNewKeyword("");
+        setKeywordError(null);
+        resetImportState();
+        onOpenChange(false);
       },
-    };
-
-    // Use React Query mutation to create the flow
-    createFlowMutation.mutate(
-      {
-        name: values.name.trim(),
-        trigger_keywords: values.triggerKeywords,
-        start_node_id: messageNodeId,
-        nodes: initialNodes,
-      },
-      {
-        onSuccess: (newFlow) => {
-          // Call legacy callback if provided
-          if (onCreateFlow) {
-            onCreateFlow(values.name.trim(), values.triggerKeywords);
-          }
-          // Call onSuccess callback with the new flow
-          if (onSuccess) {
-            onSuccess(newFlow);
-          }
-          form.reset();
-          setNewKeyword("");
-          setKeywordError(null);
-          onOpenChange(false);
-        },
-      }
-    );
+    });
   };
 
   // Add trigger keyword
@@ -212,10 +281,56 @@ export default function CreateFlowDialog({
     }
   };
 
+  const handleImportJsonChange = (raw: string) => {
+    setImportJson(raw);
+
+    if (!raw.trim()) {
+      setImportError(null);
+      setImportedData(null);
+      return;
+    }
+
+    const result = parseImportJson(raw);
+    if ("error" in result) {
+      setImportError(result.error);
+      setImportedData(null);
+      return;
+    }
+
+    setImportError(null);
+    setImportedData(result.data);
+
+    // Pre-fill form fields from the imported JSON.
+    // Use shouldValidate: false so Zod doesn't fire collision errors before
+    // the user has a chance to review and edit the pre-filled values.
+    // Validation still runs on submit via form.handleSubmit.
+    form.setValue("name", result.name, { shouldValidate: false });
+
+    const validKeywords = result.trigger_keywords.filter(
+      (k: any) => typeof k === "string" && k.trim()
+    );
+    form.setValue("triggerKeywords", validKeywords, { shouldValidate: false });
+  };
+
+  const watchedName = form.watch("name");
   const triggerKeywords = form.watch("triggerKeywords");
 
+  // Keep the import textarea in sync when the user edits the pre-filled name or keywords
+  useEffect(() => {
+    if (!importedData) return;
+    const reconstructed = {
+      name: watchedName,
+      trigger_keywords: triggerKeywords,
+      start_node_id: importedData.start_node_id,
+      nodes: importedData.nodes,
+      ...(importedData.variables ? { variables: importedData.variables } : {}),
+      ...(importedData.defaults ? { defaults: importedData.defaults } : {}),
+    };
+    setImportJson(JSON.stringify(reconstructed, null, 2));
+  }, [watchedName, triggerKeywords, importedData]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Create New Flow</DialogTitle>
@@ -357,11 +472,45 @@ export default function CreateFlowDialog({
               )}
             />
 
+            <Collapsible open={importOpen} onOpenChange={setImportOpen}>
+              <CollapsibleTrigger className="flex w-full items-center justify-between py-4 hover:bg-muted/30 transition-colors">
+                <div className="flex items-center gap-2">
+                  <ChevronRight
+                    className={cn(
+                      "h-4 w-4 text-muted-foreground transition-transform duration-200",
+                      importOpen && "rotate-90"
+                    )}
+                  />
+                  <span className="text-sm font-medium">Import from JSON</span>
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="py-3 space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Paste a previously exported flow JSON. The name and trigger keywords will be pre-filled and can be edited before creating.
+                  </p>
+                  <Textarea
+                    placeholder='{ "name": "My Flow", "trigger_keywords": ["START"], ... }'
+                    value={importJson}
+                    onChange={(e) => handleImportJsonChange(e.target.value)}
+                    className={cn(
+                      "font-mono text-xs h-36 resize-none",
+                      importError && "border-destructive focus-visible:ring-destructive"
+                    )}
+                    disabled={createFlowMutation.isPending}
+                  />
+                  {importError && (
+                    <p className="text-xs text-destructive">{importError}</p>
+                  )}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => onOpenChange(false)}
+                onClick={() => handleClose(false)}
                 disabled={createFlowMutation.isPending}
               >
                 Cancel

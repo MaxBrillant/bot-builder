@@ -1,4 +1,4 @@
-import { ArrowLeft, Settings, MessageCircle, Save, Loader2, Undo2, Redo2 } from "lucide-react";
+import { ArrowLeft, Settings, Save, Loader2, Undo2, Redo2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UserDropdown } from "@/components/auth/UserDropdown";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -7,12 +7,13 @@ import { useNavigate } from "react-router-dom";
 interface FlowToolbarProps {
   botName?: string;
   onBotSettings?: () => void;
-  onTestChat?: () => void;
   onSaveFlow?: () => void;
   hasUnsavedChanges?: boolean;
   isSaving?: boolean;
   checkUnsavedChanges?: (action: () => void) => () => void;
   onBeforeLogout?: () => Promise<boolean>;
+  onExportFlow?: () => void;
+  hasValidationErrors?: boolean;
   canUndo?: boolean;
   canRedo?: boolean;
   onUndo?: () => void;
@@ -22,12 +23,13 @@ interface FlowToolbarProps {
 export default function FlowToolbar({
   botName = "Untitled Bot",
   onBotSettings,
-  onTestChat,
   onSaveFlow,
   hasUnsavedChanges = false,
   isSaving = false,
   checkUnsavedChanges,
   onBeforeLogout,
+  onExportFlow,
+  hasValidationErrors = false,
   canUndo = false,
   canRedo = false,
   onUndo,
@@ -35,15 +37,9 @@ export default function FlowToolbar({
 }: FlowToolbarProps) {
   const navigate = useNavigate();
 
-  // Wrap handlers with unsaved changes check if provided
   const handleBackToBots = checkUnsavedChanges
     ? checkUnsavedChanges(() => navigate("/bots"))
     : () => navigate("/bots");
-
-  // Test Chat and Bot Settings don't need unsaved changes checks
-  // since they open non-destructive dialogs that can be closed
-  const handleTestChat = onTestChat;
-  const handleBotSettings = onBotSettings;
 
   return (
     <div className="bg-background border-b p-4 flex justify-between items-center">
@@ -104,17 +100,18 @@ export default function FlowToolbar({
         <Button
           variant="outline"
           size="sm"
-          onClick={handleTestChat}
+          onClick={onExportFlow}
+          disabled={!onExportFlow || hasValidationErrors}
           className="gap-2"
-          title="Test your bot in a chat simulator"
+          title={hasValidationErrors ? "Fix validation errors before exporting" : "Export current flow as JSON"}
         >
-          <MessageCircle className="w-4 h-4" />
-          Test Bot
+          <Upload className="w-4 h-4" />
+          Export
         </Button>
         <Button
           variant="outline"
           size="sm"
-          onClick={handleBotSettings}
+          onClick={onBotSettings}
           title="Bot Settings (Ctrl+,)"
           className="h-9 w-9 p-0"
         >

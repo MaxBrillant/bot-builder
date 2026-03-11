@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react';
 /**
  * Dialog types supported by the application
  */
-export type DialogType = 'createFlow' | 'botSettings' | 'chatSimulator' | 'unsavedWarning';
+export type DialogType = 'createFlow' | 'botSettings' | 'chatSimulator' | 'unsavedWarning' | 'exportFlow';
 
 /**
  * Dialog state management hook
@@ -14,6 +14,7 @@ export function useDialogState() {
   const [botSettingsDialogOpen, setBotSettingsDialogOpen] = useState(false);
   const [chatSimulatorOpen, setChatSimulatorOpen] = useState(false);
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+  const [exportFlowDialogOpen, setExportFlowDialogOpen] = useState(false);
 
   /**
    * Open a specific dialog by type
@@ -31,6 +32,9 @@ export function useDialogState() {
         break;
       case 'unsavedWarning':
         setShowUnsavedWarning(true);
+        break;
+      case 'exportFlow':
+        setExportFlowDialogOpen(true);
         break;
     }
   }, []);
@@ -52,6 +56,9 @@ export function useDialogState() {
       case 'unsavedWarning':
         setShowUnsavedWarning(false);
         break;
+      case 'exportFlow':
+        setExportFlowDialogOpen(false);
+        break;
     }
   }, []);
 
@@ -68,10 +75,12 @@ export function useDialogState() {
         return chatSimulatorOpen;
       case 'unsavedWarning':
         return showUnsavedWarning;
+      case 'exportFlow':
+        return exportFlowDialogOpen;
       default:
         return false;
     }
-  }, [createFlowDialogOpen, botSettingsDialogOpen, chatSimulatorOpen, showUnsavedWarning]);
+  }, [createFlowDialogOpen, botSettingsDialogOpen, chatSimulatorOpen, showUnsavedWarning, exportFlowDialogOpen]);
 
   return {
     // Individual dialog states (for backward compatibility)
@@ -83,6 +92,8 @@ export function useDialogState() {
     setChatSimulatorOpen,
     showUnsavedWarning,
     setShowUnsavedWarning,
+    exportFlowDialogOpen,
+    setExportFlowDialogOpen,
 
     // New unified API
     openDialog,
