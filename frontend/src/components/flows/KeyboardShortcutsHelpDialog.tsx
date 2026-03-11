@@ -31,6 +31,7 @@ const shortcutGroups: ShortcutGroup[] = [
       { keys: <span className="flex items-center gap-2"><span>Shift +</span><Move className="w-3.5 h-3.5" /></span>, description: "Move 80px" },
       { keys: <span className="flex items-center gap-2"><span>Ctrl + Shift +</span><MoveHorizontal className="w-3.5 h-3.5" /></span>, description: "Reorder in flow" },
       { keys: "Enter", description: "Edit node" },
+      { keys: "Ctrl + D", description: "Duplicate node" },
       { keys: "Delete", description: "Delete node" },
       { keys: "Escape", description: "Deselect node" },
     ],

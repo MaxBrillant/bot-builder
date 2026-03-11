@@ -119,6 +119,7 @@ interface FlowEditorContextType {
     condition?: string,
     routeIndex?: number
   ) => string | null;
+  duplicateNode: (nodeId: string, condition?: string) => string | null;
   deleteNode: (nodeId: string) => boolean;
   moveLeft: (nodeId: string) => boolean;
   moveRight: (nodeId: string) => boolean;
@@ -718,6 +719,61 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     }
   }, [recordCommand]);
 
+  const duplicateNode = useCallback((nodeId: string, condition?: string): string | null => {
+    const currentState = draftStateRef.current;
+    if (!currentState) return null;
+
+    const sourceNode = currentState.nodes[nodeId];
+    if (!sourceNode) return null;
+
+    const clonedConfig = JSON.parse(JSON.stringify(sourceNode.config)) as NodeConfig;
+
+    // Resolve condition to routeIndex — same logic as insertNode.
+    // If the condition matches an existing route, overtake that route.
+    // If not, it becomes a new branch (with that condition label).
+    let actualRouteIndex: number | undefined;
+    if (condition && isBranchingNode(sourceNode.type, sourceNode.config) && sourceNode.routes) {
+      const foundIndex = sourceNode.routes.findIndex(
+        (route) => route.condition.trim().toLowerCase() === condition.trim().toLowerCase()
+      );
+      if (foundIndex !== -1) {
+        actualRouteIndex = foundIndex;
+      }
+    }
+
+    try {
+      const result = insertNodeInFlow(
+        currentState,
+        'after',
+        nodeId,
+        sourceNode.type,
+        condition,
+        actualRouteIndex,
+        clonedConfig
+      );
+      const newNodeId = result.newNodeId;
+
+      pendingNodeSelectionRef.current = newNodeId;
+
+      recordCommand(
+        CommandType.DUPLICATE_NODE,
+        `Duplicate node "${sourceNode.name}"`,
+        currentState,
+        result.flow,
+        [newNodeId]
+      );
+
+      draftStateRef.current = result.flow;
+      setDraftState(result.flow);
+      toast.success(`${sourceNode.type} node duplicated`);
+
+      return newNodeId;
+    } catch (error) {
+      toast.error(`Failed to duplicate node: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return null;
+    }
+  }, [recordCommand]);
+
   const deleteNode = useCallback((nodeId: string): boolean => {
     // Get current state from ref to avoid stale closure issues
     const currentState = draftStateRef.current;
@@ -1065,6 +1121,7 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     updateNodePosition,
     updateMultipleNodePositions,
     insertNode,
+    duplicateNode,
     deleteNode,
     moveLeft,
     moveRight,
@@ -1106,6 +1163,7 @@ export function FlowEditorProvider({ children }: { children: ReactNode }) {
     updateNodePosition,
     updateMultipleNodePositions,
     insertNode,
+    duplicateNode,
     deleteNode,
     moveLeft,
     moveRight,

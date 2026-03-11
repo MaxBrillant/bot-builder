@@ -131,6 +131,7 @@ function FlowEditorContent() {
     updateMultipleNodePositions,
     insertNode,
     deleteNode,
+    duplicateNode,
     moveLeft,
     moveRight,
     moveNodeBetweenEdge,
@@ -186,6 +187,11 @@ function FlowEditorContent() {
     anchorPosition: { x: number; y: number }; // Screen coordinates for popover positioning
   } | null>(null);
   const [pendingCondition, setPendingCondition] = useState("");
+  const [pendingDuplicate, setPendingDuplicate] = useState<{
+    nodeId: string;
+    anchorPosition: { x: number; y: number };
+  } | null>(null);
+  const [pendingDuplicateCondition, setPendingDuplicateCondition] = useState("");
   const [simulatorKey, setSimulatorKey] = useState(0);
   const [simulatorInitialMessage, setSimulatorInitialMessage] = useState<string | null>(null);
 
@@ -254,6 +260,7 @@ function FlowEditorContent() {
   const moveLeftRef = useRef(moveLeft);
   const moveRightRef = useRef(moveRight);
   const deleteNodeRef = useRef(deleteNode);
+  const duplicateNodeRef = useRef(duplicateNode);
   const dialogStateRef = useRef(dialogState);
 
   useEffect(() => {
@@ -261,6 +268,7 @@ function FlowEditorContent() {
     moveLeftRef.current = moveLeft;
     moveRightRef.current = moveRight;
     deleteNodeRef.current = deleteNode;
+    duplicateNodeRef.current = duplicateNode;
     dialogStateRef.current = dialogState;
     // Update refs used in clearSelectionWithHistory and keyboard handlers
     activeFlowRef.current = activeFlow;
@@ -270,6 +278,7 @@ function FlowEditorContent() {
   // Stable handler maps for different node actions
   const nodeClickHandlersRef = useRef<Map<string, () => void>>(new Map());
   const nodeDeleteHandlersRef = useRef<Map<string, () => void>>(new Map());
+  const nodeDuplicateHandlersRef = useRef<Map<string, () => void>>(new Map());
   const nodeMoveLeftHandlersRef = useRef<Map<string, () => void>>(new Map());
   const nodeMoveRightHandlersRef = useRef<Map<string, () => void>>(new Map());
   const nodeSelectorChangeHandlersRef = useRef<Map<string, (open: boolean) => void>>(new Map());
@@ -292,6 +301,53 @@ function FlowEditorContent() {
       });
     }
     return nodeDeleteHandlersRef.current.get(nodeId)!;
+  }, []);
+
+  // Handles duplicate for both branching and non-branching nodes.
+  // Non-branching: duplicate directly. Branching: open condition-only popover first.
+  const handleDuplicateNode = useCallback((nodeId: string) => {
+    const flow = activeFlowRef.current;
+    if (!flow) return;
+    const node = flow.nodes[nodeId];
+    if (!node) return;
+
+    if (isBranchingNode(node.type, node.config)) {
+      // Compute screen position of the node for popover anchor
+      const rfNode = reactFlowInstance.getNode(nodeId);
+      let anchorPosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      if (rfNode) {
+        const nodeWidth = rfNode.width || 200;
+        const nodeHeight = rfNode.height || 80;
+        anchorPosition = reactFlowInstance.flowToScreenPosition({
+          x: rfNode.position.x + nodeWidth / 2,
+          y: rfNode.position.y + nodeHeight + 10,
+        });
+      }
+      // Defer by one tick so the context menu's pointer-event cleanup finishes
+      // before the Popover mounts — otherwise Radix dismisses it immediately.
+      const capturedAnchor = anchorPosition;
+      setTimeout(() => {
+        const freshNode = activeFlowRef.current?.nodes[nodeId];
+        if (!freshNode) return;
+        setPendingDuplicate({ nodeId, anchorPosition: capturedAnchor });
+        setPendingDuplicateCondition(getDefaultCondition(freshNode, freshNode.routes || []));
+      }, 0);
+    } else {
+      duplicateNodeRef.current(nodeId);
+    }
+  }, [reactFlowInstance]);
+
+  const handleDuplicateNodeRef = useRef(handleDuplicateNode);
+  useEffect(() => { handleDuplicateNodeRef.current = handleDuplicateNode; });
+
+  // Get or create a stable duplicate handler for a node
+  const getNodeDuplicateHandler = useCallback((nodeId: string) => {
+    if (!nodeDuplicateHandlersRef.current.has(nodeId)) {
+      nodeDuplicateHandlersRef.current.set(nodeId, () => {
+        handleDuplicateNodeRef.current(nodeId);
+      });
+    }
+    return nodeDuplicateHandlersRef.current.get(nodeId)!;
   }, []);
 
   // Get or create a stable move left handler for a node
@@ -783,6 +839,7 @@ function FlowEditorContent() {
               insertNode("after", node.id, nodeType, condition),
             parentNode: flowNode,
             onDelete: getNodeDeleteHandler(node.id),
+            onDuplicate: getNodeDuplicateHandler(node.id),
             onMoveLeft: getNodeMoveLeftHandler(node.id),
             onMoveRight: getNodeMoveRightHandler(node.id),
             canMoveLeft: false,
@@ -813,6 +870,7 @@ function FlowEditorContent() {
           // Pass parentNode for branching nodes to show condition selector
           ...(isBranching && { parentNode: flowNode }),
           onDelete: getNodeDeleteHandler(node.id),
+          onDuplicate: getNodeDuplicateHandler(node.id),
           onMoveLeft: getNodeMoveLeftHandler(node.id),
           onMoveRight: getNodeMoveRightHandler(node.id),
           canMoveLeft: canMoveLeftVal,
@@ -836,6 +894,7 @@ function FlowEditorContent() {
     insertNode,
     getNodeClickHandler,
     getNodeDeleteHandler,
+    getNodeDuplicateHandler,
     getNodeMoveLeftHandler,
     getNodeMoveRightHandler,
     getNodeSelectorChangeHandler,
@@ -1888,6 +1947,13 @@ function FlowEditorContent() {
         }
       }
 
+      // Handle Ctrl+D to duplicate selected node
+      if (ctrl && !shift && !alt && event.key === 'd' && currentSelectedNodeId && currentActiveFlow) {
+        event.preventDefault();
+        handleDuplicateNodeRef.current(currentSelectedNodeId);
+        return;
+      }
+
       // Handle Delete/Backspace key to delete node
       // Skip if focus is on a button/link to prevent accidental deletion
       if (
@@ -2298,6 +2364,62 @@ function FlowEditorContent() {
                   Esc
                 </kbd>
                 <span>Save & close</span>
+              </span>
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {/* Condition Popover for Duplicate Branching Node */}
+      <Popover
+        open={!!pendingDuplicate}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (pendingDuplicate && pendingDuplicateCondition.trim()) {
+              duplicateNodeRef.current(pendingDuplicate.nodeId, pendingDuplicateCondition.trim());
+            }
+            setPendingDuplicate(null);
+            setPendingDuplicateCondition("");
+          }
+        }}
+      >
+        <PopoverTrigger asChild>
+          <span
+            className="fixed w-0 h-0"
+            style={{
+              left: pendingDuplicate?.anchorPosition?.x ?? '50%',
+              top: pendingDuplicate?.anchorPosition?.y ?? '50%',
+            }}
+            aria-hidden="true"
+          />
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-3" side="bottom" align="center" sideOffset={4}>
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-muted-foreground">
+              Duplicate on route
+            </div>
+            {pendingDuplicate && activeFlow && (
+              <ConditionSelector
+                nodeType={activeFlow.nodes[pendingDuplicate.nodeId]?.type || "LOGIC_EXPRESSION"}
+                nodeConfig={activeFlow.nodes[pendingDuplicate.nodeId]?.config}
+                value={pendingDuplicateCondition}
+                onChange={setPendingDuplicateCondition}
+                placeholder={
+                  activeFlow.nodes[pendingDuplicate.nodeId]?.type === "MENU"
+                    ? "Select menu option"
+                    : activeFlow.nodes[pendingDuplicate.nodeId]?.type === "API_ACTION"
+                    ? "Select condition"
+                    : "e.g. value == true"
+                }
+                availableVariables={availableVariables}
+              />
+            )}
+            <div className="pt-2 border-t border-border flex items-center justify-center text-muted-foreground text-xs">
+              <span className="flex items-center gap-2">
+                <kbd className="px-2 py-1 h-5 bg-transparent text-foreground border border-gray-400 rounded text-xs font-mono flex items-center">
+                  Esc
+                </kbd>
+                <span>Confirm & close</span>
               </span>
             </div>
           </div>

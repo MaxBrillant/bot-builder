@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Trash2, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Trash2, Play } from "lucide-react";
 import type { NodeType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -20,6 +20,7 @@ interface NodeWrapperProps {
   data?: {
     nodeType?: NodeType;
     onDelete?: () => void;
+    onDuplicate?: () => void;
     name?: string;
     isStartNode?: boolean;
     onTestFlow?: () => void;
@@ -39,7 +40,8 @@ export default function NodeWrapper({
 }: NodeWrapperProps) {
 
   const canDelete = data?.onDelete;
-  const hasContextMenu = canDelete || canMoveLeft || canMoveRight;
+  const canDuplicate = data?.onDuplicate;
+  const hasContextMenu = canDelete || canDuplicate || canMoveLeft || canMoveRight;
 
   const handleDeleteClick = () => {
     data?.onDelete?.();
@@ -110,7 +112,20 @@ export default function NodeWrapper({
                 Move Right
               </ContextMenuItem>
             )}
-            {(canMoveLeft || canMoveRight) && canDelete && <ContextMenuSeparator />}
+            {(canMoveLeft || canMoveRight) && (canDuplicate || canDelete) && <ContextMenuSeparator />}
+            {canDuplicate && (
+              <ContextMenuItem
+                className="cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  data?.onDuplicate?.();
+                }}
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                Duplicate
+              </ContextMenuItem>
+            )}
+            {canDuplicate && canDelete && <ContextMenuSeparator />}
             {canDelete && (
               <ContextMenuItem
                 className="text-destructive focus:text-destructive cursor-pointer"

@@ -1,5 +1,5 @@
 import dagre from "dagre";
-import type { Flow, FlowNode, NodeType, Route } from "./types";
+import type { Flow, FlowNode, NodeType, NodeConfig, Route } from "./types";
 import { getConditionLabel, canAddRoute, isBranchingNode, getDefaultCondition } from "./routeConditionUtils";
 import { getRouteHandleInfo, HANDLE_POSITIONS } from "./handlePositioning";
 import { snapToGrid } from "@/utils/canvasPositioningUtils";
@@ -481,7 +481,8 @@ export function insertNodeInFlow(
   targetNodeId: string | undefined,
   newNodeType: NodeType,
   customCondition?: string,
-  routeIndex?: number
+  routeIndex?: number,
+  initialConfig?: NodeConfig
 ): { flow: Flow; newNodeId: string } {
   const newNodeId = `node_${Date.now()}`;
 
@@ -592,7 +593,7 @@ export function insertNodeInFlow(
     id: newNodeId,
     type: newNodeType,
     name: nodeName,
-    config: DEFAULT_NODE_CONFIGS[newNodeType],
+    config: initialConfig ?? DEFAULT_NODE_CONFIGS[newNodeType],
     routes: [], // Terminal nodes simply have empty routes
     position: {
       x: snapToGrid(initialPosition.x),
