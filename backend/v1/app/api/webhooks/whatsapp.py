@@ -212,16 +212,6 @@ async def receive_evolution_system_event(
 
     logger.info(f"Evolution webhook: {event_type} for {instance_name}")
 
-    # Validate Evolution API key from payload
-    incoming_apikey = event_data.get("apikey")
-    if incoming_apikey and incoming_apikey != settings.evolution_api.api_key:
-        logger.warning(f"Invalid API key in Evolution webhook for {instance_name}")
-        return WebhookResponse(
-            status="error",
-            message="Invalid API key",
-            timestamp=datetime.now(timezone.utc)
-        )
-
     # Validate token if instance exists
     if instance_name:
         async for db in get_db():
