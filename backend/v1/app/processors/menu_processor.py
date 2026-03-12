@@ -375,7 +375,7 @@ class MenuProcessor(BaseProcessor):
             ]
             
             With flow variables:
-                {"user_id": {"type": "string"}, "user_name": {"type": "string"}, "user_age": {"type": "number"}}
+                {"user_id": {"type": "STRING"}, "user_name": {"type": "STRING"}, "user_age": {"type": "NUMBER"}}
 
             Result: context updated with user_id="123", user_name="Alice", user_age=25 (as number)
         """
@@ -401,7 +401,7 @@ class MenuProcessor(BaseProcessor):
 
             # Look up the target variable's declared type
             var_definition = variables.get(target_var, {})
-            var_type = var_definition.get("type", "string")  # Default to string if not defined
+            var_type = var_definition.get("type", "STRING")  # Default to string if not defined
             
             # Extract value from selected item
             value = self.get_nested_value(selected_item, source_path)

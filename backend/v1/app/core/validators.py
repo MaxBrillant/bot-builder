@@ -392,7 +392,7 @@ class InputValidator:
 
         Args:
             value: Input value
-            target_type: Target type (string, number, boolean, array)
+            target_type: Target type (STRING, NUMBER, BOOLEAN, ARRAY)
 
         Returns:
             Converted value
@@ -1172,7 +1172,7 @@ class FlowValidator:
             if not isinstance(default_value, str):
                 result.add_error(
                     "invalid_default_value",
-                    f"Variable '{var_name}' has type 'string' but default value is not a string. Got: {type(default_value).__name__}",
+                    f"Variable '{var_name}' has type 'STRING' but default value is not a string. Got: {type(default_value).__name__}",
                     location,
                     "Provide a string value or null"
                 )
@@ -1180,7 +1180,7 @@ class FlowValidator:
             if isinstance(default_value, bool):
                 result.add_error(
                     "invalid_default_value",
-                    f"Variable '{var_name}' has type 'number' but default value is a boolean",
+                    f"Variable '{var_name}' has type 'NUMBER' but default value is a boolean",
                     location,
                     "Provide a number (e.g., 42, -10, 0, 3.14) or null"
                 )
@@ -1190,14 +1190,14 @@ class FlowValidator:
                 except ValueError:
                     result.add_error(
                         "invalid_default_value",
-                        f"Variable '{var_name}' has type 'number' but default value '{default_value}' cannot be converted to a number",
+                        f"Variable '{var_name}' has type 'NUMBER' but default value '{default_value}' cannot be converted to a number",
                         location,
                         "Provide a valid number (e.g., 42, -10, 0, 3.14) or null"
                     )
             elif not isinstance(default_value, (int, float)):
                 result.add_error(
                     "invalid_default_value",
-                    f"Variable '{var_name}' has type 'number' but default value is {type(default_value).__name__}",
+                    f"Variable '{var_name}' has type 'NUMBER' but default value is {type(default_value).__name__}",
                     location,
                     "Provide a number (e.g., 42, -10, 0, 3.14) or null"
                 )
@@ -1206,14 +1206,14 @@ class FlowValidator:
                 if default_value.lower() not in ['true', 'false', '1', '0', 'yes', 'no', 'y', 'n']:
                     result.add_error(
                         "invalid_default_value",
-                        f"Variable '{var_name}' has type 'boolean' but default value '{default_value}' cannot be converted to boolean",
+                        f"Variable '{var_name}' has type 'BOOLEAN' but default value '{default_value}' cannot be converted to boolean",
                         location,
                         "Provide true or false"
                     )
             elif not isinstance(default_value, bool):
                 result.add_error(
                     "invalid_default_value",
-                    f"Variable '{var_name}' has type 'boolean' but default value is {type(default_value).__name__}",
+                    f"Variable '{var_name}' has type 'BOOLEAN' but default value is {type(default_value).__name__}",
                     location,
                     "Provide true or false"
                 )
@@ -1225,21 +1225,21 @@ class FlowValidator:
                     if not isinstance(parsed, list):
                         result.add_error(
                             "invalid_default_value",
-                            f"Variable '{var_name}' has type 'array' but default value parses to {type(parsed).__name__}, not a list",
+                            f"Variable '{var_name}' has type 'ARRAY' but default value parses to {type(parsed).__name__}, not a list",
                             location,
                             "Provide a valid JSON array (e.g., [], [\"item1\", \"item2\"]) or null"
                         )
                 except (json.JSONDecodeError, ValueError):
                     result.add_error(
                         "invalid_default_value",
-                        f"Variable '{var_name}' has type 'array' but default value '{default_value}' is not valid JSON",
+                        f"Variable '{var_name}' has type 'ARRAY' but default value '{default_value}' is not valid JSON",
                         location,
                         "Provide a valid JSON array (e.g., [], [\"item1\", \"item2\"]) or null"
                     )
             elif not isinstance(default_value, list):
                 result.add_error(
                     "invalid_default_value",
-                    f"Variable '{var_name}' has type 'array' but default value is {type(default_value).__name__}",
+                    f"Variable '{var_name}' has type 'ARRAY' but default value is {type(default_value).__name__}",
                     location,
                     "Provide a valid JSON array (e.g., [], [\"item1\", \"item2\"]) or null"
                 )

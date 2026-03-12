@@ -366,24 +366,3 @@ class PromptProcessor(BaseProcessor):
             self.logger.error(f"Validation error: {str(e)}", rule=validation.rule)
             return False
     
-    def _get_variable_type(self, var_name: str, context: Dict[str, Any]) -> str:
-        """
-        Get variable type from flow variables definition
-        
-        Args:
-            var_name: Variable name
-            context: Session context (should contain _flow_variables if defined)
-        
-        Returns:
-            Variable type string (default: 'string')
-        """
-        # Check if flow variables definition is in context
-        flow_variables = context.get('_flow_variables', {})
-        
-        if var_name in flow_variables:
-            var_def = flow_variables[var_name]
-            if isinstance(var_def, dict):
-                return var_def.get('type', 'string')
-        
-        # Default to string type
-        return 'string'

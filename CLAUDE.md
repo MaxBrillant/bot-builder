@@ -261,10 +261,22 @@ Processors return `ProcessResult` containing:
 
 ### Template System
 
-Variables use `{{variable}}` syntax. Available contexts:
-- `{{context.variable_name}}` - Flow variables
-- `{{session.channel_user_id}}` - Session data
-- `{{api.field_name}}` - Last API response
+Variables use `{{variable_name}}` syntax. The context is a flat dict — use the bare variable name directly.
+
+Supported syntax:
+- `{{variable_name}}` - Any flow variable (e.g. `{{user_name}}`, `{{amount}}`)
+- `{{nested.field}}` - Dot notation for nested values (e.g. `{{user.channel_id}}` in API_ACTION, `{{item.name}}` in MENU item_template)
+- `{{items.0}}` - Array index access
+
+What does NOT work (despite appearing in older docs):
+- `{{context.variable_name}}` - There is no `context` key in the session dict; this renders literally
+- `{{session.channel_user_id}}` - Not implemented
+- `{{api.field_name}}` - Not implemented; API response values are mapped to named variables via `response_map`
+
+Special variables available only in specific locations:
+- `{{user.channel_id}}`, `{{user.channel}}` — API_ACTION nodes only
+- `{{item.*}}`, `{{index}}` — MENU `item_template` only
+- `{{current_attempt}}`, `{{max_attempts}}` — retry_logic `counter_text` only
 
 ### Route Evaluation
 

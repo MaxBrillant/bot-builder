@@ -269,3 +269,21 @@ class BaseProcessor(ABC):
             No HTML/SQL injection prevention - developer must validate appropriately.
         """
         return user_input.strip() if user_input else ""
+
+    def _get_variable_type(self, var_name: str, context: Dict[str, Any]) -> str:
+        """
+        Get variable type from flow variables definition
+
+        Args:
+            var_name: Variable name
+            context: Session context (should contain _flow_variables if defined)
+
+        Returns:
+            Variable type string (default: 'STRING')
+        """
+        flow_variables = context.get('_flow_variables', {})
+        if var_name in flow_variables:
+            var_def = flow_variables[var_name]
+            if isinstance(var_def, dict):
+                return var_def.get('type', 'STRING')
+        return 'STRING'

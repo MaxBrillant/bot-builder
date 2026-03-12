@@ -88,10 +88,10 @@ class VariableType(str, Enum):
 
 # Route Condition Keywords
 class RouteCondition(str, Enum):
-    SUCCESS = "SUCCESS"
-    ERROR = "ERROR"
-    TRUE = "TRUE"
-    FALSE = "FALSE"
+    SUCCESS = "success"
+    ERROR = "error"
+    TRUE = "true"
+    FALSE = "false"
 
 
 # System Constraints

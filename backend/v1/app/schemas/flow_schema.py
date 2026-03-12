@@ -82,7 +82,7 @@ class FlowCreate(BaseModel):
                 "name": "checkout_flow",
                 "trigger_keywords": ["START", "BEGIN"],
                 "variables": {
-                    "user_name": {"type": "string", "default": None}
+                    "user_name": {"type": "STRING", "default": None}
                 },
                 "defaults": {
                     "retry_logic": {

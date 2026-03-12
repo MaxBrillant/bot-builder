@@ -10,7 +10,7 @@ from urllib.parse import quote
 from app.utils.logger import get_logger
 from app.utils.exceptions import TemplateRenderError
 from app.utils.security import escape_html
-from app.utils.shared import PathResolver
+from app.utils.shared import PathResolver, TypeConverter
 
 logger = get_logger(__name__)
 
@@ -20,9 +20,8 @@ class TemplateEngine:
     Template rendering engine with variable substitution
 
     Features:
-    - Simple variable substitution: {{variable}}
-    - Dot notation: {{context.user.name}}
-    - Array indexing: {{context.items.0}}
+    - Simple variable substitution: {{variable_name}}
+    - Dot notation for nested values: {{user.name}}, {{items.0}}
     - Special variables (with restrictions - see below)
     - Missing variables displayed literally (debugging feature)
     - Null-safe navigation
@@ -62,14 +61,14 @@ class TemplateEngine:
 
         Examples:
             >>> engine = TemplateEngine()
-            >>> engine.render("Hello {{context.name}}!", {"name": "John"})
+            >>> engine.render("Hello {{name}}!", {"name": "John"})
             "Hello John!"
 
             >>> engine.render("Item: {{item.id}}", {"item": {"id": "123"}})
             "Item: 123"
 
-            >>> engine.render("Missing: {{context.missing}}", {})
-            "Missing: {{context.missing}}"
+            >>> engine.render("Missing: {{missing}}", {})
+            "Missing: {{missing}}"
 
         Raises:
             TemplateRenderError: If template contains unsupported syntax
@@ -265,13 +264,13 @@ class TemplateEngine:
             Resolved value or None if not found
 
         Examples:
-            >>> engine._resolve_path("context.user.name", {"user": {"name": "John"}})
+            >>> engine._resolve_path("user.name", {"user": {"name": "John"}})
             "John"
 
-            >>> engine._resolve_path("context.items.0", {"items": ["a", "b"]})
+            >>> engine._resolve_path("items.0", {"items": ["a", "b"]})
             "a"
 
-            >>> engine._resolve_path("context.missing", {})
+            >>> engine._resolve_path("missing", {})
             None
 
         Note:
@@ -442,14 +441,14 @@ class TemplateEngine:
 
         Examples:
             >>> engine = TemplateEngine()
-            >>> flow_vars = {"amount": {"type": "number"}}
-            >>> engine.render_json_value("{{context.amount}}", {"amount": 500}, flow_vars)
+            >>> flow_vars = {"amount": {"type": "NUMBER"}}
+            >>> engine.render_json_value("{{amount}}", {"amount": 500}, flow_vars)
             500  # Returns int, not "500"
 
-            >>> engine.render_json_value("{{context.active}}", {"active": True})
+            >>> engine.render_json_value("{{active}}", {"active": True})
             True  # Returns bool, not "True"
 
-            >>> engine.render_json_value("{{context.name}}", {"name": "Alice"})
+            >>> engine.render_json_value("{{name}}", {"name": "Alice"})
             "Alice"  # Strings remain strings
 
         Raises:
@@ -462,7 +461,7 @@ class TemplateEngine:
         self.validate_template(template)
 
         # Check if this is a simple variable template (just {{variable}})
-        match = self.VARIABLE_PATTERN.match(template.strip())
+        match = self.VARIABLE_PATTERN.fullmatch(template.strip())
         if not match:
             # Not a simple variable template, fall back to string rendering
             return self.render(template, context)
@@ -494,8 +493,6 @@ class TemplateEngine:
 
         # Step 3: Convert to declared type
         try:
-            # Use validation system for type conversion if available
-            # For now, do basic type conversion
             return self._convert_to_type(value, target_type)
         except Exception as e:
             logger.debug(f"Type conversion failed, preserving native type: {str(e)}")
@@ -555,7 +552,7 @@ class TemplateEngine:
 
         Args:
             value: Source value
-            target_type: Target type (string, number, boolean, array)
+            target_type: Target type (STRING, NUMBER, BOOLEAN, ARRAY)
 
         Returns:
             Converted value
@@ -563,47 +560,10 @@ class TemplateEngine:
         Raises:
             ValueError: If conversion fails
         """
-        if target_type == "string":
-            return str(value)
-
-        elif target_type == "number":
-            # If already a number, return as-is
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return value
-            # Try to convert string to number
-            if isinstance(value, str):
-                # Try int first, then float
-                try:
-                    return int(value)
-                except ValueError:
-                    return float(value)
-            return float(value)
-
-        elif target_type == "boolean":
-            # If already boolean, return as-is
-            if isinstance(value, bool):
-                return value
-            # Convert string representations
-            if isinstance(value, str):
-                lower_val = value.lower().strip()
-                if lower_val in ("true", "1", "yes"):
-                    return True
-                elif lower_val in ("false", "0", "no", ""):
-                    return False
-            # Convert numbers
-            if isinstance(value, (int, float)):
-                return bool(value)
-            return bool(value)
-
-        elif target_type == "array":
-            # If already a list, return as-is
-            if isinstance(value, list):
-                return value
-            # Wrap single values in array
-            return [value]
-
-        # Unknown type, preserve native
-        return self._preserve_native_type(value)
+        result = TypeConverter.convert(value, target_type)
+        if result is None:
+            return self._preserve_native_type(value)
+        return result
 
     def _format_value(self, value: Any) -> str:
         """

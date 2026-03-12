@@ -217,36 +217,49 @@ class TypeConverter:
             return None
 
     @staticmethod
-    def to_number(value: Any) -> Optional[float]:
+    def to_number(value: Any) -> Optional[Union[int, float]]:
         """
         Convert value to number (supports both integers and decimals)
 
         Per spec, NUMBER type supports: "integers and decimals, standard JSON number"
 
+        Returns int for whole numbers, float for decimals, to preserve correct
+        JSON serialization (3 not 3.0).
+
         Args:
             value: Input value
 
         Returns:
-            Float value or None if conversion fails
+            int or float value, or None if conversion fails
         """
         if value is None:
             return None
 
-        # If already a number, return as float
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return float(value)
+        # Preserve int as int
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+
+        # Float: demote whole floats to int (3.0 → 3), preserve decimals (3.5 → 3.5)
+        if isinstance(value, float):
+            return int(value) if value.is_integer() else value
 
         # Try to convert string to number
         if isinstance(value, str):
+            stripped = value.strip()
             try:
-                return float(value.strip())
+                return int(stripped)
             except ValueError:
-                logger.debug(f"Failed to convert string '{value}' to number")
-                return None
+                try:
+                    f = float(stripped)
+                    return int(f) if f.is_integer() else f
+                except ValueError:
+                    logger.debug(f"Failed to convert string '{value}' to number")
+                    return None
 
-        # For other types, try conversion
+        # For other types, try float conversion then demote if whole
         try:
-            return float(value)
+            f = float(value)
+            return int(f) if f.is_integer() else f
         except (ValueError, TypeError):
             logger.debug(f"Failed to convert {type(value).__name__} '{value}' to number")
             return None
@@ -358,7 +371,7 @@ class TypeConverter:
 
         Args:
             value: Input value
-            target_type: Target type (string, number, boolean, array)
+            target_type: Target type (STRING, NUMBER, BOOLEAN, ARRAY)
 
         Returns:
             Converted value
@@ -369,22 +382,22 @@ class TypeConverter:
         if value is None:
             return None
 
-        if target_type == "string":
+        if target_type == "STRING":
             return TypeConverter.to_string(value)
 
-        elif target_type == "number":
+        elif target_type == "NUMBER":
             result = TypeConverter.to_number(value)
             if result is None:
                 raise InputValidationError(f"Cannot convert '{value}' to number")
             return result
 
-        elif target_type == "boolean":
+        elif target_type == "BOOLEAN":
             result = TypeConverter.to_boolean(value)
             if result is None:
                 raise InputValidationError(f"Cannot convert '{value}' to boolean")
             return result
 
-        elif target_type == "array":
+        elif target_type == "ARRAY":
             result = TypeConverter.to_array(value)
             if result is None:
                 raise InputValidationError(f"Cannot convert '{value}' to array")

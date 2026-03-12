@@ -47,9 +47,12 @@ class SetVariableProcessor(BaseProcessor):
         config: SetVariableNodeConfig = node.config
 
         # Apply each assignment
+        flow_variables = context.get('_flow_variables', {})
         for assignment in config.assignments:
             try:
-                rendered_value = self.template_engine.render(assignment.value, context)
+                rendered_value = self.template_engine.render_json_value(
+                    assignment.value, context, flow_variables
+                )
             except Exception as e:
                 self.logger.error(
                     f"SET_VARIABLE '{node.id}': template rendering failed for '{assignment.variable}': {str(e)}",
@@ -115,12 +118,3 @@ class SetVariableProcessor(BaseProcessor):
             next_node=next_node,
             context=context
         )
-
-    def _get_variable_type(self, var_name: str, context: Dict[str, Any]) -> str:
-        """Get variable type from flow variables definition"""
-        flow_variables = context.get('_flow_variables', {})
-        if var_name in flow_variables:
-            var_def = flow_variables[var_name]
-            if isinstance(var_def, dict):
-                return var_def.get('type', 'STRING')
-        return 'STRING'

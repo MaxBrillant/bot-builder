@@ -458,7 +458,7 @@ class APIActionProcessor(BaseProcessor):
             ]
 
             With flow variables:
-                {"user_id": {"type": "number"}, "user_name": {"type": "string"}}
+                {"user_id": {"type": "NUMBER"}, "user_name": {"type": "STRING"}}
 
             Result: context updated with user_id=123 (as number), user_name="Alice"
         """
@@ -484,7 +484,7 @@ class APIActionProcessor(BaseProcessor):
 
             # Look up the target variable's declared type
             var_definition = variables.get(target_var, {})
-            var_type = var_definition.get("type", "string")  # Default to string if not defined
+            var_type = var_definition.get("type", "STRING")  # Default to string if not defined
 
             # Use safe extraction method
             value = api_response.extract_value(source_path)
