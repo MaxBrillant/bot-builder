@@ -43,12 +43,14 @@ def create_whatsapp_callback(
         if not message:
             return  # Skip empty messages (e.g., completion signals)
 
-        await integration_manager.send_message(
+        success = await integration_manager.send_message(
             platform=IntegrationPlatform.WHATSAPP,
             bot_id=bot_id,
             channel_user_id=channel_user_id,
             message_text=message
         )
+        if not success:
+            logger.error(f"Failed to deliver WhatsApp message to user", bot_id=str(bot_id))
 
     return callback
 
@@ -210,6 +212,16 @@ async def receive_evolution_system_event(
 
     logger.info(f"Evolution webhook: {event_type} for {instance_name}")
 
+    # Validate Evolution API key from payload
+    incoming_apikey = event_data.get("apikey")
+    if incoming_apikey and incoming_apikey != settings.evolution_api.api_key:
+        logger.warning(f"Invalid API key in Evolution webhook for {instance_name}")
+        return WebhookResponse(
+            status="error",
+            message="Invalid API key",
+            timestamp=datetime.now(timezone.utc)
+        )
+
     # Validate token if instance exists
     if instance_name:
         async for db in get_db():
@@ -363,10 +375,6 @@ async def handle_messages_upsert(event_data: Dict[str, Any]):
     instance_name = event_data.get("instance")
 
     logger.info(f"Processing MESSAGES_UPSERT for {instance_name}")
-    # Log entire data structure to debug @lid issue
-    import json
-    data = event_data.get("data", {})
-    logger.info(f"Full webhook data: {json.dumps(data, indent=2)}")
 
     try:
         bot_id = extract_bot_id_from_instance_name(instance_name)

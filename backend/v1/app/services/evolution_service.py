@@ -84,6 +84,7 @@ class EvolutionAPIService:
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 return None
+            self._log_http_error(e)
             raise EvolutionAPIError(f"Failed to fetch instance {instance_name}: HTTP {e.response.status_code}") from e
         except httpx.RequestError as e:
             raise EvolutionAPIError(f"Network error fetching instance {instance_name}: {e}") from e
@@ -93,7 +94,12 @@ class EvolutionAPIService:
         Force delete an instance (logout + delete).
         Returns True after attempt (Evolution API may process async).
         """
-        instance = await self.fetch_instance(instance_name)
+        try:
+            instance = await self.fetch_instance(instance_name)
+        except EvolutionAPIError as e:
+            self.logger.warning(f"Could not check if {instance_name} exists, skipping cleanup: {e}")
+            return True
+
         if not instance:
             return True
 

@@ -145,7 +145,7 @@ async def connect_whatsapp(
         )
 
     instance_name = f"bot_{str(bot_id).replace('-', '_')}"
-    webhook_url = f"{settings.evolution_api.webhook_base_url}/evolution-webhooks/"
+    webhook_url = f"{settings.evolution_api.webhook_base_url}/evolution-webhooks"
 
     try:
         http_client = await get_http_client()
@@ -321,7 +321,7 @@ async def reconnect_whatsapp(
     integration = await get_or_create_whatsapp_integration(db, bot_id)
 
     instance_name = f"bot_{str(bot_id).replace('-', '_')}"
-    webhook_url = f"{settings.evolution_api.webhook_base_url}/evolution-webhooks/"
+    webhook_url = f"{settings.evolution_api.webhook_base_url}/evolution-webhooks"
 
     try:
         http_client = await get_http_client()
