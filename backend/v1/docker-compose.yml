@@ -145,7 +145,7 @@ services:
       - SERVER_TYPE=http
       - SERVER_PORT=8080
       - SERVER_URL=http://evolution-api:8080
-      - CORS_ORIGIN=http://api:8000  # Restrict to internal API service only
+      - CORS_ORIGIN=*
       - CORS_METHODS=GET,POST,PUT,DELETE
       - CORS_CREDENTIALS=true
 
