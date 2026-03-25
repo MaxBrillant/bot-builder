@@ -28,8 +28,6 @@ from app.utils.constants import SessionStatus, SystemConstraints
 from app.utils.encryption import get_encryption_service
 from app.config import settings
 
-logger = get_logger(__name__)
-
 
 class SessionManager:
     """

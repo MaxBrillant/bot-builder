@@ -14,8 +14,6 @@ from app.core.conditions import ConditionEvaluator
 from app.core.input_validator import InputValidator as ValidationSystem
 from app.utils.logger import get_logger
 
-logger = get_logger(__name__)
-
 
 @dataclass
 class ProcessResult:
