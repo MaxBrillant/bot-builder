@@ -398,7 +398,7 @@ class FlowValidator:
         current_flow_id: Optional[UUID] = None
     ) -> ValidationResult:
         """
-        Comprehensive flow validation
+        Comprehensive flow validation orchestrator
 
         Args:
             flow_data: Flow definition dictionary
@@ -410,40 +410,99 @@ class FlowValidator:
         """
         result = ValidationResult()
 
-        # 1. Check required top-level fields
-        self._check_required_fields(flow_data, result)
+        # Step 1: Validate flow metadata
+        await self._validate_flow_metadata(flow_data, bot_id, current_flow_id, result)
         if not result.is_valid():
             return result
 
-        # 2. Validate flow name format and uniqueness per bot
+        # Step 2: Validate trigger keywords
+        await self._validate_trigger_keywords_wrapper(flow_data, bot_id, current_flow_id, result)
+
+        # Step 3: Validate flow variables
+        self._validate_flow_variables(flow_data, result)
+
+        # Step 4: Validate node structure
+        nodes = self._validate_node_structure(flow_data, result)
+        if not result.is_valid():
+            return result
+
+        # Step 5: Validate node graph
+        start_node_id = flow_data.get('start_node_id')
+        self._validate_node_graph(nodes, start_node_id, result)
+
+        # Step 6: Validate routes
+        self._validate_routes(nodes, result)
+
+        # Step 7: Validate SET_VARIABLE assignments reference declared variables
+        declared_variables = set(flow_data.get('variables', {}).keys())
+        self._validate_set_variable_assignments(nodes, declared_variables, result)
+
+        return result
+
+    async def _validate_flow_metadata(
+        self,
+        flow_data: Dict[str, Any],
+        bot_id: UUID,
+        current_flow_id: Optional[UUID],
+        result: ValidationResult
+    ):
+        """Validate flow metadata: required fields and flow name"""
+        # Check required top-level fields
+        required_fields = ['name', 'trigger_keywords', 'start_node_id', 'nodes']
+        for field in required_fields:
+            if field not in flow_data:
+                result.add_error(
+                    "missing_field",
+                    f"Required field '{field}' is missing",
+                    field
+                )
+
+        if not result.is_valid():
+            return
+
+        # Validate flow name format and uniqueness per bot
         flow_name = flow_data.get('name')
         await self._validate_flow_name(flow_name, bot_id, current_flow_id, result)
 
-        # 3. Validate trigger keywords
-        await self._validate_trigger_keywords(
-            flow_data.get('trigger_keywords', []),
-            bot_id,
-            current_flow_id,
-            result
-        )
+    async def _validate_trigger_keywords_wrapper(
+        self,
+        flow_data: Dict[str, Any],
+        bot_id: UUID,
+        current_flow_id: Optional[UUID],
+        result: ValidationResult
+    ):
+        """Validate trigger keywords format and uniqueness"""
+        keywords = flow_data.get('trigger_keywords', [])
+        await self._validate_trigger_keywords(keywords, bot_id, current_flow_id, result)
 
-        # 4. Validate variables
-        self._validate_variables(flow_data.get('variables', {}), result)
+    def _validate_flow_variables(self, flow_data: Dict[str, Any], result: ValidationResult):
+        """Validate flow variables, defaults, and variable assignments"""
+        # Validate variables
+        variables = flow_data.get('variables', {})
+        self._validate_variables(variables, result)
 
-        # 5. Validate defaults
+        # Validate defaults
         nodes_dict = flow_data.get('nodes', {})
         self._validate_defaults(flow_data.get('defaults', {}), nodes_dict, result)
 
-        # 6. Check nodes structure
+    def _validate_node_structure(
+        self,
+        flow_data: Dict[str, Any],
+        result: ValidationResult
+    ) -> Dict[str, FlowNode]:
+        """Validate node structure: count, parsing, and Pydantic validation"""
+        nodes_dict = flow_data.get('nodes', {})
+
+        # Check nodes structure
         if not nodes_dict or not isinstance(nodes_dict, dict):
             result.add_error(
                 "invalid_structure",
                 "Flow must contain at least one node",
                 "nodes"
             )
-            return result
+            return {}
 
-        # 7. Validate node count constraint
+        # Validate node count constraint
         if len(nodes_dict) > SystemConstraints.MAX_NODES_PER_FLOW:
             result.add_error(
                 "constraint_violation",
@@ -451,7 +510,7 @@ class FlowValidator:
                 "nodes"
             )
 
-        # 8. Parse and validate all nodes with Pydantic
+        # Parse and validate all nodes with Pydantic
         nodes: Dict[str, FlowNode] = {}
         for node_id, node_data in nodes_dict.items():
             # Validate node ID format
@@ -490,11 +549,19 @@ class FlowValidator:
                         location
                     )
 
-        if not result.is_valid():
-            return result
+        return nodes
 
-        # 9. Validate start_node_id exists
-        start_node_id = flow_data.get('start_node_id')
+    def _validate_node_graph(
+        self,
+        nodes: Dict[str, FlowNode],
+        start_node_id: str,
+        result: ValidationResult
+    ):
+        """Validate node graph: start node, orphans, cycles, unreachable nodes"""
+        if not nodes:
+            return
+
+        # Validate start_node_id exists
         if start_node_id not in nodes:
             result.add_error(
                 "missing_node",
@@ -503,37 +570,25 @@ class FlowValidator:
                 f"Add node with id '{start_node_id}' or change start_node_id"
             )
 
-        # 10. Validate unique node names
+        # Validate unique node names
         self._validate_unique_node_names(nodes, result)
 
-        # 11. Validate no orphan nodes
+        # Validate no orphan nodes
         self._validate_no_orphan_nodes(nodes, start_node_id, result)
 
-        # 12. Validate all routes and their conditions
-        self._validate_all_routes(nodes, result)
-
-        # 13. Validate SET_VARIABLE assignments reference declared variables
-        declared_variables = set(flow_data.get('variables', {}).keys())
-        self._validate_set_variable_assignments(nodes, declared_variables, result)
-
-        # 14. Detect circular references
+        # Detect circular references
         self._detect_circular_references(nodes, start_node_id, result)
 
-        # 15. Check for unreachable nodes (warning only)
+        # Check for unreachable nodes (warning only)
         self._check_unreachable_nodes(nodes, start_node_id, result)
 
-        return result
+    def _validate_routes(self, nodes: Dict[str, FlowNode], result: ValidationResult):
+        """Validate routes and conditions"""
+        if not nodes:
+            return
 
-    def _check_required_fields(self, flow_data: Dict[str, Any], result: ValidationResult):
-        """Validate required top-level fields"""
-        required_fields = ['name', 'trigger_keywords', 'start_node_id', 'nodes']
-        for field in required_fields:
-            if field not in flow_data:
-                result.add_error(
-                    "missing_field",
-                    f"Required field '{field}' is missing",
-                    field
-                )
+        # Validate all routes and their conditions
+        self._validate_all_routes(nodes, result)
 
     async def _validate_flow_name(
         self,
@@ -657,33 +712,41 @@ class FlowValidator:
         if not result.is_valid() or not self.db or not keywords:
             return
 
-        # Check for duplicate keywords
+        # Check for duplicate keywords (batched query)
         from app.models.flow import Flow
+        from sqlalchemy import or_
 
         normalized_keywords = [kw.strip().upper() for kw in keywords if kw.strip()]
 
         if not normalized_keywords:
             return
 
+        # Build a single query that checks all keywords at once
+        keyword_conditions = [Flow.trigger_keywords.contains([kw]) for kw in normalized_keywords]
+
+        stmt = select(Flow).where(
+            Flow.bot_id == bot_id,
+            or_(*keyword_conditions)
+        )
+
+        if current_flow_id:
+            stmt = stmt.where(Flow.id != current_flow_id)
+
+        db_result = await self.db.execute(stmt)
+        conflicting_flows = db_result.scalars().all()
+
+        # Check each keyword against conflicting flows
         for keyword in normalized_keywords:
-            stmt = select(Flow).where(
-                Flow.bot_id == bot_id,
-                Flow.trigger_keywords.contains([keyword])
-            )
-
-            if current_flow_id:
-                stmt = stmt.where(Flow.id != current_flow_id)
-
-            db_result = await self.db.execute(stmt)
-            conflicting_flow = db_result.scalar_one_or_none()
-
-            if conflicting_flow:
-                result.add_error(
-                    "duplicate_trigger_keyword",
-                    f"Trigger keyword '{keyword}' is already used by flow '{conflicting_flow.name}' (ID: {conflicting_flow.id}) in this bot",
-                    "trigger_keywords",
-                    f"Use a different keyword or remove it from flow '{conflicting_flow.name}' first"
-                )
+            for conflicting_flow in conflicting_flows:
+                # Check if this flow contains this specific keyword
+                if any(kw.strip().upper() == keyword for kw in conflicting_flow.trigger_keywords):
+                    result.add_error(
+                        "duplicate_trigger_keyword",
+                        f"Trigger keyword '{keyword}' is already used by flow '{conflicting_flow.name}' (ID: {conflicting_flow.id}) in this bot",
+                        "trigger_keywords",
+                        f"Use a different keyword or remove it from flow '{conflicting_flow.name}' first"
+                    )
+                    break  # Only report first conflict for each keyword
 
     def _validate_variables(self, variables: Dict[str, Any], result: ValidationResult):
         """Validate flow variables"""
