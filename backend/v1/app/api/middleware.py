@@ -33,6 +33,7 @@ from app.utils.exceptions import (
     SessionNotFoundError,
     UnauthorizedError
 )
+from app.utils.responses import not_found, forbidden, bad_request
 
 logger = get_logger(__name__)
 
@@ -92,25 +93,16 @@ class OwnershipChecker:
             if not bot:
                 if allow_missing:
                     return None
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Bot '{bot_id}' not found"
-                )
+                raise not_found(f"Bot '{bot_id}' not found")
 
             return bot
 
         except BotNotFoundError as e:
             if allow_missing:
                 return None
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e)
-            )
+            raise not_found(str(e))
         except UnauthorizedError as e:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"You don't have permission to access bot '{bot_id}'"
-            )
+            raise forbidden(f"You don't have permission to access bot '{bot_id}'")
 
     async def verify_flow_ownership(
         self,
@@ -138,10 +130,7 @@ class OwnershipChecker:
             if not flow:
                 if allow_missing:
                     return None
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Flow '{flow_id}' not found"
-                )
+                raise not_found(f"Flow '{flow_id}' not found")
 
             # Verify bot ownership (flow -> bot -> user)
             bot = await self.bot_service.get_bot(
@@ -151,25 +140,16 @@ class OwnershipChecker:
             )
 
             if not bot:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"You don't have permission to access flow '{flow_id}'"
-                )
+                raise forbidden(f"You don't have permission to access flow '{flow_id}'")
 
             return flow
 
         except FlowNotFoundError as e:
             if allow_missing:
                 return None
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e)
-            )
+            raise not_found(str(e))
         except (BotNotFoundError, UnauthorizedError) as e:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"You don't have permission to access flow '{flow_id}'"
-            )
+            raise forbidden(f"You don't have permission to access flow '{flow_id}'")
 
     async def verify_bot_and_flow_ownership(
         self,
@@ -199,10 +179,7 @@ class OwnershipChecker:
 
         # Verify flow belongs to bot
         if flow.bot_id != bot_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Flow '{flow_id}' does not belong to bot '{bot_id}'"
-            )
+            raise bad_request(f"Flow '{flow_id}' does not belong to bot '{bot_id}'")
 
         return bot, flow
 

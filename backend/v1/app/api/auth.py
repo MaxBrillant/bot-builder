@@ -33,6 +33,14 @@ from app.config import settings
 from app.core.redis_manager import redis_manager
 from app.utils.logger import get_logger
 from app.utils.exceptions import AuthenticationError, SecurityServiceUnavailableError
+from app.utils.responses import (
+    too_many_requests,
+    service_unavailable,
+    bad_request,
+    unauthorized,
+    forbidden,
+    internal_server_error
+)
 
 logger = get_logger(__name__)
 
@@ -74,35 +82,23 @@ async def register(
 
         if not allowed:
             logger.warning(f"Registration rate limit exceeded", ip=client_ip)
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many registration attempts. Please try again later."
-            )
+            raise too_many_requests("Too many registration attempts. Please try again later.")
     except SecurityServiceUnavailableError:
         # SECURITY: If Redis is down, we can't rate limit - reject registration for safety
         logger.error("Redis unavailable during registration - rejecting for security")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Registration service temporarily unavailable. Please try again later."
-        )
+        raise service_unavailable("Registration service temporarily unavailable. Please try again later.")
     
     # Check if email already exists
     stmt = select(User).where(func.lower(User.email) == func.lower(user_data.email))
     result = await db.execute(stmt)
     if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
+        raise bad_request("Email already registered")
     
     # Hash password (validates length constraints)
     try:
         hashed_password = get_password_hash(user_data.password)
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise bad_request(str(e))
     
     user = User(
         email=user_data.email,
@@ -127,16 +123,10 @@ async def register(
         await db.rollback()
         error_msg = str(e)
         if "email" in error_msg or "users_email_key" in error_msg or "idx_users_email_unique_lower" in error_msg:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
+            raise bad_request("Email already registered")
         else:
             logger.error(f"Registration failed with integrity error: {error_msg}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Registration failed"
-            )
+            raise bad_request("Registration failed")
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -178,17 +168,11 @@ async def login(
 
         if not allowed:
             logger.warning(f"Login rate limit exceeded", ip=client_ip)
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many login attempts. Please try again later."
-            )
+            raise too_many_requests("Too many login attempts. Please try again later.")
     except SecurityServiceUnavailableError:
         # SECURITY: If Redis is down, we can't rate limit - reject login for safety
         logger.error("Redis unavailable during login - rejecting for security")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Authentication service temporarily unavailable. Please try again later."
-        )
+        raise service_unavailable("Authentication service temporarily unavailable. Please try again later.")
 
     # Get user by email
     stmt = select(User).where(func.lower(User.email) == func.lower(credentials.email))
@@ -197,33 +181,21 @@ async def login(
 
     if not user:
         logger.warning(f"Login failed - user not found", email=credentials.email)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password"
-        )
+        raise unauthorized("Incorrect email or password")
 
     # Check if user is OAuth-only (no password set)
     if not user.password_hash:
         logger.warning(f"Login failed - OAuth-only user attempted password login", user_id=str(user.user_id))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This account uses Google Sign-In. Please use the 'Sign in with Google' button."
-        )
+        raise bad_request("This account uses Google Sign-In. Please use the 'Sign in with Google' button.")
 
     # Verify password
     if not verify_password(credentials.password, user.password_hash):
         logger.warning(f"Login failed - invalid password", user_id=str(user.user_id))
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password"
-        )
+        raise unauthorized("Incorrect email or password")
 
     # Check if user is active
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is inactive"
-        )
+        raise forbidden("User account is inactive")
 
     # Create access token (convert UUID to string for JWT)
     access_token = create_access_token(
@@ -440,7 +412,4 @@ async def delete_user_data(
             event_metadata={"error": str(e)[:100]}  # Truncate error for audit
         )
 
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete user data. Please try again or contact support."
-        )
+        raise internal_server_error("Failed to delete user data. Please try again or contact support.")

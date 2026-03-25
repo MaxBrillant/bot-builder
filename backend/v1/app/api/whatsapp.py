@@ -22,6 +22,13 @@ from app.config import settings
 from app.utils.exceptions import NotFoundError, UnauthorizedError
 from app.utils.constants import IntegrationPlatform, IntegrationStatus
 from app.utils.logger import get_logger
+from app.utils.responses import (
+    not_found,
+    forbidden,
+    service_unavailable,
+    bad_gateway,
+    internal_server_error
+)
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/bots", tags=["whatsapp"])
@@ -56,9 +63,9 @@ async def verify_bot_ownership(db: AsyncSession, bot_id: UUID, user_id: UUID) ->
     try:
         await bot_service.get_bot(bot_id=bot_id, owner_user_id=user_id, check_ownership=True)
     except NotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bot not found")
+        raise not_found("Bot not found")
     except UnauthorizedError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this bot")
+        raise forbidden("Not authorized to access this bot")
 
 
 async def create_evolution_instance(
@@ -118,10 +125,7 @@ async def connect_whatsapp(
     Poll GET /status to detect when user scans the QR code.
     """
     if not settings.evolution_api.enabled:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="WhatsApp integration is currently disabled"
-        )
+        raise service_unavailable("WhatsApp integration is currently disabled")
 
     await verify_bot_ownership(db, bot_id, current_user.user_id)
     integration = await get_or_create_whatsapp_integration(db, bot_id)
@@ -176,10 +180,10 @@ async def connect_whatsapp(
 
     except EvolutionAPIError as e:
         logger.error(f"Evolution API error for bot {bot_id}: {e}")
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Evolution API error: {e}")
+        raise bad_gateway(f"Evolution API error: {e}")
     except Exception as e:
         logger.error(f"Error connecting WhatsApp for bot {bot_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to connect")
+        raise internal_server_error("Failed to connect")
 
 
 @router.get("/{bot_id}/whatsapp/status", response_model=WhatsAppStatusResponse)
@@ -312,10 +316,7 @@ async def reconnect_whatsapp(
 ):
     """Reconnect WhatsApp. Deletes existing instance and creates new one with fresh QR code."""
     if not settings.evolution_api.enabled:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="WhatsApp integration is currently disabled"
-        )
+        raise service_unavailable("WhatsApp integration is currently disabled")
 
     await verify_bot_ownership(db, bot_id, current_user.user_id)
     integration = await get_or_create_whatsapp_integration(db, bot_id)
@@ -352,7 +353,7 @@ async def reconnect_whatsapp(
 
     except EvolutionAPIError as e:
         logger.error(f"Evolution API error reconnecting bot {bot_id}: {e}")
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Evolution API error: {e}")
+        raise bad_gateway(f"Evolution API error: {e}")
     except Exception as e:
         logger.error(f"Error reconnecting WhatsApp for bot {bot_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reconnect")
+        raise internal_server_error("Failed to reconnect")

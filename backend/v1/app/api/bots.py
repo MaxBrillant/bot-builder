@@ -22,6 +22,7 @@ from app.schemas.bot_schema import (
 from app.utils.exceptions import NotFoundError, UnauthorizedError
 from app.config import settings
 from app.utils.constants import IntegrationPlatform, BotStatus, IntegrationStatus
+from app.utils.responses import not_found, forbidden
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -135,9 +136,9 @@ async def get_bot(
         # Include secret since user owns the bot and needs it for webhook configuration
         return bot_to_response(bot, include_secret=True)
     except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise not_found(str(e))
     except UnauthorizedError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        raise forbidden(str(e))
 
 
 @router.put("/{bot_id}", response_model=BotResponse)
@@ -167,9 +168,9 @@ async def update_bot(
         # Include secret since user owns the bot and needs it for webhook configuration
         return bot_to_response(bot, include_secret=True)
     except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise not_found(str(e))
     except UnauthorizedError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        raise forbidden(str(e))
 
 
 @router.delete("/{bot_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -191,9 +192,9 @@ async def delete_bot(
             owner_user_id=current_user.user_id
         )
     except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise not_found(str(e))
     except UnauthorizedError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        raise forbidden(str(e))
 
 
 @router.post("/{bot_id}/regenerate-secret", response_model=WebhookSecretResponse)
@@ -222,9 +223,9 @@ async def regenerate_webhook_secret(
             webhook_secret=bot.webhook_secret
         )
     except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise not_found(str(e))
     except UnauthorizedError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        raise forbidden(str(e))
 
 
 @router.post("/{bot_id}/activate", response_model=BotResponse)
@@ -245,9 +246,9 @@ async def activate_bot(
         # Include secret since user owns the bot and needs it for webhook configuration
         return bot_to_response(bot, include_secret=True)
     except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise not_found(str(e))
     except UnauthorizedError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        raise forbidden(str(e))
 
 
 @router.post("/{bot_id}/deactivate", response_model=BotResponse)
@@ -268,6 +269,6 @@ async def deactivate_bot(
         # Include secret since user owns the bot and needs it for webhook configuration
         return bot_to_response(bot, include_secret=True)
     except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise not_found(str(e))
     except UnauthorizedError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        raise forbidden(str(e))

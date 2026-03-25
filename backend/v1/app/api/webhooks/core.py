@@ -24,6 +24,7 @@ from app.models.audit_log import AuditResult
 from app.utils.exceptions import NotFoundError, SecurityServiceUnavailableError
 from app.utils.logger import logger
 from app.utils.security import sanitize_input, check_suspicious_patterns
+from app.utils.responses import unauthorized, not_found, too_many_requests, service_unavailable
 
 router = APIRouter(tags=["webhooks"])
 
@@ -85,10 +86,7 @@ async def process_bot_message(
     # 1. Validate webhook secret
     if not x_webhook_secret:
         logger.warning(f"Webhook request without secret header: bot={bot_id}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="X-Webhook-Secret header is required"
-        )
+        raise unauthorized("X-Webhook-Secret header is required")
 
     bot_service = BotService(db)
     audit_log = AuditLogRepository(db)
@@ -97,20 +95,14 @@ async def process_bot_message(
     is_valid = await bot_service.verify_webhook_secret(bot_id, x_webhook_secret)
     if not is_valid:
         logger.warning(f"Invalid webhook secret: bot={bot_id}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid webhook secret"
-        )
+        raise unauthorized("Invalid webhook secret")
 
     # 3. Get bot and verify existence
     try:
         bot = await bot_service.get_bot(bot_id, check_ownership=False)
     except NotFoundError:
         logger.error(f"Bot not found: {bot_id}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Bot {bot_id} not found"
-        )
+        raise not_found(f"Bot {bot_id} not found")
 
     # 4. Check bot status (return SSE error for inactive bot)
     if not bot.is_active():
@@ -149,16 +141,10 @@ async def process_bot_message(
                     "channel": message_data.channel
                 }
             )
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many requests. Please try again later."
-            )
+            raise too_many_requests("Too many requests. Please try again later.")
     except SecurityServiceUnavailableError as e:
         logger.error(f"Security service unavailable: {e.feature}", bot_id=str(bot_id))
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service temporarily unavailable. Please try again later."
-        )
+        raise service_unavailable("Service temporarily unavailable. Please try again later.")
 
     # 6. Input Sanitization (Layer 1 + Layer 3)
     original_message = message_data.message_text

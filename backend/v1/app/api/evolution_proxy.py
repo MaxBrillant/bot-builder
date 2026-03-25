@@ -13,6 +13,15 @@ from app.repositories.bot_repository import BotRepository
 from app.core.engine import get_http_client
 from app.config import settings
 from app.utils.logger import get_logger
+from app.utils.responses import (
+    not_found,
+    bad_request,
+    forbidden,
+    error_response,
+    bad_gateway,
+    internal_server_error
+)
+from app.utils.constants import IntegrationPlatform
 
 logger = get_logger(__name__)
 
@@ -65,28 +74,19 @@ async def evolution_mirror_proxy(
     bot = await bot_repo.get_by_id(bot_id)
 
     if not bot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Bot {bot_id} not found"
-        )
+        raise not_found(f"Bot {bot_id} not found")
 
     # Get WhatsApp integration
     whatsapp_integration = bot.get_integration(IntegrationPlatform.WHATSAPP)
 
     if not whatsapp_integration:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Bot {bot_id} has no WhatsApp integration configured"
-        )
+        raise bad_request(f"Bot {bot_id} has no WhatsApp integration configured")
 
     # Get instance name from integration config
     instance_name = whatsapp_integration.config.get("instance_name")
 
     if not instance_name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Bot {bot_id} WhatsApp integration has no instance_name configured"
-        )
+        raise bad_request(f"Bot {bot_id} WhatsApp integration has no instance_name configured")
 
     # Block dangerous instance and proxy operations
     # These operations should be done through Bot Builder UI, not flows
@@ -97,10 +97,7 @@ async def evolution_mirror_proxy(
     ]
 
     if any(path.startswith(blocked) for blocked in blocked_prefixes):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Operation '{path}' is not allowed from flows. Instance and proxy operations must be done through Bot Builder UI."
-        )
+        raise forbidden(f"Operation '{path}' is not allowed from flows. Instance and proxy operations must be done through Bot Builder UI.")
 
     # Always append instance name to path
     # Evolution API expects paths like: /message/sendText/{instanceName}
@@ -152,37 +149,25 @@ async def evolution_mirror_proxy(
             status_code=e.response.status_code,
             error=e.response.text
         )
-        raise HTTPException(
-            status_code=e.response.status_code,
-            detail=f"Evolution API error: {e.response.text}"
-        )
+        raise error_response(e.response.status_code, f"Evolution API error: {e.response.text}")
     except httpx.TimeoutException:
         logger.error(
             f"Evolution API timeout",
             bot_id=str(bot_id),
             url=evolution_url
         )
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Evolution API request timed out"
-        )
+        raise error_response(status.HTTP_504_GATEWAY_TIMEOUT, "Evolution API request timed out")
     except httpx.RequestError as e:
         logger.error(
             f"Evolution API request error",
             bot_id=str(bot_id),
             error=str(e)
         )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Failed to connect to Evolution API: {str(e)}"
-        )
+        raise bad_gateway(f"Failed to connect to Evolution API: {str(e)}")
     except Exception as e:
         logger.error(
             f"Unexpected proxy error",
             bot_id=str(bot_id),
             error=str(e)
         )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal proxy error: {str(e)}"
-        )
+        raise internal_server_error(f"Internal proxy error: {str(e)}")

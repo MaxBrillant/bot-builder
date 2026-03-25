@@ -23,6 +23,7 @@ from app.services.bot_service import BotService
 from app.dependencies import get_current_user
 from app.utils.logger import get_logger
 from app.utils.exceptions import ValidationError, NotFoundError
+from app.utils.responses import not_found
 
 logger = get_logger(__name__)
 
@@ -72,10 +73,7 @@ async def create_flow(
     bot_service = BotService(db)
     bot = await bot_service.get_bot(bot_id, current_user.user_id)
     if not bot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Bot '{bot_id}' not found"
-        )
+        raise not_found(f"Bot '{bot_id}' not found")
     
     flow_service = FlowService(db)
     
@@ -142,10 +140,7 @@ async def list_flows(
     bot_service = BotService(db)
     bot = await bot_service.get_bot(bot_id, current_user.user_id)
     if not bot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Bot '{bot_id}' not found"
-        )
+        raise not_found(f"Bot '{bot_id}' not found")
 
     flow_service = FlowService(db)
 
@@ -194,19 +189,13 @@ async def get_flow(
     bot_service = BotService(db)
     bot = await bot_service.get_bot(bot_id, current_user.user_id)
     if not bot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Bot '{bot_id}' not found"
-        )
+        raise not_found(f"Bot '{bot_id}' not found")
     
     flow_service = FlowService(db)
     flow = await flow_service.get_flow(flow_id, bot_id)
     
     if not flow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Flow '{flow_id}' not found"
-        )
+        raise not_found(f"Flow '{flow_id}' not found")
     
     return flow_to_response(flow)
 
@@ -245,10 +234,7 @@ async def update_flow(
     bot_service = BotService(db)
     bot = await bot_service.get_bot(bot_id, current_user.user_id)
     if not bot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Bot '{bot_id}' not found"
-        )
+        raise not_found(f"Bot '{bot_id}' not found")
     
     flow_service = FlowService(db)
     
@@ -268,10 +254,7 @@ async def update_flow(
         )
     
     except NotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Flow '{flow_id}' not found"
-        )
+        raise not_found(f"Flow '{flow_id}' not found")
     
     except ValidationError as e:
         logger.warning(
@@ -319,18 +302,12 @@ async def delete_flow(
     bot_service = BotService(db)
     bot = await bot_service.get_bot(bot_id, current_user.user_id)
     if not bot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Bot '{bot_id}' not found"
-        )
+        raise not_found(f"Bot '{bot_id}' not found")
     
     flow_service = FlowService(db)
     deleted = await flow_service.delete_flow(flow_id, bot_id)
     
     if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Flow '{flow_id}' not found"
-        )
+        raise not_found(f"Flow '{flow_id}' not found")
     
     return None

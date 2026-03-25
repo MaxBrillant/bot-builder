@@ -17,6 +17,7 @@ from app.utils.security import create_access_token
 from app.config import settings
 from app.utils.logger import get_logger
 from app.utils.constants import OAuthProvider
+from app.utils.responses import internal_server_error, bad_request
 
 logger = get_logger(__name__)
 
@@ -70,10 +71,7 @@ async def google_login(request: Request, redirect: str = None):
     """
     if oauth is None:
         logger.error("OAuth client not initialized - check Google OAuth credentials")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Google OAuth not configured. Please contact administrator."
-        )
+        raise internal_server_error("Google OAuth not configured. Please contact administrator.")
 
     try:
         # Log configuration for debugging
@@ -92,10 +90,7 @@ async def google_login(request: Request, redirect: str = None):
         )
     except Exception as e:
         logger.error(f"Failed to initiate Google OAuth: {type(e).__name__}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to initiate Google login: {str(e)}"
-        )
+        raise internal_server_error(f"Failed to initiate Google login: {str(e)}")
 
 
 @router.get("/callback")
@@ -136,27 +131,18 @@ async def google_callback(
         user_info = token.get('userinfo')
         if not user_info:
             logger.error("No userinfo in OAuth token response")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to retrieve user information from Google"
-            )
+            raise bad_request("Failed to retrieve user information from Google")
 
         email = user_info.get('email')
         google_user_id = user_info.get('sub')  # Google's unique user ID
 
         if not email:
             logger.error("Email not provided by Google")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email not provided by Google"
-            )
+            raise bad_request("Email not provided by Google")
 
         if not google_user_id:
             logger.error("Google user ID (sub) not provided")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User ID not provided by Google"
-            )
+            raise bad_request("User ID not provided by Google")
 
         # 3. Find or create user (NO auto-linking for security)
         user_repo = UserRepository(db)
