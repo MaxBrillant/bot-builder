@@ -1,23 +1,15 @@
 """
 API Middleware
-Consolidated middleware for ownership checking and exception handling
+Global exception handlers and security headers middleware
 
-Eliminates duplicate ownership verification code across API endpoints
-and provides consistent error responses via exception handlers.
+Provides consistent error responses via exception handlers
+and adds security headers to all responses.
 """
 
-from typing import Optional
-from uuid import UUID
 from fastapi import HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.bot_service import BotService
-from app.services.flow_service import FlowService
-from app.models.bot import Bot
-from app.models.flow import Flow
-from app.models.user import User
 from app.utils.logger import get_logger
 from app.utils.exceptions import (
     BotBuilderException,
@@ -27,161 +19,11 @@ from app.utils.exceptions import (
     ExecutionException,
     AuthenticationException,
     ResourceNotFoundException,
-    BotNotFoundError,
-    FlowNotFoundError,
     SessionExpiredError,
-    SessionNotFoundError,
-    UnauthorizedError
+    SessionNotFoundError
 )
-from app.utils.responses import not_found, forbidden, bad_request
 
 logger = get_logger(__name__)
-
-
-# ===== Ownership Verification =====
-class OwnershipChecker:
-    """
-    Reusable ownership verification for API endpoints
-
-    Eliminates ~12 instances of duplicate ownership checking code
-    across flows.py, bots.py, and webhooks.py.
-
-    Usage:
-        checker = OwnershipChecker(db)
-        bot = await checker.verify_bot_ownership(bot_id, current_user.user_id)
-        flow = await checker.verify_flow_ownership(flow_id, current_user.user_id)
-    """
-
-    def __init__(self, db: AsyncSession):
-        """
-        Initialize ownership checker
-
-        Args:
-            db: Database session
-        """
-        self.db = db
-        self.bot_service = BotService(db)
-        self.flow_service = FlowService(db)
-
-    async def verify_bot_ownership(
-        self,
-        bot_id: UUID,
-        user_id: UUID,
-        allow_missing: bool = False
-    ) -> Optional[Bot]:
-        """
-        Verify user owns the specified bot
-
-        Args:
-            bot_id: Bot UUID
-            user_id: User UUID
-            allow_missing: If True, return None instead of raising HTTPException
-
-        Returns:
-            Bot instance if ownership verified
-
-        Raises:
-            HTTPException: 404 if bot not found, 403 if not owner
-        """
-        try:
-            bot = await self.bot_service.get_bot(
-                bot_id,
-                owner_user_id=user_id,
-                check_ownership=True
-            )
-
-            if not bot:
-                if allow_missing:
-                    return None
-                raise not_found(f"Bot '{bot_id}' not found")
-
-            return bot
-
-        except BotNotFoundError as e:
-            if allow_missing:
-                return None
-            raise not_found(str(e))
-        except UnauthorizedError as e:
-            raise forbidden(f"You don't have permission to access bot '{bot_id}'")
-
-    async def verify_flow_ownership(
-        self,
-        flow_id: UUID,
-        user_id: UUID,
-        allow_missing: bool = False
-    ) -> Optional[Flow]:
-        """
-        Verify user owns the bot that owns the specified flow
-
-        Args:
-            flow_id: Flow UUID
-            user_id: User UUID
-            allow_missing: If True, return None instead of raising HTTPException
-
-        Returns:
-            Flow instance if ownership verified
-
-        Raises:
-            HTTPException: 404 if flow not found, 403 if not owner
-        """
-        try:
-            flow = await self.flow_service.get_flow(flow_id)
-
-            if not flow:
-                if allow_missing:
-                    return None
-                raise not_found(f"Flow '{flow_id}' not found")
-
-            # Verify bot ownership (flow -> bot -> user)
-            bot = await self.bot_service.get_bot(
-                flow.bot_id,
-                owner_user_id=user_id,
-                check_ownership=True
-            )
-
-            if not bot:
-                raise forbidden(f"You don't have permission to access flow '{flow_id}'")
-
-            return flow
-
-        except FlowNotFoundError as e:
-            if allow_missing:
-                return None
-            raise not_found(str(e))
-        except (BotNotFoundError, UnauthorizedError) as e:
-            raise forbidden(f"You don't have permission to access flow '{flow_id}'")
-
-    async def verify_bot_and_flow_ownership(
-        self,
-        bot_id: UUID,
-        flow_id: UUID,
-        user_id: UUID
-    ) -> tuple[Bot, Flow]:
-        """
-        Verify user owns both bot and flow, and that flow belongs to bot
-
-        Args:
-            bot_id: Bot UUID
-            flow_id: Flow UUID
-            user_id: User UUID
-
-        Returns:
-            Tuple of (Bot, Flow) if all checks pass
-
-        Raises:
-            HTTPException: 404 if not found, 403 if not owner, 400 if flow doesn't belong to bot
-        """
-        # Verify bot ownership
-        bot = await self.verify_bot_ownership(bot_id, user_id)
-
-        # Verify flow ownership
-        flow = await self.verify_flow_ownership(flow_id, user_id)
-
-        # Verify flow belongs to bot
-        if flow.bot_id != bot_id:
-            raise bad_request(f"Flow '{flow_id}' does not belong to bot '{bot_id}'")
-
-        return bot, flow
 
 
 # ===== Global Exception Handlers =====

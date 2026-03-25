@@ -16,6 +16,74 @@ from app.models.node_configs import FlowNode, VariableDefinition, FlowDefaults
 TRIGGER_KEYWORD_PATTERN = re.compile(r'^[A-Za-z0-9_\-\s]+$')
 
 
+def _validate_trigger_keyword_list(keywords: List[str]) -> List[str]:
+    """
+    Shared validation logic for trigger keywords
+
+    Validates that:
+    - At least one keyword is provided
+    - Each keyword is a non-empty string
+    - Keywords match safe pattern (alphanumeric, underscores, hyphens, spaces)
+    - Special wildcard "*" is allowed
+    - No duplicate keywords (case-insensitive)
+
+    Args:
+        keywords: List of trigger keywords to validate
+
+    Returns:
+        List of validated and cleaned keywords
+
+    Raises:
+        ValueError: If validation fails
+    """
+    if not keywords or len(keywords) == 0:
+        raise ValueError("At least one trigger keyword is required")
+
+    # Validate each keyword
+    valid_keywords = []
+    for i, keyword in enumerate(keywords):
+        if not isinstance(keyword, str):
+            raise ValueError(f"Trigger keyword at index {i} must be a string")
+
+        # Strip whitespace
+        cleaned = keyword.strip()
+
+        if not cleaned:
+            raise ValueError(f"Trigger keyword at index {i} cannot be empty or whitespace only")
+
+        # Allow wildcard trigger "*" - it has special meaning as a catch-all fallback
+        # FlowValidator will enforce that "*" must be the only keyword
+        if cleaned == "*":
+            valid_keywords.append(cleaned)
+            continue
+
+        # Validate against safe pattern to prevent injection attacks
+        if not TRIGGER_KEYWORD_PATTERN.match(cleaned):
+            raise ValueError(
+                f"Trigger keyword '{cleaned}' contains invalid characters. "
+                "Only alphanumeric characters, underscores, hyphens, and spaces are allowed."
+            )
+
+        valid_keywords.append(cleaned)
+
+    if not valid_keywords:
+        raise ValueError("At least one trigger keyword is required")
+
+    # Check for duplicate keywords within the same flow (case-insensitive)
+    normalized_keywords = [kw.upper() for kw in valid_keywords]
+    seen = set()
+    duplicates = []
+    for kw in normalized_keywords:
+        if kw in seen:
+            duplicates.append(kw)
+        seen.add(kw)
+
+    if duplicates:
+        raise ValueError(f"Duplicate trigger keywords found: {', '.join(set(duplicates))}")
+
+    return valid_keywords
+
+
 class FlowCreate(BaseModel):
     """Schema for creating a flow"""
     name: str = Field(..., min_length=1, max_length=96, description="User-provided flow name (unique per bot)")
@@ -29,52 +97,7 @@ class FlowCreate(BaseModel):
     @classmethod
     def validate_trigger_keywords(cls, v: List[str]) -> List[str]:
         """Validate trigger keywords - must have at least one non-empty keyword"""
-        if not v or len(v) == 0:
-            raise ValueError("At least one trigger keyword is required")
-
-        # Validate each keyword
-        valid_keywords = []
-        for i, keyword in enumerate(v):
-            if not isinstance(keyword, str):
-                raise ValueError(f"Trigger keyword at index {i} must be a string")
-
-            # Strip whitespace
-            cleaned = keyword.strip()
-
-            if not cleaned:
-                raise ValueError(f"Trigger keyword at index {i} cannot be empty or whitespace only")
-
-            # Allow wildcard trigger "*" - it has special meaning as a catch-all fallback
-            # FlowValidator will enforce that "*" must be the only keyword
-            if cleaned == "*":
-                valid_keywords.append(cleaned)
-                continue
-
-            # Validate against safe pattern to prevent injection attacks
-            if not TRIGGER_KEYWORD_PATTERN.match(cleaned):
-                raise ValueError(
-                    f"Trigger keyword '{cleaned}' contains invalid characters. "
-                    "Only alphanumeric characters, underscores, hyphens, and spaces are allowed."
-                )
-
-            valid_keywords.append(cleaned)
-
-        if not valid_keywords:
-            raise ValueError("At least one trigger keyword is required")
-
-        # Check for duplicate keywords within the same flow (case-insensitive)
-        normalized_keywords = [kw.upper() for kw in valid_keywords]
-        seen = set()
-        duplicates = []
-        for kw in normalized_keywords:
-            if kw in seen:
-                duplicates.append(kw)
-            seen.add(kw)
-
-        if duplicates:
-            raise ValueError(f"Duplicate trigger keywords found: {', '.join(set(duplicates))}")
-
-        return valid_keywords
+        return _validate_trigger_keyword_list(v)
 
     model_config = {
         "json_schema_extra": {
@@ -121,53 +144,7 @@ class FlowUpdate(BaseModel):
         if v is None:
             return v
 
-        # If provided, must have at least one keyword
-        if len(v) == 0:
-            raise ValueError("At least one trigger keyword is required")
-
-        # Validate each keyword
-        valid_keywords = []
-        for i, keyword in enumerate(v):
-            if not isinstance(keyword, str):
-                raise ValueError(f"Trigger keyword at index {i} must be a string")
-
-            # Strip whitespace
-            cleaned = keyword.strip()
-
-            if not cleaned:
-                raise ValueError(f"Trigger keyword at index {i} cannot be empty or whitespace only")
-
-            # Allow wildcard trigger "*" - it has special meaning as a catch-all fallback
-            # FlowValidator will enforce that "*" must be the only keyword
-            if cleaned == "*":
-                valid_keywords.append(cleaned)
-                continue
-
-            # Validate against safe pattern to prevent injection attacks
-            if not TRIGGER_KEYWORD_PATTERN.match(cleaned):
-                raise ValueError(
-                    f"Trigger keyword '{cleaned}' contains invalid characters. "
-                    "Only alphanumeric characters, underscores, hyphens, and spaces are allowed."
-                )
-
-            valid_keywords.append(cleaned)
-
-        if not valid_keywords:
-            raise ValueError("At least one trigger keyword is required")
-
-        # Check for duplicate keywords within the same flow (case-insensitive)
-        normalized_keywords = [kw.upper() for kw in valid_keywords]
-        seen = set()
-        duplicates = []
-        for kw in normalized_keywords:
-            if kw in seen:
-                duplicates.append(kw)
-            seen.add(kw)
-
-        if duplicates:
-            raise ValueError(f"Duplicate trigger keywords found: {', '.join(set(duplicates))}")
-
-        return valid_keywords
+        return _validate_trigger_keyword_list(v)
 
     model_config = {
         "json_schema_extra": {
