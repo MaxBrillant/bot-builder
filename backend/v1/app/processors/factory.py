@@ -16,7 +16,7 @@ from app.processors.text_processor import TextProcessor
 from app.processors.set_variable_processor import SetVariableProcessor
 from app.core.template_engine import TemplateEngine
 from app.core.conditions import ConditionEvaluator
-from app.core.validators import InputValidator as ValidationSystem
+from app.core.input_validator import InputValidator as ValidationSystem
 from app.utils.constants import NodeType
 from app.utils.logger import get_logger
 import httpx

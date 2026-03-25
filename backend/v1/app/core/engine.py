@@ -20,7 +20,7 @@ from app.repositories.flow_repository import FlowRepository
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.core.template_engine import TemplateEngine
 from app.core.conditions import ConditionEvaluator, sort_routes
-from app.core.validators import InputValidator as ValidationSystem
+from app.core.input_validator import InputValidator as ValidationSystem
 from app.core.session_manager import SessionManager
 from app.models.flow import Flow
 from app.models.session import Session

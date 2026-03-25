@@ -131,7 +131,6 @@ class SystemConstraints:
     # Menu Options
     MAX_STATIC_MENU_OPTIONS = 8  # Static menus: max 8 options
     MAX_DYNAMIC_MENU_OPTIONS = 24  # Dynamic menus: max 24 options (truncate if source exceeds)
-    MAX_MENU_OPTIONS = 8  # Deprecated: use MAX_STATIC_MENU_OPTIONS
     MAX_OPTION_LABEL_LENGTH = 96
     
     # Validation

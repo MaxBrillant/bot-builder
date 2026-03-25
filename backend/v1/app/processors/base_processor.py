@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from app.models.node_configs import FlowNode, Route, Interrupt
 from app.core.template_engine import TemplateEngine
 from app.core.conditions import ConditionEvaluator
-from app.core.validators import InputValidator as ValidationSystem
+from app.core.input_validator import InputValidator as ValidationSystem
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)

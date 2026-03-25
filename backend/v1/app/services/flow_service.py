@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.flow import Flow
 from app.repositories.flow_repository import FlowRepository
 from app.core.redis_manager import redis_manager
-from app.core.validators import FlowValidator
+from app.core.flow_validator import FlowValidator
 from app.config import settings
 from app.utils.logger import get_logger
 from app.utils.exceptions import FlowValidationError, FlowNotFoundError
