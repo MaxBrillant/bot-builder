@@ -17,6 +17,7 @@ from app.utils.constants import BotStatus, IntegrationStatus
 if TYPE_CHECKING:
     from app.models.bot_integration import BotIntegration
     from app.utils.constants import IntegrationPlatform
+    from app.schemas.bot_schema import BotResponse
 
 
 class Bot(Base):
@@ -152,3 +153,53 @@ class Bot(Base):
     def deactivate(self):
         """Deactivate bot"""
         self.status = BotStatus.INACTIVE.value
+
+    def to_response(self, include_secret: bool = False) -> 'BotResponse':
+        """
+        Convert Bot model to BotResponse schema
+
+        Args:
+            include_secret: Whether to include webhook_secret in response
+
+        Returns:
+            BotResponse schema instance
+        """
+        # Avoid circular import
+        from app.config import settings
+        from app.schemas.bot_schema import BotResponse
+        from app.utils.constants import IntegrationPlatform
+
+        # Access flows directly - SQLAlchemy lazy="selectin" ensures this is loaded
+        try:
+            flow_count = len(self.flows)
+        except Exception:
+            # Fallback if flows somehow aren't loaded
+            flow_count = 0
+
+        # Compute WhatsApp connection status from integrations relationship
+        whatsapp_integration = self.get_integration(IntegrationPlatform.WHATSAPP)
+
+        if whatsapp_integration:
+            whatsapp_connected = whatsapp_integration.status == IntegrationStatus.CONNECTED.value
+            whatsapp_status = whatsapp_integration.status
+            whatsapp_phone_number = whatsapp_integration.config.get('phone_number')
+        else:
+            whatsapp_connected = False
+            whatsapp_status = IntegrationStatus.DISCONNECTED.value
+            whatsapp_phone_number = None
+
+        return BotResponse(
+            bot_id=self.bot_id,
+            owner_user_id=self.owner_user_id,
+            name=self.name,
+            description=self.description,
+            webhook_url=f"{settings.base_url}/webhook/{self.bot_id}",
+            webhook_secret=self.webhook_secret if include_secret else None,
+            status=self.status,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+            flow_count=flow_count,
+            whatsapp_connected=whatsapp_connected,
+            whatsapp_phone_number=whatsapp_phone_number,
+            whatsapp_status=whatsapp_status
+        )

@@ -20,51 +20,10 @@ from app.schemas.bot_schema import (
     WebhookSecretResponse
 )
 from app.utils.exceptions import NotFoundError, UnauthorizedError
-from app.config import settings
-from app.utils.constants import IntegrationPlatform, BotStatus, IntegrationStatus
+from app.utils.constants import BotStatus
 from app.utils.responses import not_found, forbidden
 
 router = APIRouter(prefix="/bots", tags=["bots"])
-
-
-def bot_to_response(bot, include_secret: bool = False) -> BotResponse:
-    """Convert Bot model to BotResponse schema"""
-    # Access flows directly - SQLAlchemy lazy="selectin" ensures this is loaded
-    # The flows attribute always exists on the model, we just need to check if it's loaded
-    try:
-        flow_count = len(bot.flows)
-    except Exception:
-        # Fallback if flows somehow aren't loaded
-        flow_count = 0
-
-    # Compute WhatsApp connection status from integrations relationship
-    whatsapp_integration = bot.get_integration(IntegrationPlatform.WHATSAPP)
-
-    if whatsapp_integration:
-        whatsapp_connected = whatsapp_integration.status == IntegrationStatus.CONNECTED.value
-        whatsapp_status = whatsapp_integration.status
-        whatsapp_phone_number = whatsapp_integration.config.get('phone_number')
-    else:
-        whatsapp_connected = False
-        whatsapp_status = IntegrationStatus.DISCONNECTED.value
-        whatsapp_phone_number = None
-
-    return BotResponse(
-        bot_id=bot.bot_id,
-        owner_user_id=bot.owner_user_id,
-        name=bot.name,
-        description=bot.description,
-        webhook_url=f"{settings.base_url}/webhook/{bot.bot_id}",
-        webhook_secret=bot.webhook_secret if include_secret else None,
-        status=bot.status,
-        created_at=bot.created_at,
-        updated_at=bot.updated_at,
-        flow_count=flow_count,
-        # WhatsApp connection info (from integrations)
-        whatsapp_connected=whatsapp_connected,
-        whatsapp_phone_number=whatsapp_phone_number,
-        whatsapp_status=whatsapp_status
-    )
 
 
 @router.post("", response_model=BotResponse, status_code=status.HTTP_201_CREATED)
@@ -88,9 +47,9 @@ async def create_bot(
         owner_user_id=current_user.user_id,
         description=bot_data.description
     )
-    
+
     # Include secret in response (only time it's shown)
-    return bot_to_response(bot, include_secret=True)
+    return bot.to_response(include_secret=True)
 
 
 @router.get("", response_model=BotListResponse)
@@ -110,10 +69,10 @@ async def list_bots(
         owner_user_id=current_user.user_id,
         status=status
     )
-    
+
     # Include secrets since user owns these bots and needs them for webhook configuration
     return BotListResponse(
-        bots=[bot_to_response(bot, include_secret=True) for bot in bots],
+        bots=[bot.to_response(include_secret=True) for bot in bots],
         total=len(bots)
     )
 
@@ -134,7 +93,7 @@ async def get_bot(
             check_ownership=True
         )
         # Include secret since user owns the bot and needs it for webhook configuration
-        return bot_to_response(bot, include_secret=True)
+        return bot.to_response(include_secret=True)
     except NotFoundError as e:
         raise not_found(str(e))
     except UnauthorizedError as e:
@@ -166,7 +125,7 @@ async def update_bot(
             status=bot_data.status
         )
         # Include secret since user owns the bot and needs it for webhook configuration
-        return bot_to_response(bot, include_secret=True)
+        return bot.to_response(include_secret=True)
     except NotFoundError as e:
         raise not_found(str(e))
     except UnauthorizedError as e:
@@ -244,7 +203,7 @@ async def activate_bot(
             status=BotStatus.ACTIVE.value
         )
         # Include secret since user owns the bot and needs it for webhook configuration
-        return bot_to_response(bot, include_secret=True)
+        return bot.to_response(include_secret=True)
     except NotFoundError as e:
         raise not_found(str(e))
     except UnauthorizedError as e:
@@ -267,7 +226,7 @@ async def deactivate_bot(
             status=BotStatus.INACTIVE.value
         )
         # Include secret since user owns the bot and needs it for webhook configuration
-        return bot_to_response(bot, include_secret=True)
+        return bot.to_response(include_secret=True)
     except NotFoundError as e:
         raise not_found(str(e))
     except UnauthorizedError as e:
