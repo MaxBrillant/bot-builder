@@ -42,7 +42,57 @@ class TemplateEngine:
     
     # Regex pattern for template variables: {{variable}}
     VARIABLE_PATTERN = re.compile(r'\{\{([^}]+)\}\}')
-    
+
+    def _render_internal(
+        self,
+        template: str,
+        context: Dict[str, Any],
+        formatter: callable,
+        skip_validation: bool = False
+    ) -> str:
+        """
+        Internal rendering logic shared across all render methods
+
+        Args:
+            template: Template string with {{variable}} placeholders
+            context: Dictionary containing variable values
+            formatter: Callable that transforms resolved value to string
+            skip_validation: If True, skip template validation (used for render_counter)
+
+        Returns:
+            Rendered string with variables substituted
+
+        Raises:
+            TemplateRenderError: If template contains unsupported syntax
+        """
+        if not template:
+            return ""
+
+        # Validate template syntax before rendering (unless skipped for counter_text)
+        if not skip_validation:
+            self.validate_template(template)
+
+        try:
+            def replace_variable(match):
+                variable_path = match.group(1).strip()
+                value = self._resolve_path(variable_path, context)
+
+                # If value is None or not found, return literal template (debugging feature)
+                if value is None:
+                    return match.group(0)  # Return {{variable}} as-is
+
+                return formatter(value)
+
+            rendered = self.VARIABLE_PATTERN.sub(replace_variable, template)
+            return rendered
+
+        except TemplateRenderError:
+            # Re-raise validation errors as-is
+            raise
+        except Exception as e:
+            logger.error(f"Template render error: {str(e)}", template=template)
+            raise TemplateRenderError(f"Failed to render template: {str(e)}", template=template)
+
     def render(self, template: str, context: Dict[str, Any]) -> str:
         """
         Render template with context variables (Plain text output - no HTML escaping)
@@ -73,32 +123,7 @@ class TemplateEngine:
         Raises:
             TemplateRenderError: If template contains unsupported syntax
         """
-        if not template:
-            return ""
-
-        # Validate template syntax before rendering
-        self.validate_template(template)
-
-        try:
-            def replace_variable(match):
-                variable_path = match.group(1).strip()
-                value = self._resolve_path(variable_path, context)
-
-                # If value is None or not found, return literal template (debugging feature)
-                if value is None:
-                    return match.group(0)  # Return {{variable}} as-is
-
-                return self._format_value(value)
-
-            rendered = self.VARIABLE_PATTERN.sub(replace_variable, template)
-            return rendered
-
-        except TemplateRenderError:
-            # Re-raise validation errors as-is
-            raise
-        except Exception as e:
-            logger.error(f"Template render error: {str(e)}", template=template)
-            raise TemplateRenderError(f"Failed to render template: {str(e)}", template=template)
+        return self._render_internal(template, context, formatter=self._format_value)
     
     def render_counter(self, template: str, context: Dict[str, Any]) -> str:
         """
@@ -117,28 +142,7 @@ class TemplateEngine:
         Raises:
             TemplateRenderError: If template contains unsupported syntax
         """
-        if not template:
-            return ""
-
-        # For counter text, we skip the standard validation and use a permissive approach
-        # Only current_attempt and max_attempts are allowed as special variables here
-        try:
-            def replace_variable(match):
-                variable_path = match.group(1).strip()
-                value = self._resolve_path(variable_path, context)
-
-                # If value is None or not found, return literal template (debugging feature)
-                if value is None:
-                    return match.group(0)  # Return {{variable}} as-is
-
-                return self._format_value(value)
-
-            rendered = self.VARIABLE_PATTERN.sub(replace_variable, template)
-            return rendered
-
-        except Exception as e:
-            logger.error(f"Template render error: {str(e)}", template=template)
-            raise TemplateRenderError(f"Failed to render template: {str(e)}", template=template)
+        return self._render_internal(template, context, formatter=self._format_value, skip_validation=True)
 
     def render_url(self, template: str, context: Dict[str, Any]) -> str:
         """
@@ -166,34 +170,7 @@ class TemplateEngine:
         Raises:
             TemplateRenderError: If template contains unsupported syntax
         """
-        if not template:
-            return ""
-
-        # Validate template syntax before rendering
-        self.validate_template(template)
-
-        try:
-            def replace_variable(match):
-                variable_path = match.group(1).strip()
-                value = self._resolve_path(variable_path, context)
-
-                # If value is None or not found, return literal template (debugging feature)
-                if value is None:
-                    return match.group(0)  # Return {{variable}} as-is
-
-                # URL-encode the value using quote with safe='' to encode everything
-                # except unreserved characters (A-Z, a-z, 0-9, -, _, ., ~)
-                return quote(str(value), safe='')
-
-            rendered = self.VARIABLE_PATTERN.sub(replace_variable, template)
-            return rendered
-
-        except TemplateRenderError:
-            # Re-raise validation errors as-is
-            raise
-        except Exception as e:
-            logger.error(f"Template render error: {str(e)}", template=template)
-            raise TemplateRenderError(f"Failed to render template: {str(e)}", template=template)
+        return self._render_internal(template, context, formatter=lambda v: quote(str(v), safe=''))
 
     def render_html(self, template: str, context: Dict[str, Any]) -> str:
         """
@@ -224,33 +201,7 @@ class TemplateEngine:
         Raises:
             TemplateRenderError: If template contains unsupported syntax
         """
-        if not template:
-            return ""
-
-        # Validate template syntax before rendering
-        self.validate_template(template)
-
-        try:
-            def replace_variable(match):
-                variable_path = match.group(1).strip()
-                value = self._resolve_path(variable_path, context)
-
-                # If value is None or not found, return literal template (debugging feature)
-                if value is None:
-                    return match.group(0)  # Return {{variable}} as-is
-
-                # HTML-escape the value to prevent XSS
-                return escape_html(str(value))
-
-            rendered = self.VARIABLE_PATTERN.sub(replace_variable, template)
-            return rendered
-
-        except TemplateRenderError:
-            # Re-raise validation errors as-is
-            raise
-        except Exception as e:
-            logger.error(f"Template render error: {str(e)}", template=template)
-            raise TemplateRenderError(f"Failed to render template: {str(e)}", template=template)
+        return self._render_internal(template, context, formatter=lambda v: escape_html(str(v)))
 
     def _resolve_path(self, path: str, context: Dict[str, Any]) -> Any:
         """
