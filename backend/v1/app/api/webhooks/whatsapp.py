@@ -23,7 +23,7 @@ from app.utils.constants import IntegrationPlatform, IntegrationStatus
 from app.utils.logger import logger
 from app.utils.exceptions import NotFoundError, SecurityServiceUnavailableError
 from app.schemas.evolution_webhook_schema import WebhookResponse
-from app.utils.security import sanitize_input, check_suspicious_patterns
+from app.api.webhooks.sanitization import sanitize_and_audit_webhook_input
 
 router = APIRouter(tags=["webhooks-whatsapp"])
 
@@ -116,39 +116,21 @@ async def receive_whatsapp_message(
         return {"status": "error", "message": "Service temporarily unavailable"}
 
     # Input Sanitization (Layer 1 + Layer 3) - Per spec Section 10.1
-    original_message = normalized_message["message_text"]
+    is_safe, sanitized_message, error_message = await sanitize_and_audit_webhook_input(
+        message=normalized_message["message_text"],
+        bot_id=bot_id,
+        channel=normalized_message["channel"],
+        channel_user_id=normalized_message["channel_user_id"],
+        audit_log=None  # WhatsApp webhook does not use audit logging
+    )
 
-    # Layer 1: Baseline sanitization
-    sanitized_message, sanitization_metadata = sanitize_input(original_message)
-
-    # Log if significant sanitization occurred
-    if (sanitization_metadata['null_bytes_removed'] > 0 or
-        sanitization_metadata['control_chars_removed'] > 0 or
-        sanitization_metadata['was_truncated']):
-        logger.info(
-            "Input sanitized (Layer 1) - WhatsApp",
-            bot_id=str(bot_id),
-            user=logger.mask_pii(normalized_message["channel_user_id"], "user_id"),
-            null_bytes_removed=sanitization_metadata['null_bytes_removed'],
-            control_chars_removed=sanitization_metadata['control_chars_removed'],
-            was_truncated=sanitization_metadata['was_truncated']
-        )
-
-    # Layer 3: Pattern rejection
-    is_safe, pattern_type = check_suspicious_patterns(sanitized_message)
     if not is_safe:
-        logger.warning(
-            "Suspicious pattern detected (Layer 3) - WhatsApp",
-            bot_id=str(bot_id),
-            user=logger.mask_pii(normalized_message["channel_user_id"], "user_id"),
-            pattern_type=pattern_type
-        )
         # Send error response via WhatsApp
         await integration_manager.send_message(
             platform=IntegrationPlatform.WHATSAPP,
             bot_id=bot_id,
             channel_user_id=normalized_message["channel_user_id"],
-            message_text="Invalid characters detected. Please try again."
+            message_text=error_message
         )
         return {"status": "error", "message": "Suspicious pattern detected"}
 

@@ -23,8 +23,8 @@ from app.repositories.audit_log_repository import AuditLogRepository
 from app.models.audit_log import AuditResult
 from app.utils.exceptions import NotFoundError, SecurityServiceUnavailableError
 from app.utils.logger import logger
-from app.utils.security import sanitize_input, check_suspicious_patterns
 from app.utils.responses import unauthorized, not_found, too_many_requests, service_unavailable
+from app.api.webhooks.sanitization import sanitize_and_audit_webhook_input
 
 router = APIRouter(tags=["webhooks"])
 
@@ -147,63 +147,18 @@ async def process_bot_message(
         raise service_unavailable("Service temporarily unavailable. Please try again later.")
 
     # 6. Input Sanitization (Layer 1 + Layer 3)
-    original_message = message_data.message_text
-    sanitized_message, sanitization_metadata = sanitize_input(original_message)
-    masked_user_id = logger.mask_pii(message_data.channel_user_id, "user_id")
+    is_safe, sanitized_message, error_message = await sanitize_and_audit_webhook_input(
+        message=message_data.message_text,
+        bot_id=bot_id,
+        channel=message_data.channel,
+        channel_user_id=message_data.channel_user_id,
+        audit_log=audit_log
+    )
 
-    if (sanitization_metadata['null_bytes_removed'] > 0 or
-        sanitization_metadata['control_chars_removed'] > 0 or
-        sanitization_metadata['was_truncated']):
-        logger.info(
-            "Input sanitized (Layer 1)",
-            bot_id=str(bot_id),
-            channel=message_data.channel,
-            user=masked_user_id,
-            null_bytes_removed=sanitization_metadata['null_bytes_removed'],
-            control_chars_removed=sanitization_metadata['control_chars_removed'],
-            was_truncated=sanitization_metadata['was_truncated'],
-            original_length=sanitization_metadata['original_length'],
-            sanitized_length=sanitization_metadata['sanitized_length']
-        )
-        await audit_log.log_security_event(
-            action="input_sanitized",
-            user_id=masked_user_id,
-            result=AuditResult.SUCCESS,
-            event_metadata={
-                "bot_id": str(bot_id),
-                "channel": message_data.channel,
-                "null_bytes_removed": sanitization_metadata['null_bytes_removed'],
-                "control_chars_removed": sanitization_metadata['control_chars_removed'],
-                "was_truncated": sanitization_metadata['was_truncated']
-            }
-        )
-
-    # Layer 3: Pattern rejection
-    is_safe, pattern_type = check_suspicious_patterns(sanitized_message)
     if not is_safe:
-        logger.warning(
-            "Suspicious pattern detected (Layer 3)",
-            bot_id=str(bot_id),
-            channel=message_data.channel,
-            user=masked_user_id,
-            pattern_type=pattern_type,
-            input_length=len(sanitized_message)
-        )
-        await audit_log.log_security_event(
-            action="pattern_rejected",
-            user_id=masked_user_id,
-            result=AuditResult.BLOCKED,
-            event_metadata={
-                "bot_id": str(bot_id),
-                "channel": message_data.channel,
-                "pattern_type": pattern_type,
-                "input_length": len(sanitized_message)
-            }
-        )
-
         async def pattern_error_stream():
             yield format_sse_event({
-                "error": "Invalid characters detected. Please try again.",
+                "error": error_message,
                 "done": True
             })
 
