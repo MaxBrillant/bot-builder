@@ -39,23 +39,23 @@ class SystemException(BotBuilderException):
 
 
 class DatabaseError(SystemException):
-    """Database connection or query failures"""
-    pass
+    def __init__(self, message="Database error", **kw):
+        super().__init__(message, error_code="DATABASE_ERROR", **kw)
 
 
 class CacheError(SystemException):
-    """Redis/cache operation failures"""
-    pass
+    def __init__(self, message="Cache error", **kw):
+        super().__init__(message, error_code="CACHE_ERROR", **kw)
 
 
 class HTTPClientError(SystemException):
-    """HTTP client errors"""
-    pass
+    def __init__(self, message="HTTP client error", **kw):
+        super().__init__(message, error_code="HTTP_CLIENT_ERROR", **kw)
 
 
 class ExternalServiceError(SystemException):
-    """External service integration failures (Evolution API, etc.)"""
-    pass
+    def __init__(self, message="External service error", **kw):
+        super().__init__(message, error_code="EXTERNAL_SERVICE_ERROR", **kw)
 
 
 class APITimeoutError(SystemException):
@@ -66,10 +66,8 @@ class APITimeoutError(SystemException):
 
 
 class CircuitBreakerOpenError(SystemException):
-    """Circuit breaker is open - degraded mode"""
-
-    def __init__(self, message: str = "Circuit breaker is OPEN", error_code: str = None, **metadata):
-        super().__init__(message, error_code, **metadata)
+    def __init__(self, message="Circuit breaker is open", **kw):
+        super().__init__(message, error_code="CIRCUIT_BREAKER_OPEN", **kw)
 
 
 class RedisUnavailableError(SystemException):
@@ -117,10 +115,8 @@ class FlowValidationError(ValidationException):
 
 
 class InputValidationError(ValidationException):
-    """User input validation failed"""
-
-    def __init__(self, message: str = "Invalid input", error_code: str = None, **metadata):
-        super().__init__(message, error_code, **metadata)
+    def __init__(self, message="Invalid input", **kw):
+        super().__init__(message, error_code="INPUT_VALIDATION_ERROR", **kw)
 
 
 class ConstraintViolationError(ValidationException):
@@ -200,8 +196,8 @@ class NoMatchingRouteError(ExecutionException):
 class MaxAutoProgressionError(ExecutionException):
     """Too many consecutive nodes without user input"""
 
-    def __init__(self, message: str = "Maximum auto-progression limit exceeded", error_code: str = None, count: int = None, **metadata):
-        super().__init__(message, error_code, count=count, **metadata)
+    def __init__(self, message: str = "Maximum auto-progression limit exceeded", error_code: str = None, limit: int = None, **metadata):
+        super().__init__(message, error_code, limit=limit, **metadata)
 
 
 class MaxValidationAttemptsError(ExecutionException):
@@ -249,10 +245,8 @@ class AuthenticationException(BotBuilderException):
 
 
 class AuthenticationError(AuthenticationException):
-    """Authentication failed"""
-
-    def __init__(self, message: str = "Authentication failed", error_code: str = None, **metadata):
-        super().__init__(message, error_code, **metadata)
+    def __init__(self, message="Authentication failed", **kw):
+        super().__init__(message, error_code="AUTHENTICATION_ERROR", **kw)
 
 
 class UnauthorizedError(AuthenticationException):
@@ -290,7 +284,5 @@ class BotNotFoundError(ResourceNotFoundException):
 # ============================================================================
 
 class FileRestrictionError(BotBuilderException):
-    """File editing restriction violated (internal use)"""
-
-    def __init__(self, message: str = "File editing not allowed in current mode", error_code: str = None, **metadata):
-        super().__init__(message, error_code, **metadata)
+    def __init__(self, message="File editing not allowed", **kw):
+        super().__init__(message, error_code="FILE_RESTRICTION_ERROR", **kw)
