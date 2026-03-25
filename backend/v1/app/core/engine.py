@@ -39,6 +39,10 @@ from app.utils.exceptions import (
 
 logger = get_logger(__name__)
 
+# ===== Message Callback Constants =====
+IS_INTERMEDIATE = False
+IS_FINAL = True
+
 # ===== Message Callback Type =====
 # Callback signature: async fn(message: str, is_final: bool) -> None
 # Used for real-time message delivery (SSE streaming, WhatsApp, etc.)
@@ -224,6 +228,49 @@ class FlowExecutor:
             session_manager=session_manager
         )
 
+    def _build_error_response(self, session: Session, error_message: str) -> Dict[str, Any]:
+        """
+        Build standardized error response dictionary
+
+        Args:
+            session: Active session
+            error_message: Error message to return
+
+        Returns:
+            Response dictionary with error message and terminated session
+        """
+        return {
+            "messages": [error_message],
+            "session_active": False,
+            "session_ended": True
+        }
+
+    def _build_response(
+        self,
+        session: Session,
+        messages: list,
+        active: bool,
+        ended: bool
+    ) -> Dict[str, Any]:
+        """
+        Build standardized response dictionary
+
+        Args:
+            session: Active session
+            messages: List of messages to return
+            active: Whether session is still active
+            ended: Whether session has ended
+
+        Returns:
+            Response dictionary with messages, session status, and session_id
+        """
+        return {
+            "messages": messages,
+            "session_active": active,
+            "session_ended": ended,
+            "session_id": str(session.session_id)
+        }
+
     async def execute_flow(
         self,
         session: Session,
@@ -320,12 +367,8 @@ class FlowExecutor:
             except ValueError as e:
                 self.logger.error(f"Unknown node type: {node_type}", error=str(e))
                 await self.session_manager.error_session(session.session_id)
-                await message_callback(ErrorMessages.GENERIC_ERROR, True)
-                return {
-                    "messages": [ErrorMessages.GENERIC_ERROR],
-                    "session_active": False,
-                    "session_ended": True
-                }
+                await message_callback(ErrorMessages.GENERIC_ERROR, IS_FINAL)
+                return self._build_error_response(session, ErrorMessages.GENERIC_ERROR)
 
             # Process node
             self.logger.log_flow_execution(
@@ -382,19 +425,15 @@ class FlowExecutor:
                     node_type=node_type
                 )
                 await self.session_manager.error_session(session.session_id)
-                await message_callback(ErrorMessages.GENERIC_ERROR, True)
-                return {
-                    "messages": [ErrorMessages.GENERIC_ERROR],
-                    "session_active": False,
-                    "session_ended": True
-                }
+                await message_callback(ErrorMessages.GENERIC_ERROR, IS_FINAL)
+                return self._build_error_response(session, ErrorMessages.GENERIC_ERROR)
 
             # Handle result message
             if result.message:
                 messages.append(result.message)
 
                 # Stream message immediately via callback
-                await message_callback(result.message, False)
+                await message_callback(result.message, IS_INTERMEDIATE)
 
                 # Track bot message in message history
                 if not session.message_history:
@@ -427,14 +466,9 @@ class FlowExecutor:
                 await self.db.commit()
 
                 # Signal completion via callback
-                await message_callback("", True)
+                await message_callback("", IS_FINAL)
 
-                return {
-                    "messages": messages,
-                    "session_active": True,
-                    "session_ended": False,
-                    "session_id": str(session.session_id)
-                }
+                return self._build_response(session, messages, active=True, ended=False)
 
             # Check if current node has routes (for terminal detection)
             node_has_routes = current_node.routes and len(current_node.routes) > 0
@@ -464,14 +498,9 @@ class FlowExecutor:
                     )
 
                 # Signal completion via callback
-                await message_callback("", True)
+                await message_callback("", IS_FINAL)
 
-                return {
-                    "messages": messages,
-                    "session_active": False,
-                    "session_ended": True,
-                    "session_id": str(session.session_id)
-                }
+                return self._build_response(session, messages, active=False, ended=True)
 
             # Error: node HAS routes but no match found (no next_node)
             if result.next_node is None and node_has_routes:
@@ -486,7 +515,7 @@ class FlowExecutor:
                 messages.append(ErrorMessages.NO_ROUTE_MATCH)
 
                 # Stream error message via callback
-                await message_callback(ErrorMessages.NO_ROUTE_MATCH, True)
+                await message_callback(ErrorMessages.NO_ROUTE_MATCH, IS_FINAL)
 
                 # Track error message in message history
                 if not session.message_history:
@@ -504,12 +533,7 @@ class FlowExecutor:
                 if len(session.message_history) > 50:
                     session.message_history = session.message_history[-50:]
 
-                return {
-                    "messages": messages,
-                    "session_active": False,
-                    "session_ended": True,
-                    "session_id": str(session.session_id)
-                }
+                return self._build_response(session, messages, active=False, ended=True)
 
             # Move to next node (update in-memory object)
             session.current_node_id = result.next_node
