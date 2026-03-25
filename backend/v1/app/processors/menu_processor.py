@@ -64,13 +64,7 @@ class MenuProcessor(BaseProcessor):
         elif config.source_type == MenuSourceType.DYNAMIC.value:
             source_array = context.get(config.source_variable) or []
             # Truncate to MAX_DYNAMIC_MENU_OPTIONS (per spec: dynamic menus limited to 24 options)
-            if len(source_array) > SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS:
-                source_array = source_array[:SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS]
-                self.logger.debug(
-                    f"Dynamic menu source array truncated to {SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS} items",
-                    original_length=len(context.get(config.source_variable) or []),
-                    truncated_length=SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS
-                )
+            source_array = self._truncate_source_array(source_array)
             options = self._render_dynamic_options(source_array, config.item_template, context)
         else:
             self.logger.error(f"Invalid source_type: {config.source_type}")
@@ -97,10 +91,8 @@ class MenuProcessor(BaseProcessor):
         if interrupt_target:
             self.logger.info(f"Interrupt triggered to {interrupt_target}")
             # Reset validation attempts on interrupt
-            if session and db:
-                from app.core.session_manager import SessionManager
-                session_mgr = SessionManager(db)
-                await session_mgr.reset_validation_attempts(session.session_id)
+            if session and self.session_manager:
+                await self.session_manager.reset_validation_attempts(session.session_id)
             return ProcessResult(
                 next_node=interrupt_target,
                 context=context
@@ -130,11 +122,9 @@ class MenuProcessor(BaseProcessor):
                 # Use unrendered message as fallback
                 pass
 
-            if session and db:
+            if session and self.session_manager:
                 # Initialize retry handler with session manager
-                from app.core.session_manager import SessionManager
-                session_mgr = SessionManager(db)
-                retry_handler = RetryHandler(session_mgr, self.template_engine)
+                retry_handler = RetryHandler(self.session_manager, self.template_engine)
 
                 # Handle validation failure
                 retry_result = await retry_handler.handle_validation_failure(
@@ -179,10 +169,8 @@ class MenuProcessor(BaseProcessor):
             )
         
         # Validation passed - reset validation attempts
-        if session and db:
-            from app.core.session_manager import SessionManager
-            session_mgr = SessionManager(db)
-            retry_handler = RetryHandler(session_mgr, self.template_engine)
+        if session and self.session_manager:
+            retry_handler = RetryHandler(self.session_manager, self.template_engine)
             await retry_handler.reset_attempts(session)
         
         # Save selection (as integer, 1-based index)
@@ -195,8 +183,7 @@ class MenuProcessor(BaseProcessor):
         if config.source_type == MenuSourceType.DYNAMIC.value:
             source_array = context.get(config.source_variable) or []
             # Truncate to MAX_DYNAMIC_MENU_OPTIONS (consistent with menu display)
-            if len(source_array) > SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS:
-                source_array = source_array[:SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS]
+            source_array = self._truncate_source_array(source_array)
 
             output_mapping = config.output_mapping or []
 
@@ -207,19 +194,10 @@ class MenuProcessor(BaseProcessor):
                     selected_item = source_array[selected_index]
                     self._apply_output_mapping(selected_item, output_mapping, context)
         
-        # Check if node has routes
-        has_routes = node.routes and len(node.routes) > 0
-
-        if not has_routes:
-            # No routes = terminal node
-            self.logger.debug(
-                f"MENU node '{node.id}' has no routes - terminal node",
-                node_id=node.id
-            )
-            return ProcessResult(
-                next_node=None,
-                context=context
-            )
+        # Check if node is terminal (has no routes)
+        terminal = self.check_terminal(node, context)
+        if terminal:
+            return terminal
 
         # Evaluate routes for next node
         next_node = self.evaluate_routes(node.routes, context, node.type)
@@ -228,6 +206,25 @@ class MenuProcessor(BaseProcessor):
             next_node=next_node,
             context=context
         )
+
+    def _truncate_source_array(self, source_array: List[Any]) -> List[Any]:
+        """
+        Truncate source array to MAX_DYNAMIC_MENU_OPTIONS if needed
+
+        Args:
+            source_array: Source array to truncate
+
+        Returns:
+            Truncated array (or original if within limit)
+        """
+        if len(source_array) > SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS:
+            self.logger.debug(
+                f"Dynamic menu source array truncated to {SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS} items",
+                original_length=len(source_array),
+                truncated_length=SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS
+            )
+            return source_array[:SystemConstraints.MAX_DYNAMIC_MENU_OPTIONS]
+        return source_array
 
     def _render_dynamic_options(
         self,

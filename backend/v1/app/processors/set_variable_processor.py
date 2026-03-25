@@ -6,7 +6,7 @@ Sets flow variables to configured values, then auto-progresses
 from typing import Optional, Dict, Any
 from app.models.node_configs import FlowNode, SetVariableNodeConfig
 from app.processors.base_processor import BaseProcessor, ProcessResult
-from app.utils.exceptions import NoMatchingRouteError, InputValidationError
+from app.utils.exceptions import InputValidationError
 
 
 class SetVariableProcessor(BaseProcessor):
@@ -82,32 +82,16 @@ class SetVariableProcessor(BaseProcessor):
                 variable=assignment.variable
             )
 
-        # Check if node has routes
-        has_routes = node.routes and len(node.routes) > 0
-
-        if not has_routes:
-            self.logger.debug(
-                f"SET_VARIABLE node '{node.id}' has no routes - terminal node",
-                node_id=node.id
-            )
-            return ProcessResult(
-                next_node=None,
-                context=context
-            )
+        # Check if node is terminal (has no routes)
+        terminal = self.check_terminal(node, context)
+        if terminal:
+            return terminal
 
         # Evaluate routes
         next_node = self.evaluate_routes(node.routes, context, node.type)
 
         if next_node is None:
-            self.logger.error(
-                f"No matching route in SET_VARIABLE node '{node.id}'",
-                node_id=node.id,
-                routes_count=len(node.routes)
-            )
-            raise NoMatchingRouteError(
-                f"No route condition matched in SET_VARIABLE node '{node.id}'",
-                node_id=node.id
-            )
+            self.raise_no_matching_route(node)
 
         self.logger.debug(
             f"SET_VARIABLE routing to {next_node}",

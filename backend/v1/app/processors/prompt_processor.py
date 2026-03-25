@@ -100,10 +100,8 @@ class PromptProcessor(BaseProcessor):
         if interrupt_target:
             self.logger.info(f"Interrupt triggered to {interrupt_target}")
             # Reset validation attempts on interrupt
-            if session and db:
-                from app.core.session_manager import SessionManager
-                session_mgr = SessionManager(db)
-                await session_mgr.reset_validation_attempts(session.session_id)
+            if session and self.session_manager:
+                await self.session_manager.reset_validation_attempts(session.session_id)
             return ProcessResult(
                 next_node=interrupt_target,
                 context=context
@@ -158,11 +156,9 @@ class PromptProcessor(BaseProcessor):
         
         # Handle validation failure with retry logic
         if validation_failed:
-            if session and db:
+            if session and self.session_manager:
                 # Initialize retry handler with session manager
-                from app.core.session_manager import SessionManager
-                session_mgr = SessionManager(db)
-                retry_handler = RetryHandler(session_mgr, self.template_engine)
+                retry_handler = RetryHandler(self.session_manager, self.template_engine)
 
                 # Audit log: validation failure
                 audit_log = AuditLogRepository(db)
@@ -243,10 +239,8 @@ class PromptProcessor(BaseProcessor):
                     )
 
                     # Validation and type conversion both passed - reset validation attempts
-                    if session and db:
-                        from app.core.session_manager import SessionManager
-                        session_mgr = SessionManager(db)
-                        retry_handler = RetryHandler(session_mgr, self.template_engine)
+                    if session and self.session_manager:
+                        retry_handler = RetryHandler(self.session_manager, self.template_engine)
                         await retry_handler.reset_attempts(session)
                 except Exception as e:
                     self.logger.error(f"Type conversion failed: {str(e)}")
@@ -254,10 +248,8 @@ class PromptProcessor(BaseProcessor):
                     error_msg = validation.error_message if validation else "Invalid input format"
 
                     # Handle type conversion failure with retry logic (counts toward max attempts)
-                    if session and db:
-                        from app.core.session_manager import SessionManager
-                        session_mgr = SessionManager(db)
-                        retry_handler = RetryHandler(session_mgr, self.template_engine)
+                    if session and self.session_manager:
+                        retry_handler = RetryHandler(self.session_manager, self.template_engine)
 
                         # Audit log: type conversion failure (counted as validation failure)
                         audit_log = AuditLogRepository(db)
@@ -311,19 +303,10 @@ class PromptProcessor(BaseProcessor):
                         context=context
                     )
         
-        # Check if node has routes
-        has_routes = node.routes and len(node.routes) > 0
-
-        if not has_routes:
-            # No routes = terminal node
-            self.logger.debug(
-                f"PROMPT node '{node.id}' has no routes - terminal node",
-                node_id=node.id
-            )
-            return ProcessResult(
-                next_node=None,
-                context=context
-            )
+        # Check if node is terminal (has no routes)
+        terminal = self.check_terminal(node, context)
+        if terminal:
+            return terminal
 
         # Evaluate routes for next node
         next_node = self.evaluate_routes(node.routes, context, node.type)

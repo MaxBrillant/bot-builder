@@ -7,7 +7,6 @@ from typing import Optional, Dict, Any
 from app.models.node_configs import FlowNode, TextNodeConfig
 from app.processors.base_processor import BaseProcessor, ProcessResult
 from app.utils.logger import get_logger
-from app.utils.exceptions import NoMatchingRouteError
 
 logger = get_logger(__name__)
 
@@ -78,34 +77,16 @@ class TextProcessor(BaseProcessor):
             message_length=len(message)
         )
 
-        # Check if node has routes
-        has_routes = node.routes and len(node.routes) > 0
-
-        if not has_routes:
-            # No routes = terminal node
-            self.logger.debug(
-                f"TEXT node '{node.id}' has no routes - terminal node",
-                node_id=node.id
-            )
-            return ProcessResult(
-                message=message,
-                next_node=None,
-                context=context
-            )
+        # Check if node is terminal (has no routes)
+        terminal = self.check_terminal(node, context, message=message)
+        if terminal:
+            return terminal
 
         # Evaluate routes for next node
         next_node = self.evaluate_routes(node.routes, context, node.type)
 
         if next_node is None:
-            # Routes exist but none matched - this is an error
-            self.logger.error(
-                f"No matching route in TEXT node '{node.id}'",
-                node_id=node.id
-            )
-            raise NoMatchingRouteError(
-                f"No route condition matched in TEXT node '{node.id}'",
-                node_id=node.id
-            )
+            self.raise_no_matching_route(node)
 
         return ProcessResult(
             message=message,
