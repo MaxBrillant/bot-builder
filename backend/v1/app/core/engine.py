@@ -220,7 +220,8 @@ class FlowExecutor:
             template_engine=template_engine,
             condition_evaluator=condition_evaluator,
             validation_system=validation_system,
-            http_client=http_client
+            http_client=http_client,
+            session_manager=session_manager
         )
 
     async def execute_flow(

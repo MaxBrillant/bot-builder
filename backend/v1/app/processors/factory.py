@@ -6,7 +6,7 @@ Eliminates hardcoded processor instantiation from ConversationEngine
 and provides extensible registration system for new processor types.
 """
 
-from typing import Dict, Type, Optional
+from typing import Any, Dict, Type, Optional
 from app.processors.base_processor import BaseProcessor
 from app.processors.prompt_processor import PromptProcessor
 from app.processors.menu_processor import MenuProcessor
@@ -50,7 +50,8 @@ class ProcessorFactory:
         template_engine: TemplateEngine,
         condition_evaluator: ConditionEvaluator,
         validation_system: ValidationSystem,
-        http_client: Optional[httpx.AsyncClient] = None
+        http_client: Optional[httpx.AsyncClient] = None,
+        session_manager: Optional[Any] = None
     ):
         """
         Initialize processor factory with dependencies
@@ -60,11 +61,13 @@ class ProcessorFactory:
             condition_evaluator: Route condition evaluator
             validation_system: Input validation system
             http_client: Optional HTTP client for API processors
+            session_manager: Optional session lifecycle manager
         """
         self.template_engine = template_engine
         self.condition_evaluator = condition_evaluator
         self.validation_system = validation_system
         self.http_client = http_client
+        self.session_manager = session_manager
 
         # Registry of processor types
         self._processors: Dict[str, Type[BaseProcessor]] = {}
@@ -177,14 +180,16 @@ class ProcessorFactory:
                 self.template_engine,
                 self.condition_evaluator,
                 self.validation_system,
-                http_client=self.http_client
+                http_client=self.http_client,
+                session_manager=self.session_manager
             )
 
         # All other processors use standard dependencies
         return processor_class(
             self.template_engine,
             self.condition_evaluator,
-            self.validation_system
+            self.validation_system,
+            session_manager=self.session_manager
         )
 
     def get_registered_types(self) -> list[str]:

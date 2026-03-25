@@ -43,10 +43,11 @@ class PromptProcessor(BaseProcessor):
         self,
         template_engine,
         condition_evaluator,
-        validation_system
+        validation_system,
+        session_manager=None
     ):
         """Initialize with dependencies including retry handler"""
-        super().__init__(template_engine, condition_evaluator, validation_system)
+        super().__init__(template_engine, condition_evaluator, validation_system, session_manager)
         # Create retry handler with shared dependencies
         # Note: SessionManager will be passed from process() context
         self.retry_handler = None  # Initialized lazily in process()

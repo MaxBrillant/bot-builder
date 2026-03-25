@@ -13,6 +13,7 @@ from app.core.template_engine import TemplateEngine
 from app.core.conditions import ConditionEvaluator
 from app.core.input_validator import InputValidator as ValidationSystem
 from app.utils.logger import get_logger
+from app.utils.exceptions import NoMatchingRouteError
 
 
 @dataclass
@@ -55,19 +56,22 @@ class BaseProcessor(ABC):
         self,
         template_engine: TemplateEngine,
         condition_evaluator: ConditionEvaluator,
-        validation_system: ValidationSystem
+        validation_system: ValidationSystem,
+        session_manager: Optional[Any] = None
     ):
         """
         Initialize processor with shared dependencies
-        
+
         Args:
             template_engine: Template rendering engine
             condition_evaluator: Condition evaluation engine
             validation_system: Input validation system
+            session_manager: Session lifecycle manager (optional)
         """
         self.template_engine = template_engine
         self.condition_evaluator = condition_evaluator
         self.validation_system = validation_system
+        self.session_manager = session_manager
         self.logger = get_logger(self.__class__.__name__)
     
     @abstractmethod
@@ -285,3 +289,40 @@ class BaseProcessor(ABC):
             if isinstance(var_def, dict):
                 return var_def.get('type', 'STRING')
         return 'STRING'
+
+    def check_terminal(self, node, context: dict, message: str = None) -> Optional[ProcessResult]:
+        """
+        Check if node is terminal (has no routes) and return terminal result if so
+
+        Args:
+            node: FlowNode instance
+            context: Current session context
+            message: Optional message to include in result
+
+        Returns:
+            ProcessResult with terminal state if node has no routes, None otherwise
+
+        Note:
+            This method should be called after node processing to determine
+            if the node ends the conversation flow
+        """
+        if node.routes and len(node.routes) > 0:
+            return None
+        self.logger.debug(f"{node.type} node '{node.id}' has no routes - terminal node", node_id=node.id)
+        return ProcessResult(message=message, next_node=None, context=context)
+
+    def raise_no_matching_route(self, node) -> None:
+        """
+        Raise NoMatchingRouteError for node with no matching route
+
+        Args:
+            node: FlowNode instance
+
+        Raises:
+            NoMatchingRouteError: Always raises with node information
+
+        Note:
+            This method should be called when a node has routes but none matched
+        """
+        self.logger.error(f"No matching route in {node.type} node '{node.id}'", node_id=node.id)
+        raise NoMatchingRouteError(f"No route condition matched in {node.type} node '{node.id}'", node_id=node.id)
