@@ -271,6 +271,154 @@ class FlowExecutor:
             "session_id": str(session.session_id)
         }
 
+    def _update_message_history(
+        self,
+        session: Session,
+        message: str,
+        sender: str,
+        node_id: str,
+        extra: Optional[Dict[str, str]] = None
+    ) -> None:
+        """
+        Append a message to session history and truncate to 50 entries
+
+        Args:
+            session: Active session
+            message: Message text
+            sender: Who sent it ("user", "bot", "system")
+            node_id: Current node ID
+            extra: Optional additional fields to include in history entry
+        """
+        if not session.message_history:
+            session.message_history = []
+
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "sender": sender,
+            "message": message,
+            "node_id": node_id,
+        }
+        if extra:
+            entry.update(extra)
+
+        session.message_history.append(entry)
+
+        # Limit history size to last 50 messages
+        if len(session.message_history) > 50:
+            session.message_history = session.message_history[-50:]
+
+    def _inject_user_context(
+        self,
+        node_type: str,
+        context: Dict[str, Any],
+        user_context: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """
+        Return enhanced context for API_ACTION nodes, plain context otherwise
+
+        Per BOT_BUILDER_SPECIFICATIONS.md Section 5, Template Contexts by Node:
+        - API_ACTION nodes can access {{user.channel_id}} and {{user.channel}}
+        - Other node types must NOT have access
+
+        Args:
+            node_type: The node type being processed
+            context: Current session context
+            user_context: User context dict (channel, channel_id)
+
+        Returns:
+            Context dict, enhanced with user key for API_ACTION nodes only
+        """
+        if node_type == NodeType.API_ACTION:
+            return {**context, "user": user_context}
+        return context
+
+    async def _handle_terminal(
+        self,
+        session: Session,
+        result: ProcessResult,
+        messages: list,
+        message_callback: MessageCallback
+    ) -> Dict[str, Any]:
+        """
+        Handle session completion for terminal nodes
+
+        Args:
+            session: Active session
+            result: Process result from the terminal node
+            messages: Accumulated messages list
+            message_callback: Callback for real-time message delivery
+
+        Returns:
+            Response dictionary with ended session
+        """
+        if result.status == "ERROR":
+            await self.session_manager.error_session(session.session_id)
+            self.logger.log_session_event(
+                str(session.session_id),
+                "error",
+                flow_id=str(session.flow_id),
+                terminal_node=session.current_node_id,
+                reason="validation_failure"
+            )
+        else:
+            await self.session_manager.complete_session(session.session_id)
+            self.logger.log_session_event(
+                str(session.session_id),
+                "completed",
+                flow_id=str(session.flow_id),
+                terminal_node=session.current_node_id
+            )
+
+        # Signal completion via callback
+        await message_callback("", IS_FINAL)
+
+        return self._build_response(session, messages, active=False, ended=True)
+
+    async def _process_single_node(
+        self,
+        session: Session,
+        node: FlowNode,
+        user_input: Optional[str],
+        user_context: Dict[str, str]
+    ) -> ProcessResult:
+        """
+        Get processor from factory, inject user context, invoke processor,
+        and clean up user context from result
+
+        Args:
+            session: Active session
+            node: Parsed FlowNode to process
+            user_input: User's input (or None)
+            user_context: User context for templates
+
+        Returns:
+            ProcessResult from the processor
+
+        Raises:
+            ValueError: If node type is unknown (from factory)
+            Exception: Any processor error is re-raised
+        """
+        node_type = node.type
+        processor = self.processor_factory.create(node_type)
+
+        enhanced_context = self._inject_user_context(
+            node_type, session.context, user_context
+        )
+
+        result: ProcessResult = await processor.process(
+            node,
+            enhanced_context,
+            user_input,
+            session,
+            self.db
+        )
+
+        # Remove user context before saving (don't persist in session)
+        if "user" in result.context:
+            result.context.pop("user")
+
+        return result
+
     async def execute_flow(
         self,
         session: Session,
@@ -300,19 +448,9 @@ class FlowExecutor:
 
         # Track user input in message history (if provided)
         if user_input is not None:
-            if not session.message_history:
-                session.message_history = []
-
-            session.message_history.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "sender": "user",
-                "message": user_input,
-                "node_id": session.current_node_id
-            })
-
-            # Limit history size to last 50 messages
-            if len(session.message_history) > 50:
-                session.message_history = session.message_history[-50:]
+            self._update_message_history(
+                session, user_input, "user", session.current_node_id
+            )
 
         while True:
             # Check max auto-progression
@@ -343,8 +481,6 @@ class FlowExecutor:
                 )
 
             # Sort routes by priority before parsing node
-            # Note: This ensures all processors receive pre-sorted routes
-            # Processors should not re-sort routes (already handled here)
             if 'routes' in current_node_dict and current_node_dict['routes']:
                 node_type_for_sorting = current_node_dict.get('type')
                 sorted_routes = sort_routes(current_node_dict['routes'], node_type_for_sorting)
@@ -359,26 +495,15 @@ class FlowExecutor:
 
             # Parse node from dict to FlowNode model (with sorted routes)
             current_node = FlowNode.model_validate(current_node_dict)
-
-            # Get processor for node type using factory
             node_type = current_node.type
-            try:
-                processor = self.processor_factory.create(node_type)
-            except ValueError as e:
-                self.logger.error(f"Unknown node type: {node_type}", error=str(e))
-                await self.session_manager.error_session(session.session_id)
-                await message_callback(ErrorMessages.GENERIC_ERROR, IS_FINAL)
-                return self._build_error_response(session, ErrorMessages.GENERIC_ERROR)
 
-            # Process node
+            # Log and audit node execution
             self.logger.log_flow_execution(
                 str(session.flow_id),
                 session.current_node_id,
                 node_type=node_type,
                 has_input=user_input is not None
             )
-
-            # Audit log: flow node execution
             await self.audit_log.log_flow_execution(
                 action="node_executed",
                 flow_id=str(session.flow_id),
@@ -392,32 +517,16 @@ class FlowExecutor:
                 }
             )
 
+            # Process the node
             try:
-                # Inject user context ONLY for API_ACTION nodes (per specification)
-                # Per BOT_BUILDER_SPECIFICATIONS.md Section 5, Template Contexts by Node:
-                # - API_ACTION nodes can access {{user.channel_id}} and {{user.channel}}
-                # - Other node types (PROMPT, MENU, TEXT, LOGIC_EXPRESSION, SET_VARIABLE) must NOT have access
-                # Note: Both user.channel_id and user.channel are restricted together as they're
-                # part of the same user context object
-                if node_type == NodeType.API_ACTION:
-                    enhanced_context = {
-                        **session.context,
-                        "user": user_context
-                    }
-                else:
-                    enhanced_context = session.context
-
-                result: ProcessResult = await processor.process(
-                    current_node,
-                    enhanced_context,
-                    user_input,
-                    session,
-                    self.db
+                result = await self._process_single_node(
+                    session, current_node, user_input, user_context
                 )
-
-                # Remove user context before saving (don't persist in session)
-                if "user" in result.context:
-                    result.context.pop("user")
+            except ValueError as e:
+                self.logger.error(f"Unknown node type: {node_type}", error=str(e))
+                await self.session_manager.error_session(session.session_id)
+                await message_callback(ErrorMessages.GENERIC_ERROR, IS_FINAL)
+                return self._build_error_response(session, ErrorMessages.GENERIC_ERROR)
             except Exception as e:
                 self.logger.error(
                     f"Processor error: {str(e)}",
@@ -431,119 +540,56 @@ class FlowExecutor:
             # Handle result message
             if result.message:
                 messages.append(result.message)
-
-                # Stream message immediately via callback
                 await message_callback(result.message, IS_INTERMEDIATE)
-
-                # Track bot message in message history
-                if not session.message_history:
-                    session.message_history = []
-
-                session.message_history.append({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "sender": "bot",
-                    "message": result.message,
-                    "node_id": session.current_node_id,
-                    "node_type": node_type.value if hasattr(node_type, 'value') else str(node_type)
-                })
-
-                # Limit history size to last 50 messages
-                if len(session.message_history) > 50:
-                    session.message_history = session.message_history[-50:]
+                self._update_message_history(
+                    session, result.message, "bot", session.current_node_id,
+                    extra={"node_type": node_type.value if hasattr(node_type, 'value') else str(node_type)}
+                )
 
             # Update session context
             session.context = result.context
 
             # Check if node needs user input
             if result.needs_input:
-                # Update in-memory session object
-                session.context = result.context
                 session.auto_progression_count = 0
-
-                # Commit session changes (message_history, context, node_id) to database
-                # NOTE: Session object is tracked by SQLAlchemy, but autoflush=False
-                # and autocommit=False, so we must explicitly commit
                 await self.db.commit()
-
-                # Signal completion via callback
                 await message_callback("", IS_FINAL)
-
                 return self._build_response(session, messages, active=True, ended=False)
 
             # Check if current node has routes (for terminal detection)
             node_has_routes = current_node.routes and len(current_node.routes) > 0
 
-            # Terminal condition:
-            # 1. Processor explicitly set terminal flag, OR
-            # 2. Node has no routes AND processor returned no next_node
-            # This replaces the explicit END node type
+            # Terminal: processor set terminal flag, or node has no routes and no next_node
             if result.terminal or (not node_has_routes and result.next_node is None):
-                # Check if processor indicated ERROR status (e.g., validation failure)
-                if result.status == "ERROR":
-                    await self.session_manager.error_session(session.session_id)
-                    self.logger.log_session_event(
-                        str(session.session_id),
-                        "error",
-                        flow_id=str(session.flow_id),
-                        terminal_node=session.current_node_id,
-                        reason="validation_failure"
-                    )
-                else:
-                    await self.session_manager.complete_session(session.session_id)
-                    self.logger.log_session_event(
-                        str(session.session_id),
-                        "completed",
-                        flow_id=str(session.flow_id),
-                        terminal_node=session.current_node_id
-                    )
-
-                # Signal completion via callback
-                await message_callback("", IS_FINAL)
-
-                return self._build_response(session, messages, active=False, ended=True)
+                return await self._handle_terminal(
+                    session, result, messages, message_callback
+                )
 
             # Error: node HAS routes but no match found (no next_node)
             if result.next_node is None and node_has_routes:
                 await self.session_manager.error_session(session.session_id)
-
                 self.logger.warning(
                     f"No next node - routes exist but none matched",
                     node_id=session.current_node_id,
                     session_id=str(session.session_id)
                 )
-
                 messages.append(ErrorMessages.NO_ROUTE_MATCH)
-
-                # Stream error message via callback
                 await message_callback(ErrorMessages.NO_ROUTE_MATCH, IS_FINAL)
-
-                # Track error message in message history
-                if not session.message_history:
-                    session.message_history = []
-
-                session.message_history.append({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "sender": "system",
-                    "message": ErrorMessages.NO_ROUTE_MATCH,
-                    "node_id": session.current_node_id,
-                    "error_type": "no_route_match"
-                })
-
-                # Limit history size
-                if len(session.message_history) > 50:
-                    session.message_history = session.message_history[-50:]
-
+                self._update_message_history(
+                    session, ErrorMessages.NO_ROUTE_MATCH, "system",
+                    session.current_node_id,
+                    extra={"error_type": "no_route_match"}
+                )
                 return self._build_response(session, messages, active=False, ended=True)
 
-            # Move to next node (update in-memory object)
+            # Move to next node
             session.current_node_id = result.next_node
             session.context = result.context
 
-            # Increment auto-progression counter (in-memory)
+            # Increment auto-progression counter
             auto_progression_count += 1
             session.auto_progression_count += 1
 
-            # Check limit
             if session.auto_progression_count > SystemConstraints.MAX_AUTO_PROGRESSION:
                 await self.session_manager.error_session(session.session_id)
                 raise MaxAutoProgressionError(
