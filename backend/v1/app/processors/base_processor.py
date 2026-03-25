@@ -259,18 +259,41 @@ class BaseProcessor(ABC):
     def sanitize_input(self, user_input: str) -> str:
         """
         Sanitize user input by trimming whitespace
-        
+
         Args:
             user_input: Raw user input
-        
+
         Returns:
             Sanitized input
-        
+
         Note:
             As per specification, system automatically trims leading/trailing whitespace.
             No HTML/SQL injection prevention - developer must validate appropriately.
         """
         return user_input.strip() if user_input else ""
+
+    def _get_node_type_display(self, node_type) -> str:
+        """
+        Get display name for node type (for logging/error messages)
+
+        Args:
+            node_type: NodeType enum or string
+
+        Returns:
+            Display string (e.g., "LOGIC" instead of "LOGIC_EXPRESSION")
+
+        Note:
+            Maps LOGIC_EXPRESSION -> LOGIC for backward compatibility.
+            Other types use their enum value as-is.
+        """
+        # If it's an enum, get its value
+        type_str = node_type.value if hasattr(node_type, 'value') else str(node_type)
+
+        # Map LOGIC_EXPRESSION to LOGIC for display
+        if type_str == "LOGIC_EXPRESSION":
+            return "LOGIC"
+
+        return type_str
 
     def _get_variable_type(self, var_name: str, context: Dict[str, Any]) -> str:
         """
@@ -308,7 +331,8 @@ class BaseProcessor(ABC):
         """
         if node.routes and len(node.routes) > 0:
             return None
-        self.logger.debug(f"{node.type} node '{node.id}' has no routes - terminal node", node_id=node.id)
+        node_type_display = self._get_node_type_display(node.type)
+        self.logger.debug(f"{node_type_display} node '{node.id}' has no routes - terminal node", node_id=node.id)
         return ProcessResult(message=message, next_node=None, context=context)
 
     def raise_no_matching_route(self, node) -> None:
@@ -324,5 +348,10 @@ class BaseProcessor(ABC):
         Note:
             This method should be called when a node has routes but none matched
         """
-        self.logger.error(f"No matching route in {node.type} node '{node.id}'", node_id=node.id)
-        raise NoMatchingRouteError(f"No route condition matched in {node.type} node '{node.id}'", node_id=node.id)
+        node_type_display = self._get_node_type_display(node.type)
+        self.logger.error(
+            f"No matching route in {node_type_display} node '{node.id}'",
+            node_id=node.id,
+            routes_count=len(node.routes) if node.routes is not None else 0
+        )
+        raise NoMatchingRouteError(f"No route condition matched in {node_type_display} node '{node.id}'", node_id=node.id)

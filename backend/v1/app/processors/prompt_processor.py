@@ -207,7 +207,11 @@ class PromptProcessor(BaseProcessor):
                         node,
                         context,
                         error_msg,
-                        validation_type="type_conversion"
+                        validation_type="type_conversion",
+                        extra_metadata={
+                            "target_type": var_type,
+                            "error": str(e)
+                        }
                     )
         
         # Check if node is terminal (has no routes)
@@ -264,7 +268,8 @@ class PromptProcessor(BaseProcessor):
         node: FlowNode,
         context: Dict[str, Any],
         error_msg: str,
-        validation_type: str = "validation"
+        validation_type: str = "validation",
+        extra_metadata: Optional[Dict[str, Any]] = None
     ) -> ProcessResult:
         """
         Consolidated retry handling for validation failures
@@ -276,6 +281,7 @@ class PromptProcessor(BaseProcessor):
             context: Session context
             error_msg: Error message to display
             validation_type: Type of validation that failed (for audit logging)
+            extra_metadata: Additional metadata fields to include in audit log
 
         Returns:
             ProcessResult with retry logic applied
@@ -283,15 +289,21 @@ class PromptProcessor(BaseProcessor):
         if session and self.retry_handler:
             # Audit log: validation failure
             audit_log = AuditLogRepository(db)
+
+            # Build event metadata with extra fields
+            event_metadata = {
+                "session_id": str(session.session_id),
+                "bot_id": str(session.bot_id),
+                "validation_type": validation_type
+            }
+            if extra_metadata:
+                event_metadata.update(extra_metadata)
+
             await audit_log.log_validation_failure(
                 node_id=node.id,
                 attempt=session.validation_attempts + 1,
                 user_id=logger.mask_pii(session.channel_user_id, "user_id"),
-                event_metadata={
-                    "session_id": str(session.session_id),
-                    "bot_id": str(session.bot_id),
-                    "validation_type": validation_type
-                }
+                event_metadata=event_metadata
             )
 
             # Handle validation failure
