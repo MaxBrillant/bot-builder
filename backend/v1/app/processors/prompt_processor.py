@@ -49,8 +49,7 @@ class PromptProcessor(BaseProcessor):
         """Initialize with dependencies including retry handler"""
         super().__init__(template_engine, condition_evaluator, validation_system, session_manager)
         # Create retry handler with shared dependencies
-        # Note: SessionManager will be passed from process() context
-        self.retry_handler = None  # Initialized lazily in process()
+        self.retry_handler = RetryHandler(session_manager, template_engine) if session_manager else None
 
     async def process(
         self,
@@ -156,58 +155,13 @@ class PromptProcessor(BaseProcessor):
         
         # Handle validation failure with retry logic
         if validation_failed:
-            if session and self.session_manager:
-                # Initialize retry handler with session manager
-                retry_handler = RetryHandler(self.session_manager, self.template_engine)
-
-                # Audit log: validation failure
-                audit_log = AuditLogRepository(db)
-                await audit_log.log_validation_failure(
-                    node_id=node.id,
-                    attempt=session.validation_attempts + 1,
-                    user_id=logger.mask_pii(session.channel_user_id, "user_id"),
-                    event_metadata={
-                        "session_id": str(session.session_id),
-                        "bot_id": str(session.bot_id),
-                        "validation_type": validation.type if validation else "default_required"
-                    }
-                )
-
-                # Handle validation failure
-                retry_result = await retry_handler.handle_validation_failure(
-                    session,
-                    context,
-                    error_msg
-                )
-
-                # Check if should continue with retry
-                if retry_result.should_continue:
-                    return ProcessResult(
-                        message=retry_result.error_message,
-                        needs_input=True,
-                        context=context
-                    )
-
-                # Max attempts reached - route or terminate
-                if retry_result.terminal:
-                    return ProcessResult(
-                        message=retry_result.error_message,
-                        terminal=True,
-                        status=retry_result.status,
-                        context=context
-                    )
-
-                # Route to fail_route
-                return ProcessResult(
-                    next_node=retry_result.next_node,
-                    context=context
-                )
-
-            # No session/db - just return error
-            return ProcessResult(
-                message=error_msg,
-                needs_input=True,
-                context=context
+            return await self._handle_validation_failure_with_retry(
+                session,
+                db,
+                node,
+                context,
+                error_msg,
+                validation_type=validation.type if validation else "default_required"
             )
 
         # Save to variable
@@ -239,68 +193,21 @@ class PromptProcessor(BaseProcessor):
                     )
 
                     # Validation and type conversion both passed - reset validation attempts
-                    if session and self.session_manager:
-                        retry_handler = RetryHandler(self.session_manager, self.template_engine)
-                        await retry_handler.reset_attempts(session)
+                    if session and self.retry_handler:
+                        await self.retry_handler.reset_attempts(session)
                 except Exception as e:
                     self.logger.error(f"Type conversion failed: {str(e)}")
                     # If type conversion fails, treat as validation error
                     error_msg = validation.error_message if validation else "Invalid input format"
 
                     # Handle type conversion failure with retry logic (counts toward max attempts)
-                    if session and self.session_manager:
-                        retry_handler = RetryHandler(self.session_manager, self.template_engine)
-
-                        # Audit log: type conversion failure (counted as validation failure)
-                        audit_log = AuditLogRepository(db)
-                        await audit_log.log_validation_failure(
-                            node_id=node.id,
-                            attempt=session.validation_attempts + 1,
-                            user_id=logger.mask_pii(session.channel_user_id, "user_id"),
-                            event_metadata={
-                                "session_id": str(session.session_id),
-                                "bot_id": str(session.bot_id),
-                                "validation_type": "type_conversion",
-                                "target_type": var_type,
-                                "error": str(e)
-                            }
-                        )
-
-                        # Handle type conversion failure through retry handler
-                        retry_result = await retry_handler.handle_validation_failure(
-                            session,
-                            context,
-                            error_msg
-                        )
-
-                        # Check if should continue with retry
-                        if retry_result.should_continue:
-                            return ProcessResult(
-                                message=retry_result.error_message,
-                                needs_input=True,
-                                context=context
-                            )
-
-                        # Max attempts reached - route or terminate
-                        if retry_result.terminal:
-                            return ProcessResult(
-                                message=retry_result.error_message,
-                                terminal=True,
-                                status=retry_result.status,
-                                context=context
-                            )
-
-                        # Route to fail_route
-                        return ProcessResult(
-                            next_node=retry_result.next_node,
-                            context=context
-                        )
-
-                    # No session/db - just return error
-                    return ProcessResult(
-                        message=error_msg,
-                        needs_input=True,
-                        context=context
+                    return await self._handle_validation_failure_with_retry(
+                        session,
+                        db,
+                        node,
+                        context,
+                        error_msg,
+                        validation_type="type_conversion"
                     )
         
         # Check if node is terminal (has no routes)
@@ -349,4 +256,77 @@ class PromptProcessor(BaseProcessor):
         except Exception as e:
             self.logger.error(f"Validation error: {str(e)}", rule=validation.rule)
             return False
-    
+
+    async def _handle_validation_failure_with_retry(
+        self,
+        session,
+        db,
+        node: FlowNode,
+        context: Dict[str, Any],
+        error_msg: str,
+        validation_type: str = "validation"
+    ) -> ProcessResult:
+        """
+        Consolidated retry handling for validation failures
+
+        Args:
+            session: Current session
+            db: Database connection
+            node: Current node
+            context: Session context
+            error_msg: Error message to display
+            validation_type: Type of validation that failed (for audit logging)
+
+        Returns:
+            ProcessResult with retry logic applied
+        """
+        if session and self.retry_handler:
+            # Audit log: validation failure
+            audit_log = AuditLogRepository(db)
+            await audit_log.log_validation_failure(
+                node_id=node.id,
+                attempt=session.validation_attempts + 1,
+                user_id=logger.mask_pii(session.channel_user_id, "user_id"),
+                event_metadata={
+                    "session_id": str(session.session_id),
+                    "bot_id": str(session.bot_id),
+                    "validation_type": validation_type
+                }
+            )
+
+            # Handle validation failure
+            retry_result = await self.retry_handler.handle_validation_failure(
+                session,
+                context,
+                error_msg
+            )
+
+            # Check if should continue with retry
+            if retry_result.should_continue:
+                return ProcessResult(
+                    message=retry_result.error_message,
+                    needs_input=True,
+                    context=context
+                )
+
+            # Max attempts reached - route or terminate
+            if retry_result.terminal:
+                return ProcessResult(
+                    message=retry_result.error_message,
+                    terminal=True,
+                    status=retry_result.status,
+                    context=context
+                )
+
+            # Route to fail_route
+            return ProcessResult(
+                next_node=retry_result.next_node,
+                context=context
+            )
+
+        # No session/retry_handler - just return error
+        return ProcessResult(
+            message=error_msg,
+            needs_input=True,
+            context=context
+        )
