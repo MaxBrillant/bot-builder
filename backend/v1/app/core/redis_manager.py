@@ -309,7 +309,7 @@ class RedisManager:
     async def invalidate_all_triggers_for_flow(self, flow_id: str, keywords: List[str], bot_id: str):
         """
         Remove all trigger keywords for a flow (bot-scoped).
-        
+
         Args:
             flow_id: Flow ID
             keywords: List of keywords to remove
@@ -320,6 +320,24 @@ class RedisManager:
 
         for keyword in keywords:
             await self.remove_trigger_keyword(keyword, flow_id, bot_id)
+
+    async def invalidate_flow_and_triggers(self, flow_id: str, keywords: List[str], bot_id: str):
+        """
+        Invalidate both flow cache and all associated trigger keywords.
+
+        This is the single entry point for cache invalidation during flow updates/deletes.
+        Handles all cache key construction internally.
+
+        Args:
+            flow_id: Flow ID (UUID as string)
+            keywords: List of trigger keywords to remove
+            bot_id: Bot ID for isolation (UUID as string)
+        """
+        # Invalidate flow cache
+        await self.invalidate_flow_cache(flow_id)
+
+        # Invalidate all trigger keywords
+        await self.invalidate_all_triggers_for_flow(flow_id, keywords, bot_id)
 
     # ==================== Rate Limiting ====================
 

@@ -109,11 +109,11 @@ class FlowService:
     async def get_flow(self, flow_id: UUID, bot_id: UUID) -> Optional[Flow]:
         """
         Get flow by UUID with caching.
-        
+
         Args:
             flow_id: Flow UUID identifier
             bot_id: Bot ID that owns the flow
-            
+
         Returns:
             Flow or None if not found
         """
@@ -121,21 +121,8 @@ class FlowService:
         cached = await redis_manager.get_cached_flow(str(flow_id))
         if cached and cached.get("bot_id") == str(bot_id):
             logger.debug(f"Flow cache hit: {flow_id}")
-            # Convert to Flow model with timestamps
-            flow = Flow(
-                id=UUID(cached["id"]),
-                name=cached["name"],
-                bot_id=UUID(cached["bot_id"]),
-                flow_definition=cached["flow_definition"],
-                trigger_keywords=cached.get("trigger_keywords", [])
-            )
-            # Restore timestamps from cache
-            if cached.get("created_at"):
-                flow.created_at = datetime.fromisoformat(cached["created_at"])
-            if cached.get("updated_at"):
-                flow.updated_at = datetime.fromisoformat(cached["updated_at"])
-            return flow
-        
+            return self._flow_from_cache(cached)
+
         # Cache miss - query database using repository
         flow = await self.flow_repo.get_by_id_and_bot(flow_id, bot_id)
 
@@ -148,30 +135,18 @@ class FlowService:
     async def get_flow_by_id_only(self, flow_id: UUID) -> Optional[Flow]:
         """
         Get flow by UUID without bot check (for internal use).
-        
+
         Args:
             flow_id: Flow UUID identifier
-            
+
         Returns:
             Flow or None if not found
         """
         # Try cache first
         cached = await redis_manager.get_cached_flow(str(flow_id))
         if cached:
-            flow = Flow(
-                id=UUID(cached["id"]),
-                name=cached["name"],
-                bot_id=UUID(cached["bot_id"]),
-                flow_definition=cached["flow_definition"],
-                trigger_keywords=cached.get("trigger_keywords", [])
-            )
-            # Restore timestamps from cache
-            if cached.get("created_at"):
-                flow.created_at = datetime.fromisoformat(cached["created_at"])
-            if cached.get("updated_at"):
-                flow.updated_at = datetime.fromisoformat(cached["updated_at"])
-            return flow
-        
+            return self._flow_from_cache(cached)
+
         # Cache miss - query database using repository
         flow = await self.flow_repo.get_by_id(flow_id)
 
@@ -287,19 +262,16 @@ class FlowService:
         flow.updated_at = datetime.now()
         
         await self.db.commit()
-        
+
         # Refresh flow to get updated values
         await self.db.refresh(flow)
-        
-        # Invalidate old cache (UUID string key)
-        await redis_manager.invalidate_flow_cache(old_flow_id_str)
-        
-        # Remove old trigger keywords
-        await redis_manager.invalidate_all_triggers_for_flow(old_flow_id_str, old_keywords, str(bot_id))
-        
+
+        # Invalidate old cache and trigger keywords (single call handles both)
+        await redis_manager.invalidate_flow_and_triggers(old_flow_id_str, old_keywords, str(bot_id))
+
         # Cache updated flow
         await self._cache_flow(flow)
-        
+
         # Cache new trigger keywords
         await self._cache_trigger_keywords(flow)
         
@@ -329,16 +301,12 @@ class FlowService:
         if deleted:
             await self.db.commit()
 
-        # Invalidate cache
-        await redis_manager.invalidate_flow_cache(flow_id_str)
-
-        # Remove trigger keywords
-        if flow.trigger_keywords:
-            await redis_manager.invalidate_all_triggers_for_flow(
-                flow_id_str,
-                flow.trigger_keywords,
-                str(bot_id)
-            )
+        # Invalidate cache and trigger keywords (single call handles both)
+        await redis_manager.invalidate_flow_and_triggers(
+            flow_id_str,
+            flow.trigger_keywords or [],
+            str(bot_id)
+        )
 
         logger.info(f"Flow deleted: {flow_id} (name: {flow.name})", bot_id=str(bot_id))
         return deleted
@@ -373,11 +341,35 @@ class FlowService:
 
         return flow
     
+    def _flow_from_cache(self, cached: Dict[str, Any]) -> Flow:
+        """
+        Deserialize cached flow data into Flow model.
+
+        Args:
+            cached: Flow data from Redis cache
+
+        Returns:
+            Flow model instance with timestamps restored
+        """
+        flow = Flow(
+            id=UUID(cached["id"]),
+            name=cached["name"],
+            bot_id=UUID(cached["bot_id"]),
+            flow_definition=cached["flow_definition"],
+            trigger_keywords=cached.get("trigger_keywords", [])
+        )
+        # Restore timestamps from cache
+        if cached.get("created_at"):
+            flow.created_at = datetime.fromisoformat(cached["created_at"])
+        if cached.get("updated_at"):
+            flow.updated_at = datetime.fromisoformat(cached["updated_at"])
+        return flow
+
     async def _cache_flow(self, flow: Flow):
         """Cache flow data in Redis using UUID as key"""
         if not redis_manager.is_connected():
             return
-        
+
         flow_data = {
             "id": str(flow.id),
             "name": flow.name,
@@ -387,18 +379,18 @@ class FlowService:
             "created_at": flow.created_at.isoformat() if flow.created_at else None,
             "updated_at": flow.updated_at.isoformat() if flow.updated_at else None
         }
-        
+
         await redis_manager.cache_flow(
             str(flow.id),  # Cache key is UUID string
             flow_data,
             ttl=settings.cache.flow_ttl
         )
-    
+
     async def _cache_trigger_keywords(self, flow: Flow):
         """Cache trigger keyword mappings (bot-scoped) using UUID"""
         if not redis_manager.is_connected():
             return
-        
+
         keywords = flow.trigger_keywords or []
         for keyword in keywords:
             await redis_manager.cache_trigger_keyword(keyword, str(flow.id), str(flow.bot_id))
