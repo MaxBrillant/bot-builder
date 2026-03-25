@@ -34,6 +34,15 @@ class RedisManager:
     - Automatic reconnection with exponential backoff
     - Distributed circuit breaker to prevent cascading failures (shared across instances)
     - Graceful degradation when Redis unavailable
+
+    Failure Policy:
+    - Security operations (rate limiting, token blacklist): FAIL-CLOSED
+      When Redis is unavailable, these operations raise SecurityServiceUnavailableError
+      to prevent bypassing security controls. Better to fail safe than allow abuse.
+
+    - Caching operations (flow cache, session cache, trigger cache): FAIL-OPEN
+      When Redis is unavailable, these operations return None/empty and log warnings.
+      Allows system to continue operating (fetches from DB instead) with degraded performance.
     """
 
     def __init__(self):
@@ -584,20 +593,26 @@ class RedisManager:
     async def blacklist_token(self, jti: str, ttl: int):
         """
         Add JWT token to blacklist.
-        
+
         Args:
             jti: JWT ID (unique token identifier)
             ttl: Time until token naturally expires
+
+        Raises:
+            SecurityServiceUnavailableError: If Redis is not connected (security requirement)
         """
         if not self.is_connected():
-            return
+            raise SecurityServiceUnavailableError("token_blacklist")
 
         try:
             key = f"blacklist:token:{jti}"
             await self.redis.setex(key, ttl, "1")
             logger.debug(f"Blacklisted token: {jti}")
+        except SecurityServiceUnavailableError:
+            raise
         except Exception as e:
             logger.error(f"Failed to blacklist token {jti}: {e}")
+            raise SecurityServiceUnavailableError("token_blacklist")
 
     async def is_token_blacklisted(self, jti: str) -> bool:
         """
