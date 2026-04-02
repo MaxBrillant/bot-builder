@@ -348,10 +348,9 @@ class BaseProcessor(ABC):
         Note:
             This method should be called when a node has routes but none matched
         """
-        node_type_display = self._get_node_type_display(node.type)
         self.logger.error(
-            f"No matching route in {node_type_display} node '{node.id}'",
+            f"No matching route in {node.type} node '{node.id}'",
             node_id=node.id,
             routes_count=len(node.routes) if node.routes is not None else 0
         )
-        raise NoMatchingRouteError(f"No route condition matched in {node_type_display} node '{node.id}'", node_id=node.id)
+        raise NoMatchingRouteError(f"No route condition matched in {node.type} node '{node.id}'", node_id=node.id)

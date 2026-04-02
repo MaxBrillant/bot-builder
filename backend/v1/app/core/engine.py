@@ -378,28 +378,24 @@ class FlowExecutor:
         self,
         session: Session,
         node: FlowNode,
+        processor,
         user_input: Optional[str],
         user_context: Dict[str, str]
     ) -> ProcessResult:
         """
-        Get processor from factory, inject user context, invoke processor,
-        and clean up user context from result
+        Inject user context, invoke processor, and clean up user context from result
 
         Args:
             session: Active session
             node: Parsed FlowNode to process
+            processor: Processor instance (already created by factory)
             user_input: User's input (or None)
             user_context: User context for templates
 
         Returns:
             ProcessResult from the processor
-
-        Raises:
-            ValueError: If node type is unknown (from factory)
-            Exception: Any processor error is re-raised
         """
         node_type = node.type
-        processor = self.processor_factory.create(node_type)
 
         enhanced_context = self._inject_user_context(
             node_type, session.context, user_context
@@ -497,6 +493,15 @@ class FlowExecutor:
             current_node = FlowNode.model_validate(current_node_dict)
             node_type = current_node.type
 
+            # Get processor for node type (narrow ValueError catch)
+            try:
+                processor = self.processor_factory.create(node_type)
+            except ValueError as e:
+                self.logger.error(f"Unknown node type: {node_type}", error=str(e))
+                await self.session_manager.error_session(session.session_id)
+                await message_callback(ErrorMessages.GENERIC_ERROR, IS_FINAL)
+                return self._build_error_response(session, ErrorMessages.GENERIC_ERROR)
+
             # Log and audit node execution
             self.logger.log_flow_execution(
                 str(session.flow_id),
@@ -520,13 +525,8 @@ class FlowExecutor:
             # Process the node
             try:
                 result = await self._process_single_node(
-                    session, current_node, user_input, user_context
+                    session, current_node, processor, user_input, user_context
                 )
-            except ValueError as e:
-                self.logger.error(f"Unknown node type: {node_type}", error=str(e))
-                await self.session_manager.error_session(session.session_id)
-                await message_callback(ErrorMessages.GENERIC_ERROR, IS_FINAL)
-                return self._build_error_response(session, ErrorMessages.GENERIC_ERROR)
             except Exception as e:
                 self.logger.error(
                     f"Processor error: {str(e)}",
