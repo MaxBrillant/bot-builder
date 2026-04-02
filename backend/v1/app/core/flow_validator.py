@@ -410,44 +410,46 @@ class FlowValidator:
         """
         result = ValidationResult()
 
-        # Step 1: Validate flow metadata
-        await self._validate_flow_metadata(flow_data, bot_id, current_flow_id, result)
+        # Step 1: Validate required fields (early return if missing)
+        self._validate_required_fields(flow_data, result)
         if not result.is_valid():
             return result
 
-        # Step 2: Validate trigger keywords
+        # Step 2: Validate flow name
+        await self._validate_flow_name(
+            flow_data.get('name'), bot_id, current_flow_id, result
+        )
+
+        # Step 3: Validate trigger keywords
         await self._validate_trigger_keywords_wrapper(flow_data, bot_id, current_flow_id, result)
 
-        # Step 3: Validate flow variables
+        # Step 4: Validate flow variables
         self._validate_flow_variables(flow_data, result)
 
-        # Step 4: Validate node structure
+        # Step 5: Validate node structure
         nodes = self._validate_node_structure(flow_data, result)
         if not result.is_valid():
             return result
 
-        # Step 5: Validate node graph
+        # Step 6: Validate node graph
         start_node_id = flow_data.get('start_node_id')
         self._validate_node_graph(nodes, start_node_id, result)
 
-        # Step 6: Validate routes
+        # Step 7: Validate routes
         self._validate_routes(nodes, result)
 
-        # Step 7: Validate SET_VARIABLE assignments reference declared variables
+        # Step 8: Validate SET_VARIABLE assignments reference declared variables
         declared_variables = set(flow_data.get('variables', {}).keys())
         self._validate_set_variable_assignments(nodes, declared_variables, result)
 
         return result
 
-    async def _validate_flow_metadata(
+    def _validate_required_fields(
         self,
         flow_data: Dict[str, Any],
-        bot_id: UUID,
-        current_flow_id: Optional[UUID],
         result: ValidationResult
     ):
-        """Validate flow metadata: required fields and flow name"""
-        # Check required top-level fields
+        """Validate that all required top-level fields are present"""
         required_fields = ['name', 'trigger_keywords', 'start_node_id', 'nodes']
         for field in required_fields:
             if field not in flow_data:
@@ -456,13 +458,6 @@ class FlowValidator:
                     f"Required field '{field}' is missing",
                     field
                 )
-
-        if not result.is_valid():
-            return
-
-        # Validate flow name format and uniqueness per bot
-        flow_name = flow_data.get('name')
-        await self._validate_flow_name(flow_name, bot_id, current_flow_id, result)
 
     async def _validate_trigger_keywords_wrapper(
         self,
