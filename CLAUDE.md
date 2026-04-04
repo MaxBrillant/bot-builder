@@ -2,21 +2,20 @@
 
 Bot Builder is a multi-tenant conversational bot framework. FastAPI backend, React/TypeScript frontend. Users build conversation flows visually using 6 node types; bots receive messages via webhooks and execute flows.
 
-For architecture details see `docs/project/architecture.md`.
+For architecture and system docs see `backend/v1/docs/`.
 
 ## Key Paths (Backend)
 
 | Path | Purpose |
 |------|---------|
+| `backend/v1/docs/` | System documentation (architecture, nodes, routing, etc.) |
 | `backend/v1/app/core/engine.py` | Main conversation orchestration |
 | `backend/v1/app/core/session_manager.py` | Session lifecycle |
-| `backend/v1/app/core/validators.py` | Input validation (1500+ lines — needs splitting) |
 | `backend/v1/app/core/conditions.py` | Route evaluation |
 | `backend/v1/app/core/template_engine.py` | Variable substitution |
-| `backend/v1/app/core/redis_manager.py` | Redis integration (1000+ lines — needs splitting) |
-| `backend/v1/app/models/node_configs.py` | Node config models (1000+ lines — needs splitting) |
+| `backend/v1/app/core/redis_manager.py` | Redis integration |
+| `backend/v1/app/models/node_configs.py` | Node config models |
 | `backend/v1/app/processors/` | One file per node type |
-| `backend/v1/BOT_BUILDER_SPECIFICATIONS.md` | Authoritative system spec |
 
 ## Dev Commands
 
