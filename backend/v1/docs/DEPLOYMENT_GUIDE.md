@@ -156,7 +156,7 @@ CACHE__SESSION_TTL=1800
 SECURITY__SECRET_KEY=YOUR_SECRET_KEY
 SECURITY__ENCRYPTION_KEY=YOUR_ENCRYPTION_KEY
 SECURITY__ALGORITHM=HS256
-SECURITY__ACCESS_TOKEN_EXPIRE_MINUTES=1440
+SECURITY__ACCESS_TOKEN_EXPIRE_MINUTES=4320
 SECURITY__BCRYPT_ROUNDS=12
 
 # =============================================================================
@@ -169,14 +169,14 @@ GOOGLE__REDIRECT_URI=https://api.frontend.ndash.my/auth/google/callback
 # =============================================================================
 # RATE LIMITING CONFIGURATION
 # =============================================================================
-RATE_LIMIT__WEBHOOK_MAX=30
+RATE_LIMIT__WEBHOOK_MAX=10
 RATE_LIMIT__WEBHOOK_WINDOW=60
 RATE_LIMIT__USER_MAX=100
 RATE_LIMIT__USER_WINDOW=60
-RATE_LIMIT__REGISTER_MAX=3
+RATE_LIMIT__REGISTER_MAX=5
 RATE_LIMIT__REGISTER_WINDOW=3600
-RATE_LIMIT__LOGIN_MAX=5
-RATE_LIMIT__LOGIN_WINDOW=900
+RATE_LIMIT__LOGIN_MAX=10
+RATE_LIMIT__LOGIN_WINDOW=3600
 
 # =============================================================================
 # HTTP CLIENT CONFIGURATION

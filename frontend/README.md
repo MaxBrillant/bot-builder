@@ -1,73 +1,63 @@
-# React + TypeScript + Vite
+# Bot Builder Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/TypeScript single-page application for building and managing conversational bots. Built with Vite, React 19, and React Flow.
 
-Currently, two official plugins are available:
+## Quick Start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Runs at `http://localhost:5173`. Expects the backend API at the URL set by `VITE_API_URL` (defaults to `http://localhost:8000`).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev       # Development server with HMR
+npm run build     # TypeScript check + production build
+npm run preview   # Preview production build
+npm run lint      # ESLint
 ```
+
+## Stack
+
+- **React 19** + TypeScript
+- **Vite** — build tooling
+- **React Flow** — visual flow editor canvas
+- **React Router** — client-side routing
+- **TanStack Query** — server state management
+- **React Hook Form** + Zod — form handling and validation
+- **Radix UI** — accessible UI primitives
+- **Tailwind CSS** — styling (via tailwind-merge, CVA, clsx)
+- **Axios** — HTTP client
+- **Lucide** — icons
+
+## Pages
+
+| Page | Path | Purpose |
+|------|------|---------|
+| Login | `/login` | Email/password authentication |
+| Register | `/register` | Account creation |
+| OAuth Callback | `/auth/callback` | Google OAuth2 redirect handler |
+| Bots | `/bots` | Bot list, create, edit, delete |
+| Flow Editor | `/bots/:botId/flows/:flowId` | Visual flow builder |
+| Flow Editor | `/bots/:botId` | Flow editor (bot-level entry) |
+
+## Key Components
+
+- **FlowCanvas** — React Flow wrapper for the visual node editor
+- **NodePalette** — drag-and-drop node type selector
+- **FlowSidebar** — node configuration panel
+- **FlowToolbar** — flow actions (save, export, simulate)
+- **ChatSimulator** — in-browser flow testing
+- **WhatsAppConnectionModal** — WhatsApp instance management via Evolution API
+
+## Docker
+
+```bash
+docker build --build-arg VITE_API_URL=https://your-api.com -t bot-builder-frontend .
+```
+
+Builds with Node 20, serves via nginx on port 80.
