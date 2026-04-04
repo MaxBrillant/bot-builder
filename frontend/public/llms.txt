@@ -1,0 +1,571 @@
+# Bot Builder - AI Reference
+
+Bot Builder is a visual conversational bot framework. Users design conversation flows using 6 node types, connect them with conditional routes, and deploy bots via webhooks (WhatsApp, Telegram, or any channel).
+
+This document describes everything needed to generate valid Bot Builder flow JSON.
+
+---
+
+## Flow Structure
+
+```json
+{
+  "name": "string (1-96 chars, unique per bot)",
+  "trigger_keywords": ["keyword1", "keyword2"],
+  "variables": {
+    "var_name": { "type": "STRING", "default": null }
+  },
+  "defaults": {
+    "retry_logic": {
+      "max_attempts": 3,
+      "fail_route": "node_id_or_omit",
+      "counter_text": "(Attempt {{current_attempt}} of {{max_attempts}})"
+    }
+  },
+  "start_node_id": "first_node_id",
+  "nodes": { "node_id": { "...node definition..." } }
+}
+```
+
+### Top-level fields
+
+**name:** Required. 1-96 chars, not whitespace-only, unique per bot.
+
+**trigger_keywords:** Required. Array of 1+ strings. Each 1-96 chars. Allowed characters: letters, numbers, spaces, underscores, hyphens. Case-insensitive matching at runtime. Special wildcard `*` allowed but must be the sole keyword if used. No duplicates (case-insensitive).
+
+**variables:** Optional. Object mapping variable names to definitions. Each definition has `type` (required) and `default` (optional).
+- Types: `STRING`, `NUMBER`, `BOOLEAN`, `ARRAY`
+- STRING default: must be string, max 256 chars
+- NUMBER default: must be int or float (not boolean)
+- BOOLEAN default: must be boolean
+- ARRAY default: must be array, max 24 items
+- Variable name rules: must match `^[A-Za-z_][A-Za-z0-9_]*$` (start with letter or underscore, then alphanumeric/underscore)
+
+**Reserved variable names (cannot use):** user, item, index, input, context, response, selection, true, false, null, success, error, _flow_variables, _flow_defaults, _api_result
+
+**defaults:** Optional. Contains optional `retry_logic`:
+- `max_attempts`: 1-10, default 3
+- `fail_route`: Optional node ID to route to when max attempts exceeded. If omitted, session terminates.
+- `counter_text`: Max 512 chars. Default: `"(Attempt {{current_attempt}} of {{max_attempts}})"`. Only place where `{{current_attempt}}` and `{{max_attempts}}` are valid template variables.
+
+**start_node_id:** Required. 1-96 chars. Must reference an existing node ID.
+
+**nodes:** Required. Object mapping node IDs to node definitions. 1-48 nodes. Node IDs must match `^[A-Za-z0-9_]+$` (alphanumeric and underscores only). Each node's `id` field must match its dictionary key.
+
+---
+
+## Node Structure
+
+Every node follows this shape:
+
+```json
+{
+  "id": "unique_node_id",
+  "name": "Human-Readable Name",
+  "type": "TEXT",
+  "config": { "type": "TEXT", "...type-specific fields..." },
+  "routes": [{ "condition": "expression", "target_node": "node_id" }],
+  "position": { "x": 0, "y": 0 }
+}
+```
+
+- **id:** 1-96 chars, `^[A-Za-z0-9_]+$`, must match dictionary key
+- **name:** 1-50 chars, not whitespace-only, must be unique within flow (case-insensitive)
+- **type:** One of: `TEXT`, `PROMPT`, `MENU`, `API_ACTION`, `LOGIC_EXPRESSION`, `SET_VARIABLE`
+- **config:** Type-specific object. The `type` field inside config must match the node's `type`.
+- **routes:** Optional. Array of route objects. If omitted or empty, node is terminal. Max varies by node type.
+- **position:** Object with `x` and `y` numeric values (canvas coordinates).
+
+### Route object
+
+```json
+{ "condition": "string (1-512 chars)", "target_node": "node_id (1-96 chars)" }
+```
+
+---
+
+## Node Types
+
+### 1. TEXT - Send a message
+
+Displays text and auto-progresses to next node. Terminal if no routes.
+
+```json
+{
+  "type": "TEXT",
+  "config": {
+    "type": "TEXT",
+    "text": "Hello {{user_name}}!"
+  },
+  "routes": [{ "condition": "true", "target_node": "next_node" }]
+}
+```
+
+- **text:** Required. 1-1024 chars. Supports `{{variable}}` templates.
+- **Routes:** 0-1 max. Condition must be `"true"`.
+
+### 2. PROMPT - Ask for user input
+
+Displays message, waits for user input, validates, saves to variable.
+
+```json
+{
+  "type": "PROMPT",
+  "config": {
+    "type": "PROMPT",
+    "text": "What is your name?",
+    "save_to_variable": "user_name",
+    "validation": {
+      "type": "REGEX",
+      "rule": "^[a-zA-Z ]{2,50}$",
+      "error_message": "Please enter a valid name"
+    },
+    "interrupts": [
+      { "input": "CANCEL", "target_node": "cancel_node" }
+    ]
+  },
+  "routes": [{ "condition": "true", "target_node": "next_node" }]
+}
+```
+
+- **text:** Required. 1-1024 chars. Supports templates.
+- **save_to_variable:** Required. 1-96 chars. Must be valid identifier, not reserved.
+- **validation:** Optional.
+  - `type`: `"REGEX"` or `"EXPRESSION"`
+  - `rule`: Required. Max 512 chars.
+    - REGEX: Valid Python regex. No lookahead/lookbehind (`(?=`, `(?!`, `(?<=`, `(?<!`), no named groups (`(?P<name>`). Must compile.
+    - EXPRESSION: Supported: `input.isAlpha()`, `input.isNumeric()`, `input.isDigit()`, `input.length`. Operators: `==`, `!=`, `>`, `<`, `>=`, `<=`, `&&`, `||`. Context variables: `context.variable_name`.
+  - `error_message`: Required. 1-512 chars.
+- **interrupts:** Optional. Array of objects:
+  - `input`: 1-96 chars, not whitespace-only. Case-insensitive matching at runtime.
+  - `target_node`: 1-96 chars, must reference existing node.
+- **Routes:** 0-1 max. Condition must be `"true"`.
+
+### 3. MENU - Present options
+
+Static (hardcoded) or dynamic (from variable) option lists.
+
+**Static menu:**
+
+```json
+{
+  "type": "MENU",
+  "config": {
+    "type": "MENU",
+    "text": "Choose an option:",
+    "source_type": "STATIC",
+    "static_options": [
+      { "label": "Option A" },
+      { "label": "Option B" },
+      { "label": "Option C" }
+    ],
+    "error_message": "Invalid selection, try again",
+    "interrupts": []
+  },
+  "routes": [
+    { "condition": "selection == 1", "target_node": "handle_a" },
+    { "condition": "selection == 2", "target_node": "handle_b" },
+    { "condition": "selection == 3", "target_node": "handle_c" }
+  ]
+}
+```
+
+- **text:** Required. 1-1024 chars. Supports templates.
+- **source_type:** Required. `"STATIC"` or `"DYNAMIC"`.
+- **static_options:** Required for STATIC. Array of 1-8 objects, each with `label` (1-96 chars).
+- **output_mapping:** NOT allowed on STATIC menus (validation error if present).
+- **error_message:** Optional. Max 512 chars. Shown on invalid selection.
+- **interrupts:** Optional. Same as PROMPT interrupts.
+- **Routes:** Max N routes where N = number of static options. Conditions must use the exact pattern `"selection == 1"`, `"selection == 2"`, etc. (this is a special pattern match, not a general expression). Best practice: include one route per option.
+
+**Dynamic menu:**
+
+```json
+{
+  "type": "MENU",
+  "config": {
+    "type": "MENU",
+    "text": "Select a product:",
+    "source_type": "DYNAMIC",
+    "source_variable": "products_list",
+    "item_template": "{{item.name}} - ${{item.price}}",
+    "output_mapping": [
+      { "source_path": "id", "target_variable": "selected_product_id" },
+      { "source_path": "name", "target_variable": "selected_product_name" }
+    ]
+  },
+  "routes": [{ "condition": "true", "target_node": "next_node" }]
+}
+```
+
+- **source_variable:** Required for DYNAMIC. Variable name containing an array. Max 96 chars.
+- **item_template:** Required for DYNAMIC. Max 1024 chars. Supports `{{item}}`, `{{item.field}}`, and `{{index}}` (1-based). Also supports regular `{{variable}}` templates.
+- **output_mapping:** Optional. Array of objects to extract data from selected item:
+  - `source_path`: 1-256 chars. Dot notation only (no brackets). Path into the selected item object.
+  - `target_variable`: 1-96 chars. Must be valid identifier, not reserved.
+- **Routes:** 0-1 max. Condition must be `"true"`. For conditional branching after a dynamic menu, add a LOGIC_EXPRESSION node after it.
+- Max 24 items rendered at runtime (array truncated if longer).
+
+### 4. API_ACTION - Call external API
+
+Makes HTTP request, extracts response data, routes on success/error.
+
+```json
+{
+  "type": "API_ACTION",
+  "config": {
+    "type": "API_ACTION",
+    "request": {
+      "method": "POST",
+      "url": "https://api.example.com/data/{{user_id}}",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{api_token}}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": "{\"key\": \"{{value}}\"}"
+    },
+    "response_map": [
+      { "source_path": "data.id", "target_variable": "result_id" },
+      { "source_path": "data.items.0.name", "target_variable": "first_item" }
+    ],
+    "success_check": {
+      "status_codes": [200, 201]
+    }
+  },
+  "routes": [
+    { "condition": "success", "target_node": "on_success" },
+    { "condition": "error", "target_node": "on_error" }
+  ]
+}
+```
+
+- **request:** Required.
+  - `method`: Required. One of: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`.
+  - `url`: Required. 1-1024 chars. Supports templates. This is the only node type where `{{user.channel_id}}` and `{{user.channel}}` resolve (they render literally in other node types).
+  - `headers`: Optional. Array of 0-10 objects. Each: `name` (1-128 chars), `value` (1-2048 chars, supports templates).
+  - `body`: Optional. JSON string for POST/PUT/PATCH. Supports templates.
+- **response_map:** Optional. Array of objects to extract data from response body:
+  - `source_path`: 1-256 chars. Dot notation only. `*` = entire body, `*.0` = first array element, `data.items.0.id` = nested access.
+  - `target_variable`: 1-96 chars. Must be valid identifier, not reserved.
+- **success_check:** Optional. Determines if the API call succeeded:
+  - `status_codes`: Optional. Array of HTTP status codes considered success.
+  - `expression`: Optional. Max 512 chars. Condition expression to evaluate.
+  - **If provided, at least one of `status_codes` or `expression` must be set.** An empty `{}` is invalid.
+- **Routes:** 0-2 max. Valid conditions: `"success"` and `"error"`. Best practice: include both for robust flows. No routes = terminal node.
+- **Constraints:** 30s fixed timeout. JSON responses only (non-JSON routes to error). 1MB max response body.
+
+### 5. LOGIC_EXPRESSION - Conditional branching
+
+Evaluates conditions to decide next node. No message displayed. Auto-progresses.
+
+```json
+{
+  "type": "LOGIC_EXPRESSION",
+  "config": {
+    "type": "LOGIC_EXPRESSION"
+  },
+  "routes": [
+    { "condition": "context.age >= 18 && context.verified == true", "target_node": "adult_verified" },
+    { "condition": "context.age >= 18", "target_node": "adult_unverified" },
+    { "condition": "true", "target_node": "minor" }
+  ]
+}
+```
+
+- **config:** Only the `type` field. No other fields.
+- **Routes:** 0-8. Each condition must be a non-empty string. 0 routes = terminal node. Put specific conditions first, `"true"` catch-all last. See "Route Conditions Reference" below for expression syntax.
+
+### 6. SET_VARIABLE - Assign values
+
+Sets one or more variables. Auto-progresses.
+
+```json
+{
+  "type": "SET_VARIABLE",
+  "config": {
+    "type": "SET_VARIABLE",
+    "assignments": [
+      { "variable": "full_name", "value": "{{first_name}} {{last_name}}" },
+      { "variable": "status", "value": "active" }
+    ]
+  },
+  "routes": [{ "condition": "true", "target_node": "next_node" }]
+}
+```
+
+- **assignments:** Required. Array of 1-8 objects:
+  - `variable`: 1-96 chars. Must be valid identifier, not reserved. **Must be declared in the flow's `variables` section.**
+  - `value`: 1-1024 chars. Supports templates.
+  - No duplicate variable names within the same node.
+- **Routes:** 0-1 max. Condition must be `"true"`.
+
+---
+
+## Route Conditions Reference
+
+### Allowed conditions by node type
+
+| Node Type | Max Routes | Allowed Conditions |
+|-----------|-----------|-------------------|
+| TEXT | 1 | `"true"` only |
+| PROMPT | 1 | `"true"` only |
+| SET_VARIABLE | 1 | `"true"` only |
+| STATIC MENU | N (= option count) | `"selection == 1"`, `"selection == 2"`, ... (exact pattern) |
+| DYNAMIC MENU | 1 | `"true"` only |
+| API_ACTION | 2 | `"success"` and `"error"` |
+| LOGIC_EXPRESSION | 8 | Any non-empty expression (0 routes = terminal) |
+
+### Expression syntax (LOGIC_EXPRESSION conditions)
+
+**Comparison operators:** `==`, `!=`, `>`, `<`, `>=`, `<=`
+- `==` and `!=` work with any types (strings, numbers, booleans, null)
+- `>`, `<`, `>=`, `<=` only work with numeric types (int/float). Booleans excluded. Returns false on type mismatch.
+
+**Logical operators:** `&&` (AND, higher precedence), `||` (OR, lower precedence). Standard precedence: `a && b || c` evaluates as `(a && b) || c`.
+
+**Variable access:**
+- `context.var_name` — explicit context access with dot notation
+- `var_name` — shorthand, resolves against context directly
+- `context.nested.path` — nested access supported
+- Missing variables return null (no error)
+
+**Important:** The `context.` prefix works in route conditions but NOT in `{{template}}` variables. In templates, use `{{var_name}}` directly. `{{context.var_name}}` renders literally.
+
+**Literals:**
+- Strings: quoted with `"double"` or `'single'` quotes
+- Numbers: `42`, `-10`, `3.14`
+- Booleans: `true`, `True`, `TRUE`, `false`, `False`, `FALSE` (only these exact casings)
+- Null: `null`, `None`, `none`, `NULL`
+
+---
+
+## Template Variables
+
+Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_data.name}}`.
+
+| Variable | Available In | Description |
+|----------|-------------|-------------|
+| `{{var_name}}` | All node text fields | Flow variable value |
+| `{{user.channel_id}}` | API_ACTION nodes only (url, headers, body) | User's platform ID |
+| `{{user.channel}}` | API_ACTION nodes only (url, headers, body) | Channel name (whatsapp, etc.) |
+| `{{item}}` | DYNAMIC MENU item_template only | Current item object |
+| `{{item.field}}` | DYNAMIC MENU item_template only | Field of current item |
+| `{{index}}` | DYNAMIC MENU item_template only | 1-based index of current item |
+| `{{current_attempt}}` | retry_logic counter_text only | Current attempt number |
+| `{{max_attempts}}` | retry_logic counter_text only | Max attempts configured |
+
+**Not available as template variables:**
+- `{{input}}` — NOT a template variable. `input` is only available in PROMPT validation expressions (e.g., `input.isAlpha()`, `input.length > 5`). Using `{{input}}` in any template raises an error.
+- `{{current_attempt}}` and `{{max_attempts}}` — only work in `counter_text`, not in node text fields or error messages.
+- `{{context.var_name}}` — does NOT work in templates. Renders literally. Use `{{var_name}}` directly.
+
+**Missing variables** render literally (e.g., `{{undefined}}` stays as `{{undefined}}`).
+
+**Unsupported in templates:** arithmetic (`+`, `-`, `*`, `/`), default operator (`||`), ternary (`? :`), method calls (`.toUpperCase()`), bracket notation (`[0]`), control flow keywords.
+
+---
+
+## Constraints
+
+| Limit | Value |
+|-------|-------|
+| Nodes per flow | 48 max |
+| Routes per node | 8 max (varies by type, see table above) |
+| Static menu options | 1-8 |
+| Dynamic menu items | 24 max (runtime truncation) |
+| Assignments per SET_VARIABLE | 1-8 |
+| API headers per request | 10 max |
+| Message text length | 1024 chars |
+| Node name length | 50 chars |
+| Node ID / variable name length | 96 chars |
+| Flow name length | 96 chars |
+| Route condition length | 512 chars |
+| Validation rule length (REGEX or EXPRESSION) | 512 chars |
+| Validation error message length | 512 chars |
+| Menu error message length | 512 chars |
+| Counter text length | 512 chars |
+| API request URL length | 1024 chars |
+| API header name length | 128 chars |
+| API header value length | 2048 chars |
+| API response path length | 256 chars |
+| Menu output mapping path length | 256 chars |
+| Variable default (STRING) length | 256 chars |
+| Variable default (ARRAY) items | 24 max |
+| Template/assignment value length | 1024 chars |
+| Trigger keyword length | 96 chars |
+| Interrupt keyword length | 96 chars |
+| API timeout | 30 seconds (fixed) |
+| API response body size | 1 MB |
+| Session timeout | 30 minutes (absolute, not sliding) |
+| Max auto-progression | 10 consecutive non-input nodes |
+| Retry max attempts | 1-10 |
+
+---
+
+## Validation Rules
+
+1. Required top-level fields: `name`, `trigger_keywords`, `start_node_id`, `nodes`.
+2. `start_node_id` must reference an existing node in `nodes`.
+3. All nodes except the start node must be targeted by at least one route (no orphan nodes).
+4. Cycles are allowed only if they contain at least one input node (PROMPT or MENU). Cycles with only non-input nodes (TEXT, API_ACTION, LOGIC_EXPRESSION, SET_VARIABLE) are rejected.
+5. Node names must be unique within the flow (case-insensitive).
+6. Node IDs must match their dictionary keys.
+7. The `type` field inside `config` must match the node's `type` field.
+8. SET_VARIABLE assignments must reference variables declared in the flow's `variables` section.
+9. Route target nodes must reference existing nodes.
+10. `selection == N` conditions on STATIC MENU must have N in range 1 to number of options.
+11. STATIC MENU cannot have `output_mapping`.
+12. DYNAMIC MENU requires both `source_variable` and `item_template`.
+
+---
+
+## Complete Example: Pizza Order Bot
+
+```json
+{
+  "name": "pizza_order",
+  "trigger_keywords": ["PIZZA", "ORDER"],
+  "variables": {
+    "customer_name": { "type": "STRING" },
+    "pizza_size": { "type": "STRING" },
+    "order_id": { "type": "STRING" }
+  },
+  "defaults": {
+    "retry_logic": {
+      "max_attempts": 3,
+      "counter_text": "(Attempt {{current_attempt}} of {{max_attempts}})"
+    }
+  },
+  "start_node_id": "greet",
+  "nodes": {
+    "greet": {
+      "id": "greet",
+      "name": "Greeting",
+      "type": "TEXT",
+      "config": { "type": "TEXT", "text": "Welcome to Pizza Bot! Let's get your order started." },
+      "routes": [{ "condition": "true", "target_node": "ask_name" }],
+      "position": { "x": 0, "y": 0 }
+    },
+    "ask_name": {
+      "id": "ask_name",
+      "name": "Ask Name",
+      "type": "PROMPT",
+      "config": {
+        "type": "PROMPT",
+        "text": "What's your name?",
+        "save_to_variable": "customer_name",
+        "validation": {
+          "type": "REGEX",
+          "rule": "^[a-zA-Z ]{2,50}$",
+          "error_message": "Please enter a valid name (letters only)"
+        }
+      },
+      "routes": [{ "condition": "true", "target_node": "pick_size" }],
+      "position": { "x": 0, "y": 100 }
+    },
+    "pick_size": {
+      "id": "pick_size",
+      "name": "Pick Size",
+      "type": "MENU",
+      "config": {
+        "type": "MENU",
+        "text": "Hi {{customer_name}}! What size pizza?",
+        "source_type": "STATIC",
+        "static_options": [
+          { "label": "Small ($8)" },
+          { "label": "Medium ($12)" },
+          { "label": "Large ($16)" }
+        ]
+      },
+      "routes": [
+        { "condition": "selection == 1", "target_node": "set_small" },
+        { "condition": "selection == 2", "target_node": "set_medium" },
+        { "condition": "selection == 3", "target_node": "set_large" }
+      ],
+      "position": { "x": 0, "y": 200 }
+    },
+    "set_small": {
+      "id": "set_small",
+      "name": "Set Small",
+      "type": "SET_VARIABLE",
+      "config": {
+        "type": "SET_VARIABLE",
+        "assignments": [{ "variable": "pizza_size", "value": "small" }]
+      },
+      "routes": [{ "condition": "true", "target_node": "place_order" }],
+      "position": { "x": -100, "y": 300 }
+    },
+    "set_medium": {
+      "id": "set_medium",
+      "name": "Set Medium",
+      "type": "SET_VARIABLE",
+      "config": {
+        "type": "SET_VARIABLE",
+        "assignments": [{ "variable": "pizza_size", "value": "medium" }]
+      },
+      "routes": [{ "condition": "true", "target_node": "place_order" }],
+      "position": { "x": 0, "y": 300 }
+    },
+    "set_large": {
+      "id": "set_large",
+      "name": "Set Large",
+      "type": "SET_VARIABLE",
+      "config": {
+        "type": "SET_VARIABLE",
+        "assignments": [{ "variable": "pizza_size", "value": "large" }]
+      },
+      "routes": [{ "condition": "true", "target_node": "place_order" }],
+      "position": { "x": 100, "y": 300 }
+    },
+    "place_order": {
+      "id": "place_order",
+      "name": "Place Order",
+      "type": "API_ACTION",
+      "config": {
+        "type": "API_ACTION",
+        "request": {
+          "method": "POST",
+          "url": "https://api.pizzashop.com/orders",
+          "headers": [
+            { "name": "Content-Type", "value": "application/json" }
+          ],
+          "body": "{\"name\": \"{{customer_name}}\", \"size\": \"{{pizza_size}}\"}"
+        },
+        "response_map": [
+          { "source_path": "order_id", "target_variable": "order_id" }
+        ],
+        "success_check": { "status_codes": [200, 201] }
+      },
+      "routes": [
+        { "condition": "success", "target_node": "confirm" },
+        { "condition": "error", "target_node": "order_failed" }
+      ],
+      "position": { "x": 0, "y": 400 }
+    },
+    "confirm": {
+      "id": "confirm",
+      "name": "Confirmation",
+      "type": "TEXT",
+      "config": {
+        "type": "TEXT",
+        "text": "Order confirmed! {{customer_name}}, your {{pizza_size}} pizza is on the way. Order #{{order_id}}"
+      },
+      "routes": [],
+      "position": { "x": 0, "y": 500 }
+    },
+    "order_failed": {
+      "id": "order_failed",
+      "name": "Order Failed",
+      "type": "TEXT",
+      "config": {
+        "type": "TEXT",
+        "text": "Sorry {{customer_name}}, something went wrong placing your order. Please try again later."
+      },
+      "routes": [],
+      "position": { "x": 100, "y": 500 }
+    }
+  }
+}
+```
+
+This flow: greets user -> asks name (with regex validation) -> offers size menu -> sets variable based on selection -> calls order API -> confirms or shows error. Triggered by sending "PIZZA" or "ORDER".
