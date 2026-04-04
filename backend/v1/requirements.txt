@@ -27,10 +27,6 @@ httpx==0.25.2
 # Cache (Optional)
 redis==5.0.1
 
-# Testing (for future use)
-pytest==7.4.3
-pytest-asyncio==0.21.1
-
 # Development
 python-dotenv==1.0.0
 

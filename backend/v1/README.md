@@ -423,15 +423,6 @@ docker-compose logs -f api
 # Logs written to stdout
 ```
 
-## 🧪 Testing
-
-```bash
-# Run tests (when implemented)
-pytest
-
-# With coverage
-pytest --cov=app tests/
-```
 
 ## 📝 License
 

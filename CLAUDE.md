@@ -24,8 +24,6 @@ For architecture details see `docs/project/architecture.md`.
 cd backend/v1
 source venv/bin/activate
 uvicorn app.main:app --reload        # run server
-pytest                               # run tests
-pytest --cov=app tests/              # with coverage
 alembic upgrade head                 # apply migrations
 alembic revision --autogenerate -m "description"  # create migration
 ```
