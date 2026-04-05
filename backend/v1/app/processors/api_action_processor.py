@@ -239,7 +239,7 @@ class APIActionProcessor(BaseProcessor):
                 success=False
             )
         except httpx.RequestError as e:
-            self.logger.error(f"API call request error: {str(e)}", url=rendered_url, exc_info=True)
+            self.logger.warning(f"API call request error: {str(e)}", url=rendered_url)
             return APIResponse(
                 status_code=500,
                 body={"error": "API request failed"},
