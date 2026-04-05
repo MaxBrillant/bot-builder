@@ -12,9 +12,9 @@ This guide covers deploying Bot Builder to a production server with automated CI
 │  │  Caddy  │ ← Handles HTTPS, routes traffic                │
 │  └────┬────┘                                                │
 │       │                                                     │
-│       ├── frontend.ndash.my ──→ Frontend (React)            │
+│       ├── yourdomain.com ──→ Frontend (React)            │
 │       │                                                     │
-│       └── api.frontend.ndash.my ──→ API (FastAPI)           │
+│       └── api.yourdomain.com ──→ API (FastAPI)           │
 │                                      │                      │
 │                                      ├── PostgreSQL         │
 │                                      ├── Redis              │
@@ -164,7 +164,7 @@ SECURITY__BCRYPT_ROUNDS=12
 # =============================================================================
 GOOGLE__CLIENT_ID=your-google-client-id
 GOOGLE__CLIENT_SECRET=your-google-client-secret
-GOOGLE__REDIRECT_URI=https://api.frontend.ndash.my/auth/google/callback
+GOOGLE__REDIRECT_URI=https://api.yourdomain.com/auth/google/callback
 
 # =============================================================================
 # RATE LIMITING CONFIGURATION
@@ -199,9 +199,9 @@ app_name=Bot Builder
 app_version=1.0.0
 environment=production
 debug=false
-base_url=https://api.frontend.ndash.my
-frontend_url=https://frontend.ndash.my
-allowed_origins=https://frontend.ndash.my
+base_url=https://api.yourdomain.com
+frontend_url=https://yourdomain.com
+allowed_origins=https://yourdomain.com
 
 # =============================================================================
 # EVOLUTION API CONFIGURATION
@@ -221,7 +221,7 @@ OBSERVABILITY__PROMETHEUS_ENABLED=true
 # =============================================================================
 # FRONTEND BUILD CONFIGURATION
 # =============================================================================
-VITE_API_URL=https://api.frontend.ndash.my
+VITE_API_URL=https://api.yourdomain.com
 
 # =============================================================================
 # DOCKER COMPOSE VARIABLES
@@ -232,6 +232,8 @@ SECRET_KEY=YOUR_SECRET_KEY
 ENCRYPTION_KEY=YOUR_ENCRYPTION_KEY
 EVOLUTION_API_KEY=YOUR_EVOLUTION_API_KEY
 GRAFANA_PASSWORD=YOUR_GRAFANA_PASSWORD
+FRONTEND_DOMAIN=yourdomain.com
+API_DOMAIN=api.yourdomain.com
 ENVIRONMENT=production
 DEBUG=false
 ```
@@ -292,11 +294,11 @@ This means:
 3. Edit your OAuth 2.0 Client
 4. Add to **Authorized redirect URIs**:
    ```
-   https://api.frontend.ndash.my/auth/google/callback
+   https://api.yourdomain.com/auth/google/callback
    ```
 5. Add to **Authorized JavaScript origins**:
    ```
-   https://frontend.ndash.my
+   https://yourdomain.com
    ```
 
 ---
@@ -414,7 +416,7 @@ Now every push to `main` automatically deploys to production.
 docker compose ps
 
 # API health
-curl https://api.frontend.ndash.my/health
+curl https://api.yourdomain.com/health
 
 # View logs
 docker compose logs -f api
@@ -424,9 +426,9 @@ docker compose logs -f api
 
 | Service | URL |
 |---------|-----|
-| Frontend | https://frontend.ndash.my |
-| API | https://api.frontend.ndash.my |
-| API Docs | https://api.frontend.ndash.my/docs |
+| Frontend | https://yourdomain.com |
+| API | https://api.yourdomain.com |
+| API Docs | https://api.yourdomain.com/docs |
 | Grafana | http://YOUR_SERVER_IP:3001 |
 | Prometheus | http://YOUR_SERVER_IP:9090 |
 
@@ -456,7 +458,7 @@ docker compose up -d
 
 ### Caddy Not Getting SSL Certificate
 
-- Verify DNS is pointing to your server: `dig frontend.ndash.my`
+- Verify DNS is pointing to your server: `dig yourdomain.com`
 - Check Caddy logs: `docker compose logs caddy`
 - Ensure ports 80 and 443 are open
 
@@ -482,7 +484,7 @@ docker compose logs api
 docker compose exec api curl -f http://localhost:8000/health
 
 # Or test via Caddy (if SSL is working)
-curl https://api.frontend.ndash.my/health
+curl https://api.yourdomain.com/health
 ```
 
 ### Database Connection Issues

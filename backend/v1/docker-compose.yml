@@ -9,6 +9,9 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+    environment:
+      - FRONTEND_DOMAIN=${FRONTEND_DOMAIN:?FRONTEND_DOMAIN must be set in .env}
+      - API_DOMAIN=${API_DOMAIN:?API_DOMAIN must be set in .env}
     depends_on:
       - api
       - frontend
@@ -22,7 +25,7 @@ services:
       context: ../../frontend
       dockerfile: Dockerfile
       args:
-        - VITE_API_URL=${VITE_API_URL:-https://api.frontend.ndash.my}
+        - VITE_API_URL=${VITE_API_URL:?VITE_API_URL must be set in .env}
     restart: unless-stopped
     networks:
       - botbuilder-network

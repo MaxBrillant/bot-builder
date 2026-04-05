@@ -1,9 +1,9 @@
 # Frontend - React App
-frontend.ndash.my {
+{$FRONTEND_DOMAIN} {
     reverse_proxy frontend:80
 }
 
 # API - Backend
-api.frontend.ndash.my {
+{$API_DOMAIN} {
     reverse_proxy api:8000
 }
