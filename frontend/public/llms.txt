@@ -419,6 +419,30 @@ Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_
 
 ---
 
+## Node Positioning
+
+Position encodes meaning. The x-axis represents **time** (progression through the conversation) and the y-axis represents **alternatives** (different paths from a decision). A reader should understand the flow's structure at a glance without reading any config.
+
+### Rules
+
+**Start at (100, 200).** Every flow's start node anchors here. It typically sits alone on its row — it's the entry point, not part of any phase.
+
+**Sequential steps move right.** When one node leads unconditionally to the next (`"true"` route), place the target ~340-380px to the right at the same y. Time flows strictly left-to-right within a phase.
+
+**Branches stack vertically.** When a node splits into alternatives (MENU options, LOGIC_EXPRESSION conditions, API success/error), targets share the same x and spread along y, spaced ~160px apart. They never spread horizontally — the y-axis is reserved for "different paths from the same point."
+
+**Happy path stays on the spine.** The flow has an implicit horizontal spine at the main y-value. The expected/primary outcome aligns with this spine. With 3 branches, center them symmetrically around the parent's y. With 2 branches, keep success at the parent's y and drop error below.
+
+**Phase drops create rows.** When the flow enters a new conceptual phase (greeting → collection → processing → result), reset x back to the left (100) and step y down ~200-240px. Each row is a self-contained phase. Phase spacing (200-240px) is deliberately larger than branch spacing (160px) so phases and branches are visually distinct.
+
+**Long sequences wrap.** When a horizontal chain would exceed 2-3 nodes, wrap to the next row — reset x to the left, drop y. This is line-wrapping, same as text in a paragraph.
+
+**Terminal nodes sit at the right edge.** Nodes with no routes land at the furthest-right position in their section, with extra spacing (~500px) from their parent. The conversation ends at the right margin.
+
+**No two nodes share the same position.**
+
+---
+
 ## Complete Example: Pizza Order Bot
 
 ```json
@@ -444,7 +468,7 @@ Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_
       "type": "TEXT",
       "config": { "type": "TEXT", "text": "Welcome to Pizza Bot! Let's get your order started." },
       "routes": [{ "condition": "true", "target_node": "ask_name" }],
-      "position": { "x": 0, "y": 0 }
+      "position": { "x": 100, "y": 200 }
     },
     "ask_name": {
       "id": "ask_name",
@@ -461,7 +485,7 @@ Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_
         }
       },
       "routes": [{ "condition": "true", "target_node": "pick_size" }],
-      "position": { "x": 0, "y": 100 }
+      "position": { "x": 440, "y": 200 }
     },
     "pick_size": {
       "id": "pick_size",
@@ -482,7 +506,7 @@ Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_
         { "condition": "selection == 2", "target_node": "set_medium" },
         { "condition": "selection == 3", "target_node": "set_large" }
       ],
-      "position": { "x": 0, "y": 200 }
+      "position": { "x": 780, "y": 200 }
     },
     "set_small": {
       "id": "set_small",
@@ -493,7 +517,7 @@ Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_
         "assignments": [{ "variable": "pizza_size", "value": "small" }]
       },
       "routes": [{ "condition": "true", "target_node": "place_order" }],
-      "position": { "x": -100, "y": 300 }
+      "position": { "x": 1280, "y": 40 }
     },
     "set_medium": {
       "id": "set_medium",
@@ -504,7 +528,7 @@ Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_
         "assignments": [{ "variable": "pizza_size", "value": "medium" }]
       },
       "routes": [{ "condition": "true", "target_node": "place_order" }],
-      "position": { "x": 0, "y": 300 }
+      "position": { "x": 1280, "y": 200 }
     },
     "set_large": {
       "id": "set_large",
@@ -515,7 +539,7 @@ Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_
         "assignments": [{ "variable": "pizza_size", "value": "large" }]
       },
       "routes": [{ "condition": "true", "target_node": "place_order" }],
-      "position": { "x": 100, "y": 300 }
+      "position": { "x": 1280, "y": 360 }
     },
     "place_order": {
       "id": "place_order",
@@ -540,7 +564,7 @@ Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_
         { "condition": "success", "target_node": "confirm" },
         { "condition": "error", "target_node": "order_failed" }
       ],
-      "position": { "x": 0, "y": 400 }
+      "position": { "x": 100, "y": 440 }
     },
     "confirm": {
       "id": "confirm",
@@ -551,7 +575,7 @@ Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_
         "text": "Order confirmed! {{customer_name}}, your {{pizza_size}} pizza is on the way. Order #{{order_id}}"
       },
       "routes": [],
-      "position": { "x": 0, "y": 500 }
+      "position": { "x": 600, "y": 440 }
     },
     "order_failed": {
       "id": "order_failed",
@@ -562,7 +586,7 @@ Use `{{variable_name}}` in text fields. Dot notation for nested access: `{{user_
         "text": "Sorry {{customer_name}}, something went wrong placing your order. Please try again later."
       },
       "routes": [],
-      "position": { "x": 100, "y": 500 }
+      "position": { "x": 600, "y": 600 }
     }
   }
 }
